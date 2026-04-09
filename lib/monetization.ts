@@ -55,16 +55,12 @@ export function interleavePartnerFeedMain(sortedMain: ListingRow[]): ListingRow[
   const partners = sortedMain.filter((l) => isPartnerAd(l));
   if (organic.length === 0) {
     const out = partners;
-    if (typeof __DEV__ !== "undefined" && __DEV__) {
-      console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
-    }
+    console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
     return out;
   }
   if (partners.length === 0) {
     const out = organic;
-    if (typeof __DEV__ !== "undefined" && __DEV__) {
-      console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
-    }
+    console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
     return out;
   }
 
@@ -93,20 +89,11 @@ export function interleavePartnerFeedMain(sortedMain: ListingRow[]): ListingRow[
     }
   }
 
-  // Вставляем оставшиеся партнёрские после каждого organic в конце, пока возможно (без двух реклам подряд).
-  // При нормальном соотношении (≈20%) `pi` уже будет равен `partners.length`.
-  if (pi < partners.length) {
-    for (let i = out.length - 1; i >= 0 && pi < partners.length; i--) {
-      const cur = out[i]!;
-      if (isPartnerAd(cur)) continue;
-      // Вставка после organic безопасна: справа либо organic/конец, слева organic/partner — но мы вставляем ОДНУ.
-      out.splice(i + 1, 0, partners[pi++]!);
-    }
-  }
+  // Если партнёрских больше, чем можно вставить без двух подряд, оставшиеся всё равно показываем в конце.
+  // Практически это не должно происходить при нормальном сидировании (≈20% партнёрок).
+  while (pi < partners.length) out.push(partners[pi++]!);
 
-  if (typeof __DEV__ !== "undefined" && __DEV__) {
-    console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
-  }
+  console.log("[feed] organic:", organic.length, "partner:", partners.length, "final:", out.length);
 
   return out;
 }

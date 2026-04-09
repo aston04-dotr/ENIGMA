@@ -66,6 +66,12 @@ function randomCreatedAt() {
   return d.toISOString();
 }
 
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 export async function seedListings(options = {}) {
   const url = process.env.SUPABASE_URL?.trim();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -76,6 +82,7 @@ export async function seedListings(options = {}) {
 
   const total = options.total ?? randInt(50, 100);
   const partnerRatio = options.partnerRatio ?? 0.2;
+  const batchSize = options.batchSize ?? 200;
   const admin = createClient(url, key, { auth: { persistSession: false } });
 
   const { data: urow, error: uerr } = await admin.from("users").select("id").eq("id", userId).maybeSingle();
@@ -113,11 +120,24 @@ export async function seedListings(options = {}) {
     }
   }
 
-  // Batch insert: listings, then images (FK references listing_id).
-  const { error: lerr } = await admin.from("listings").insert(listingRows);
-  if (lerr) throw lerr;
-  const { error: ierr } = await admin.from("images").insert(imagesRows);
-  if (ierr) throw ierr;
+  console.log(
+    "seedListings: total=",
+    listingRows.length,
+    "partner≈",
+    Math.round(listingRows.filter((x) => x.is_partner_ad).length),
+    "images=",
+    imagesRows.length
+  );
+
+  // Batch insert: списками, не по одному.
+  for (const c of chunk(listingRows, batchSize)) {
+    const { error } = await admin.from("listings").insert(c);
+    if (error) throw error;
+  }
+  for (const c of chunk(imagesRows, batchSize)) {
+    const { error } = await admin.from("images").insert(c);
+    if (error) throw error;
+  }
 
   return { listings: listingRows.length, images: imagesRows.length };
 }
