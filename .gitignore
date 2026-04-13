@@ -160,6 +160,7 @@ expo-env.d.ts
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # generated native folders

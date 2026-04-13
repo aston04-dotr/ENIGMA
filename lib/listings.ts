@@ -1,6 +1,7 @@
 import { isValidListingUuid } from "./listingParams";
-import { isSchemaNotInCache } from "./postgrestErrors";
-import { CITY_ALL_RUSSIA } from "./russianCities";
+import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
+import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "./russianCities";
+import { decreaseTrust } from "./trust";
 import { supabase } from "./supabase";
 import type { ListingInsertPayload, ListingRow } from "./types";
 
@@ -8,10 +9,47 @@ const LISTING_DETAIL_FETCH_MS = 5000;
 
 const LISTINGS_FETCH_MS = 28_000;
 
+const LISTINGS_FEED_NETWORK_UI =
+  "Не удалось загрузить объявления. Проверь интернет или попробуй позже.";
+
+function isBrowserOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+function isLikelyNetworkFailureMessage(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("load failed") ||
+    m.includes("authretryablefetcherror") ||
+    m.includes("failed to fetch") ||
+    m.includes("networkerror") ||
+    m.includes("network request failed") ||
+    m.includes("нет ответа за")
+  );
+}
+
+function normalizeListingsCatchError(e: unknown): string {
+  console.error("NETWORK ERROR", e);
+  const msg =
+    typeof e === "string"
+      ? e
+      : e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
+        ? (e as { message: string }).message
+        : String(e);
+  const raw = msg || "Нет соединения с сервером";
+  if (raw.includes("AuthRetryableFetchError")) {
+    return "Ошибка подключения к серверу";
+  }
+  if (raw.includes("Load failed")) {
+    return "Нет соединения с сервером. Проверь интернет.";
+  }
+  return raw;
+}
+
 function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const id = setTimeout(
-      () => reject(new Error(`${label}: нет ответа за ${Math.round(ms / 1000)} с (сеть или Supabase)`)),
+      () => reject(`${label}: нет ответа за ${Math.round(ms / 1000)} с (сеть или Supabase)`),
       ms
     );
     Promise.resolve(promise).then(
@@ -31,10 +69,47 @@ export type FetchListingsResult = {
   listings: ListingRow[];
   /** Нужно выполнить supabase/schema.sql в SQL Editor */
   sqlSetupRequired: boolean;
+  error?: string;
 };
 
 /** PostgREST по умолчанию отдаёт ~1000 строк; при тысячах партнёрок «верх» ленты может быть только обычными — партнёрок не будет в ответе. */
 const FEED_LISTINGS_PER_KIND = 4000;
+
+/** Города РФ + федеральные объявления; для фильтра ленты «только Россия». */
+const RUSSIA_CITY_SET = new Set(RUSSIAN_CITIES);
+
+let warned = new Set<string>();
+
+function rowIsRussiaListing(row: Record<string, unknown>): boolean {
+  const id = String(row.id ?? "");
+  const country = typeof row.country === "string" ? row.country.trim() : "";
+  const city = typeof row.city === "string" ? row.city.trim() : "";
+  const location = typeof row.location === "string" ? row.location.trim() : "";
+
+  if (country) {
+    const c = country.toLowerCase();
+    if (c === "россия" || c === "russia" || c === "ru") return true;
+    return false;
+  }
+
+  if (!country && !city && !location) {
+    if (!warned.has(id)) {
+      console.warn("UNKNOWN GEO:", id || "(no id)");
+      warned.add(id);
+    }
+    return true;
+  }
+
+  const cityLine = city || location;
+  return RUSSIA_CITY_SET.has(cityLine);
+}
+
+function filterListingsRussiaOnly(rows: unknown[]): unknown[] {
+  return rows.filter((r) => {
+    if (!r || typeof r !== "object") return false;
+    return rowIsRussiaListing(r as Record<string, unknown>);
+  });
+}
 
 function mergeFeedRows(a: unknown[], b: unknown[]): unknown[] {
   const seen = new Set<string>();
@@ -93,54 +168,92 @@ export async function fetchListings(filters: {
   search?: string;
   city?: string;
 }): Promise<FetchListingsResult> {
-  const fullSelect = "*, images:images(url, sort_order)";
-  const cap = FEED_LISTINGS_PER_KIND;
-  const capWide = cap * 2;
-
-  async function runDual(select: string) {
-    const qOrg = listingsQuery(filters, select).eq("is_partner_ad", false).limit(cap);
-    const qPar = listingsQuery(filters, select).eq("is_partner_ad", true).limit(cap);
-    const [org, par] = await Promise.all([
-      withTimeout(qOrg, LISTINGS_FETCH_MS, "Лента"),
-      withTimeout(qPar, LISTINGS_FETCH_MS, "Лента"),
-    ]);
-    return { org, par };
+  console.log("SUPABASE URL", process.env.EXPO_PUBLIC_SUPABASE_URL ?? "(unset)");
+  if (isBrowserOffline()) {
+    return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
   }
+  try {
+    // В некоторых проектах `images.sort_order` может отсутствовать → embed с `sort_order` ломает весь select.
+    // Поэтому основной select берём безопасным: только url.
+    const fullSelect = "*, images:images(url)";
+    const capWide = FEED_LISTINGS_PER_KIND * 2;
 
-  async function trySelect(select: string): Promise<FetchListingsResult | "schema" | "fail"> {
-    const dual = await runDual(select);
-    if (!dual.org.error && !dual.par.error) {
-      const rows = mergeFeedRows((dual.org.data ?? []) as unknown[], (dual.par.data ?? []) as unknown[]);
+    const run = (select: string) => withTimeout(listingsQuery(filters, select).limit(capWide), LISTINGS_FETCH_MS, "Лента");
+
+    if (isBrowserOffline()) {
+      return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
+    }
+    const first = await run(fullSelect);
+    if (!first.error) {
+      const rows = filterListingsRussiaOnly((first.data ?? []) as unknown[]);
+      const partnerCount = rows.filter((x) => (x as { is_partner_ad?: unknown })?.is_partner_ad === true).length;
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.log("PARTNERS AFTER FETCH:", partnerCount);
+      }
+      const listings = rows.map((r) => parseListingRow(r as Record<string, unknown>));
+      if (isBrowserOffline()) {
+        return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
+      }
       return {
-        listings: rows.map((r) => parseListingRow(r as Record<string, unknown>)),
+        listings: await mergeFavoriteCounts(listings),
         sqlSetupRequired: false,
       };
     }
-    const dualErr = dual.org.error || dual.par.error;
-    if (isSchemaNotInCache(dualErr)) return "schema";
+    const firstMsg = first.error?.message ?? "";
+    if (isLikelyNetworkFailureMessage(firstMsg)) {
+      console.error("LISTINGS FETCH ERROR", first.error);
+      return { listings: [], sqlSetupRequired: false, error: LISTINGS_FEED_NETWORK_UI };
+    }
+    if (isSchemaNotInCache(first.error)) {
+      return { listings: [], sqlSetupRequired: true };
+    }
 
-    const wide = listingsQuery(filters, select).limit(capWide);
-    const { data, error } = await withTimeout(wide, LISTINGS_FETCH_MS, "Лента");
-    if (!error) {
-      const rows = (data ?? []) as unknown[];
+    // Fallback: без embed вообще.
+    if (isBrowserOffline()) {
+      return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
+    }
+    const second = await run("*");
+    if (!second.error) {
+      const rows = filterListingsRussiaOnly((second.data ?? []) as unknown[]);
+      const partnerCount = rows.filter((x) => (x as { is_partner_ad?: unknown })?.is_partner_ad === true).length;
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.log("PARTNERS AFTER FETCH:", partnerCount);
+      }
+      const listings = rows.map((r) => parseListingRow(r as Record<string, unknown>));
+      if (isBrowserOffline()) {
+        return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
+      }
       return {
-        listings: rows.map((r) => parseListingRow(r as Record<string, unknown>)),
+        listings: await mergeFavoriteCounts(listings),
         sqlSetupRequired: false,
       };
     }
-    if (isSchemaNotInCache(error)) return "schema";
-    return "fail";
+    if (isSchemaNotInCache(second.error)) {
+      return { listings: [], sqlSetupRequired: true };
+    }
+
+    const msg = second.error?.message || first.error?.message || "Ошибка загрузки объявлений";
+    console.error("LISTINGS FETCH ERROR", msg);
+    if (isLikelyNetworkFailureMessage(msg)) {
+      return { listings: [], sqlSetupRequired: false, error: LISTINGS_FEED_NETWORK_UI };
+    }
+    return { listings: [], sqlSetupRequired: false, error: msg };
+  } catch (e) {
+    const rawStr =
+      typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+    const normalized = normalizeListingsCatchError(e);
+    if (
+      isLikelyNetworkFailureMessage(rawStr) ||
+      rawStr.includes("AuthRetryableFetchError") ||
+      rawStr.includes("Load failed") ||
+      normalized.includes("Ошибка подключения к серверу") ||
+      normalized.includes("Нет соединения с сервером")
+    ) {
+      return { listings: [], sqlSetupRequired: false, error: LISTINGS_FEED_NETWORK_UI };
+    }
+    console.error("LISTINGS FETCH ERROR", normalized);
+    return { listings: [], sqlSetupRequired: false, error: normalized || LISTINGS_FEED_NETWORK_UI };
   }
-
-  const first = await trySelect(fullSelect);
-  if (first !== "fail" && first !== "schema") return first;
-  if (first === "schema") return { listings: [], sqlSetupRequired: true };
-
-  const second = await trySelect("*");
-  if (second !== "fail" && second !== "schema") return second;
-  if (second === "schema") return { listings: [], sqlSetupRequired: true };
-
-  throw new Error("Ошибка загрузки объявлений");
 }
 
 /**
@@ -149,7 +262,7 @@ export async function fetchListings(filters: {
  */
 export async function fetchListingsForUser(userId: string): Promise<ListingRow[]> {
   if (!userId?.trim()) return [];
-  const fullSelect = "*, images:images(url, sort_order)";
+  const fullSelect = "*, images:images(url)";
   const { data, error } = await supabase
     .from("listings")
     .select(fullSelect)
@@ -174,11 +287,49 @@ export async function fetchListingsForUser(userId: string): Promise<ListingRow[]
   return [];
 }
 
-export async function incrementViews(listingId: string) {
+/** Одно объявление: число избранных (RPC, SECURITY DEFINER). */
+export async function fetchListingFavoriteCount(listingId: string): Promise<number> {
+  if (!listingId?.trim()) return 0;
+  const { data, error } = await supabase.rpc("listing_favorites_count", { listing: listingId });
+  if (error) {
+    console.warn("favorite_count RPC failed", error);
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+/** Пакетно для ленты: id → count (объявления без строк в favorites получают 0). */
+export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const ids = [...new Set(listingIds.map((x) => String(x ?? "").trim()).filter(Boolean))];
+  if (ids.length === 0) return map;
+  const { data, error } = await supabase.rpc("listing_favorites_counts", { p_ids: ids });
+  if (error) {
+    console.warn("favorite_count RPC failed", error);
+    return map;
+  }
+  if (!Array.isArray(data)) return map;
+  for (const row of data as { listing_id: string; favorite_count: number | string }[]) {
+    if (row?.listing_id == null) continue;
+    map.set(String(row.listing_id), Number(row.favorite_count ?? 0));
+  }
+  return map;
+}
+
+async function mergeFavoriteCounts(listings: ListingRow[]): Promise<ListingRow[]> {
+  if (listings.length === 0) return listings;
+  const countMap = await fetchListingFavoriteCounts(listings.map((l) => l.id));
+  return listings.map((l) => ({ ...l, favorite_count: countMap.get(l.id) ?? 0 }));
+}
+
+/** true, если RPC выполнился без ошибки (можно локально +1 к счётчику). */
+export async function incrementViews(listingId: string): Promise<boolean> {
   const { error } = await supabase.rpc("increment_listing_views", { listing: listingId });
   if (error && !isSchemaNotInCache(error)) {
     console.warn("increment_listing_views", error.message);
+    return false;
   }
+  return !error;
 }
 
 /** PostgREST иногда отдаёт `images` как null, один объект или массив — приводим к массиву. */
@@ -210,6 +361,7 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
 
 /** Приводим строку из Postgres numeric/json к числу для UI. */
 export function parseListingRow(data: Record<string, unknown>): ListingRow {
+  const fc = data.favorite_count;
   return {
     id: String(data.id),
     user_id: String(data.user_id),
@@ -228,6 +380,8 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     boosted_at: data.boosted_at != null ? String(data.boosted_at) : null,
     boosted_until: data.boosted_until != null ? String(data.boosted_until) : null,
     is_partner_ad: data.is_partner_ad === true,
+    is_boosted: data.is_boosted != null ? Boolean(data.is_boosted) : undefined,
+    favorite_count: fc != null && fc !== "" ? Number(fc) : undefined,
     images: normalizeListingImages(data.images),
   };
 }
@@ -243,7 +397,7 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
   try {
     let { data, error } = await supabase
       .from("listings")
-      .select("*, images:images(url, sort_order)")
+      .select("*, images:images(url)")
       .eq("id", listingId)
       .maybeSingle();
 
@@ -287,50 +441,113 @@ export async function fetchListingById(listingId: string): Promise<FetchListingD
   ]);
 }
 
+export type InsertListingRowResult = { id?: string; error?: string };
+
 /**
  * Создаёт строку в `listings`. `id` не передаём — задаётся в БД.
  * Требуется строка в `public.users` с тем же id (FK), иначе будет ошибка FK.
  */
-export async function insertListingRow(payload: ListingInsertPayload): Promise<string> {
-  const uid = payload.user_id?.trim();
-  if (!uid) {
-    console.error("SUPABASE_SAVE_ERROR: нет user_id — пользователь не в сессии");
-    throw new Error("Нет сессии. Войдите снова.");
-  }
+export async function insertListingRow(payload: ListingInsertPayload): Promise<InsertListingRowResult> {
+  console.log("CREATE LISTING START");
+  try {
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    console.log("USER", authData?.user);
+    if (authErr || !authData.user) {
+      console.error("CREATE LISTING ERROR", authErr);
+      const msg = "Не удалось создать объявление. Попробуй снова.";
+      console.log("CREATE LISTING RESULT", { error: msg });
+      return { error: msg };
+    }
+    const effectiveUserId = authData.user.id;
 
-  const priceNum = Number(payload.price);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    console.error("SUPABASE_SAVE_ERROR: price не число", payload.price);
-    throw new Error("Некорректная цена");
-  }
+    const payloadUid = payload.user_id?.trim();
+    if (payloadUid && payloadUid !== effectiveUserId) {
+      console.warn("LISTINGS_INSERT user_id payload !== JWT (используем JWT)", {
+        payload_user_id: payloadUid,
+        jwt_user_id: effectiveUserId,
+      });
+    }
 
-  const cityVal = payload.city.trim() || "Не указан";
-  const base = {
-    user_id: uid,
-    title: payload.title.trim(),
-    description: payload.description.trim(),
-    price: priceNum,
-    category: payload.category,
-  };
+    const priceNum = Number(payload.price);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      console.error("CREATE LISTING ERROR", payload.price);
+      const msg = "Не удалось создать объявление. Попробуй снова.";
+      console.log("CREATE LISTING RESULT", { error: msg });
+      return { error: msg };
+    }
 
-  let { data, error } = await supabase.from("listings").insert({ ...base, city: cityVal }).select("id").single();
+    const cityVal = payload.city.trim() || "Не указан";
+    const base = {
+      user_id: effectiveUserId,
+      title: payload.title.trim(),
+      description: payload.description.trim(),
+      price: priceNum,
+      category: payload.category,
+    };
 
-  const missingCity =
-    error?.code === "PGRST204" && typeof error.message === "string" && error.message.includes("'city'");
-  if (missingCity) {
-    console.warn("listings insert: в схеме нет city — пробуем колонку location");
-    const second = await supabase.from("listings").insert({ ...base, location: cityVal }).select("id").single();
-    data = second.data;
-    error = second.error;
-  }
+    const insertPayload = { ...base, city: cityVal };
+    console.log("INSERT PAYLOAD", insertPayload);
 
-  if (error) {
-    console.error("SUPABASE_SAVE_ERROR:", error);
-    throw error;
+    let { data, error } = await supabase.from("listings").insert([insertPayload]).select("id").single();
+    console.log("INSERT RESULT", data);
+    console.log("INSERT ERROR", error);
+    logRlsIfBlocked(error);
+
+    const dailyLimit =
+      error &&
+      (error.code === "23514" ||
+        (typeof error.message === "string" &&
+          (error.message.includes("LISTING_DAILY_LIMIT") || error.message.includes("Maximum 5 listings"))));
+    if (dailyLimit) {
+      const msg = "Не более 5 объявлений в сутки (UTC). Попробуй завтра.";
+      console.log("CREATE LISTING RESULT", { error: msg });
+      return { error: msg };
+    }
+
+    const missingCity =
+      error?.code === "PGRST204" && typeof error.message === "string" && error.message.includes("'city'");
+    if (missingCity) {
+      console.warn("listings insert: в схеме нет city — пробуем колонку location");
+      const payloadLoc = { ...base, location: cityVal };
+      console.log("INSERT PAYLOAD (location)", payloadLoc);
+      const second = await supabase.from("listings").insert([payloadLoc]).select("id").single();
+      data = second.data;
+      error = second.error;
+      console.log("INSERT RESULT", second.data);
+      console.log("INSERT ERROR", second.error);
+      logRlsIfBlocked(second.error);
+    }
+
+    if (error) {
+      console.error("CREATE LISTING ERROR", error);
+      const msg = "Не удалось создать объявление. Попробуй снова.";
+      console.log("CREATE LISTING RESULT", { error: msg });
+      return { error: msg };
+    }
+    if (!data?.id) {
+      console.error("CREATE LISTING ERROR: пустой ответ, нет id");
+      const msg = "Не удалось создать объявление. Попробуй снова.";
+      console.log("CREATE LISTING RESULT", { error: msg });
+      return { error: msg };
+    }
+
+    const { data: dupRows, error: dupErr } = await supabase
+      .from("listings")
+      .select("id")
+      .eq("user_id", effectiveUserId)
+      .eq("title", payload.title.trim())
+      .eq("description", payload.description.trim());
+    if (!dupErr && dupRows && dupRows.length >= 2) {
+      void decreaseTrust(effectiveUserId, 10);
+    }
+
+    const res: InsertListingRowResult = { id: data.id };
+    console.log("CREATE LISTING RESULT", res);
+    return res;
+  } catch (e) {
+    console.error("NETWORK CREATE LISTING ERROR", e);
+    const msg = e instanceof Error ? e.message : "Ошибка сети";
+    console.log("CREATE LISTING RESULT", { error: msg });
+    return { error: msg };
   }
-  if (!data?.id) {
-    console.error("SUPABASE_SAVE_ERROR: пустой ответ, нет id");
-    throw new Error("Объявление не создано (пустой ответ сервера)");
-  }
-  return data.id;
 }

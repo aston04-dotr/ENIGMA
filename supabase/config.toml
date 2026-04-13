@@ -1,0 +1,5 @@
+# Локальный Supabase CLI; project_id подставьте из Dashboard при необходимости.
+# Деплой функции: supabase functions deploy notify-new-message
+
+[functions.notify-new-message]
+verify_jwt = false

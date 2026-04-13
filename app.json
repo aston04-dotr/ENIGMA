@@ -1,30 +1,56 @@
 {
   "expo": {
-    "name": "Enigma",
-    "slug": "Enigma",
-    "version": "1.0.0",
+    "name": "ENIGMA",
+    "slug": "enigma",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "enigma",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1E1B4B"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.enigma.marketplace",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Запись голосовых сообщений в чате",
+        "NSCameraUsageDescription": "Съёмка фото для сообщений в чате",
+        "NSPhotoLibraryUsageDescription": "Выбор фото для сообщений в чате"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#1E1B4B"
       },
+      "package": "app.enigma.marketplace",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-image-picker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1E1B4B"
+        }
+      ],
+      "expo-av"
+    ],
+    "extra": {
+      "supabaseUrl": "https://jggpvjfvdvqmwaaqetqu.supabase.co"
     }
   }
 }
