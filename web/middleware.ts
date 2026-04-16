@@ -3,8 +3,6 @@ import { createServerClient } from "@supabase/ssr";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
 import { publicRequestUrl } from "@/lib/publicRequestUrl";
 
-const { url, anonKey } = getSupabasePublicConfig();
-
 function applyNoCacheHeaders(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.headers.set("Pragma", "no-cache");
@@ -16,6 +14,8 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/auth/phone") || request.nextUrl.pathname.startsWith("/auth/profile-setup")) {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
+
+  const { url, anonKey } = getSupabasePublicConfig();
 
   const response = NextResponse.next();
   applyNoCacheHeaders(response);

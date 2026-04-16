@@ -1,6 +1,12 @@
 import type { NextRequest } from "next/server";
 import { getRedirectSiteOrigin } from "@/lib/runtimeConfig";
 
+/** Заголовки вроде `X-Forwarded-Host: a, b` ломают `new URL(..., "https://a, b")`. */
+function firstHeaderValue(raw: string | null): string | null {
+  if (!raw?.trim()) return null;
+  return raw.split(",")[0]?.trim() ?? null;
+}
+
 function isInternalHost(host: string | null | undefined): boolean {
   if (!host?.trim()) return true;
   const h = host.toLowerCase();
@@ -12,8 +18,10 @@ function isInternalHost(host: string | null | undefined): boolean {
  * Host: localhost:3000 — тогда берём {@link getRedirectSiteOrigin}.
  */
 export function publicRequestUrl(request: NextRequest, pathname: string): URL {
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const host =
+    firstHeaderValue(request.headers.get("x-forwarded-host")) ??
+    firstHeaderValue(request.headers.get("host"));
+  const forwardedProto = firstHeaderValue(request.headers.get("x-forwarded-proto"));
   const proto =
     forwardedProto ??
     (host?.includes("localhost") || host?.startsWith("127.") ? "http" : "https");
@@ -24,5 +32,9 @@ export function publicRequestUrl(request: NextRequest, pathname: string): URL {
     return new URL(path, getRedirectSiteOrigin());
   }
 
-  return new URL(path, `${proto}://${host}`);
+  try {
+    return new URL(path, `${proto}://${host}`);
+  } catch {
+    return new URL(path, getRedirectSiteOrigin());
+  }
 }
