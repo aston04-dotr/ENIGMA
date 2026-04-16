@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
+import { publicRequestUrl } from "@/lib/publicRequestUrl";
 
 const { url, anonKey } = getSupabasePublicConfig();
 
@@ -13,7 +14,7 @@ function applyNoCacheHeaders(res: NextResponse) {
 
 export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/auth/phone") || request.nextUrl.pathname.startsWith("/auth/profile-setup")) {
-    return applyNoCacheHeaders(NextResponse.redirect(new URL("/", request.url)));
+    return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
 
   const response = NextResponse.next();
@@ -50,11 +51,11 @@ export async function middleware(request: NextRequest) {
     .some((cookie) => cookie.name.startsWith("sb-"));
 
   if (user && pathname === "/login") {
-    return applyNoCacheHeaders(NextResponse.redirect(new URL("/", request.url)));
+    return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
 
   if (!user && !isAuthPath && !hasSbCookie) {
-    return applyNoCacheHeaders(NextResponse.redirect(new URL("/login", request.url)));
+    return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/login")));
   }
 
   return response;
