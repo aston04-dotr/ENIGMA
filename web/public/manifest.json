@@ -2,12 +2,16 @@
   "name": "Enigma",
   "short_name": "Enigma",
   "description": "Объявления без лишнего шума",
+  "lang": "ru",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "browser", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#0E1114",
   "theme_color": "#0E1114",
+  "categories": ["shopping", "lifestyle"],
   "icons": [
     {
       "src": "/icons/icon-192.png",

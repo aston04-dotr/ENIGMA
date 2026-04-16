@@ -58,12 +58,15 @@ export function InstallPrompt() {
     <div
       className="fixed bottom-[calc(64px+env(safe-area-inset-bottom)+8px)] left-3 right-3 z-[60] rounded-card border border-line bg-elevated p-4 shadow-soft safe-pb md:max-w-md md:left-1/2 md:-translate-x-1/2"
       role="dialog"
+      aria-label="Установка веб-приложения"
     >
-      <p className="text-sm font-semibold leading-snug text-fg">Добавь Enigma на экран - как приложение.</p>
+      <p className="text-sm font-semibold leading-snug text-fg">Веб-версия Enigma — можно открывать в браузере или добавить на экран, как приложение.</p>
       {ios ? (
         <p className="mt-2 text-xs leading-relaxed text-muted">Safari: Поделиться → «На экран «Домой»»</p>
+      ) : deferred ? (
+        <p className="mt-2 text-xs leading-relaxed text-muted">Chrome / Edge: кнопка «Установить» — ярлык на рабочий стол или в меню «Пуск».</p>
       ) : null}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         {deferred ? (
           <button
             type="button"
@@ -78,7 +81,7 @@ export function InstallPrompt() {
           onClick={dismiss}
           className="pressable min-h-[48px] flex-1 rounded-card border border-line bg-elev-2 px-4 py-3 text-sm font-medium text-fg"
         >
-          Позже
+          Остаться в браузере
         </button>
       </div>
     </div>

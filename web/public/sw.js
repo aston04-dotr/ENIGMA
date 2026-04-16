@@ -1,5 +1,5 @@
 /* Enigma PWA — SWR для статики; HTML в fetch не кэшируется; API / Supabase — только сеть. */
-const CACHE_NAME = "enigma-v3";
+const CACHE_NAME = "enigma-v5";
 const MAX_ITEMS = 120;
 
 const SHELL = ["/", "/offline.html"];
