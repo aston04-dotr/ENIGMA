@@ -1,5 +1,6 @@
 import { isValidListingUuid } from "./listingParams";
 import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
+import { getListingsPageSize } from "./runtimeConfig";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import type { ListingInsertPayload, ListingRow } from "./types";
@@ -7,13 +8,13 @@ import type { ListingInsertPayload, ListingRow } from "./types";
 const LISTING_DETAIL_FETCH_MS = 5000;
 
 /** Размер страницы ленты (limit в fetchListings). */
-export const LISTINGS_PAGE_SIZE = 20;
+export const LISTINGS_PAGE_SIZE = getListingsPageSize();
 
 /** Курсор keyset: `created_at` не уникален — добавляем `id`. */
 export type FeedListingsCursor = { created_at: string; id: string };
 
 const FEED_SELECT =
-  "id,user_id,title,price,created_at,city,category,is_partner_ad,is_boosted,boosted_at,boosted_until,images(url,sort_order)";
+  "id,user_id,title,price,created_at,city,category,is_partner_ad,contact_phone,images(url,sort_order)";
 
 function quotePostgrestValue(v: string): string {
   return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -52,6 +53,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     is_boosted: data.is_boosted === true,
     boosted_at: data.boosted_at != null ? String(data.boosted_at) : null,
     boosted_until: data.boosted_until != null ? String(data.boosted_until) : null,
+    contact_phone: data.contact_phone != null ? String(data.contact_phone) : null,
     images: normalizeListingImages(data.images),
   };
 }
@@ -199,12 +201,6 @@ export async function fetchListings(filters: {
   /** Курсор следующей страницы (composite). Строковый legacy-курсор игнорируется. */
   cursor?: FeedListingsCursor | string | null;
 }): Promise<FetchListingsResult> {
-  console.log("FETCH LISTINGS START", filters);
-  console.log(
-    "SUPABASE URL env",
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? "(unset)"
-  );
-
   const demo = (notice: string): FetchListingsResult => ({
     listings: getDemoListings(),
     sqlSetupRequired: false,
@@ -252,16 +248,12 @@ export async function fetchListings(filters: {
       };
 
       let { data, error } = await mkQuery(false, true);
-      console.log("Listings data:", data);
-      console.log("Listings error:", error);
 
       if (isRealError(error) && !data && cursor) {
         console.warn("LISTINGS composite cursor query failed, fallback lt(created_at):", error);
         const second = await mkQuery(true, true);
         data = second.data;
         error = second.error;
-        console.log("Listings data:", data);
-        console.log("Listings error:", error);
       }
 
       if (isRealError(error) && !data && hasFilters) {
@@ -272,8 +264,6 @@ export async function fetchListings(filters: {
         }
         data = fallback.data;
         error = fallback.error;
-        console.log("Listings data:", data);
-        console.log("Listings error:", error);
       }
 
       return { data, error };
@@ -283,7 +273,7 @@ export async function fetchListings(filters: {
 
     if (isRealError(error) && !data) {
       console.error("REAL LISTINGS ERROR:", error.message);
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 200));
       const second = await runOnce();
       data = second.data;
       error = second.error;
@@ -306,7 +296,6 @@ export async function fetchListings(filters: {
         merged.length === LISTINGS_PAGE_SIZE && last
           ? { created_at: last.created_at, id: last.id }
           : null;
-      console.log("NEXT CURSOR:", nextCursor);
       return {
         listings: merged,
         sqlSetupRequired: false,
@@ -378,12 +367,9 @@ export async function fetchListingFavoriteCount(listingId: string): Promise<numb
     return cached?.value ?? 0;
   }
   try {
-    let { data, error } = await supabase.schema("public").rpc("listing_favorites_count", { listing: listingId });
-    if (error) {
-      const alt = await supabase.schema("public").rpc("listing_favorites_count", { listing_id: listingId });
-      data = alt.data;
-      error = alt.error;
-    }
+    const { data, error } = await supabase
+      .schema("public")
+      .rpc("listing_favorites_count", { listing_id_input: listingId });
     if (error) {
       favoriteSingleRpcUnavailableUntil = Date.now() + 15_000;
       if (process.env.NODE_ENV === "development") {
@@ -506,12 +492,13 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
 
   try {
     const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
-    if (userError || !user?.id) {
-      throw new Error(userError?.message || "not_authenticated");
+    if (sessionError || !user?.id) {
+      throw new Error(sessionError?.message || "not_authenticated");
     }
 
     if (next.isFavorited) {
@@ -550,7 +537,7 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
   }
 }
 
-/** Пакетно для ленты: id → count (объявления без строк в favorites получают 0). */
+/** Пакетно для ленты: id → count (объявления без строк в listing_favorites получают 0). */
 export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   const ids = [...new Set(listingIds.map((x) => String(x ?? "").trim()).filter(Boolean))];
@@ -566,12 +553,9 @@ export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<
     return map;
   }
   try {
-    let { data, error } = await supabase.schema("public").rpc("listing_favorites_counts", { p_ids: ids });
-    if (error) {
-      const alt = await supabase.schema("public").rpc("listing_favorites_counts", { listing_ids: ids });
-      data = alt.data;
-      error = alt.error;
-    }
+    const { data, error } = await supabase
+      .schema("public")
+      .rpc("listing_favorites_counts", { ids_input: ids });
     if (error) {
       favoritesCountsRpcUnavailableUntil = Date.now() + 15_000;
       if (process.env.NODE_ENV === "development") {
@@ -606,8 +590,11 @@ export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<
 
 async function mergeFavoriteCounts(listings: ListingRow[]): Promise<ListingRow[]> {
   if (listings.length === 0) return listings;
-  const countMap = await fetchListingFavoriteCounts(listings.map((l) => l.id));
-  return listings.map((l) => ({ ...l, favorite_count: countMap.get(l.id) ?? 0 }));
+  const countMap = await fetchListingFavoriteCounts(listings.map((listing) => listing.id));
+  return listings.map((listing) => ({
+    ...listing,
+    favorite_count: countMap.get(listing.id) ?? 0,
+  }));
 }
 
 /** true, если RPC выполнился без ошибки (можно локально +1 к счётчику). */
@@ -670,6 +657,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     is_partner_ad: data.is_partner_ad === true,
     is_boosted: data.is_boosted != null ? Boolean(data.is_boosted) : undefined,
     favorite_count: fc != null && fc !== "" ? Number(fc) : undefined,
+    contact_phone: data.contact_phone != null ? String(data.contact_phone) : null,
     images: normalizeListingImages(data.images),
   };
 }
@@ -740,14 +728,17 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
   
   try {
     // 1. GUARANTEE USER AUTHENTICATION
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const {
+      data: { session },
+      error: authErr,
+    } = await supabase.auth.getSession();
     
     if (authErr) {
       console.error("AUTH ERROR:", authErr.message);
       return { error: "Ошибка авторизации" };
     }
     
-    const user = authData?.user;
+    const user = session?.user;
     if (!user) {
       console.error("NO USER");
       return { error: "Вы не авторизованы" };
@@ -764,8 +755,10 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       price: priceNum,
       city: payload.city?.trim() || "Не указан",
       category: payload.category || "other",
+      contact_phone: payload.contact_phone || null,
     };
-    
+
+    console.log("INSERT PHONE:", payload.contact_phone);
     console.log("INSERT PAYLOAD:", insertPayload);
     
     // 3. VALIDATION BEFORE INSERT

@@ -164,26 +164,32 @@ function FeedPage({ session }: { session: Session }) {
     prefetchedRef.current = null;
     prefetchKeyRef.current = null;
     (async () => {
-      const res = await fetchListings(feedFilters);
-      if (cancelled) return;
-      const raw = Array.isArray(res.listings) ? res.listings : [];
-      setFeedNotice(res.notice ?? null);
-      if (res.error) {
-        console.error("LISTINGS FETCH ERROR", res.error);
-        setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
-        setItems(raw);
-        setNextCursor(res.nextCursor ?? null);
-        persistFeed(raw, res.nextCursor ?? null);
-        return;
+      try {
+        const res = await fetchListings(feedFilters);
+        if (cancelled) return;
+        const raw = Array.isArray(res.listings) ? res.listings : [];
+        setFeedNotice(res.notice ?? null);
+        if (res.error) {
+          console.error("LISTINGS FETCH ERROR", res.error);
+          setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
+          setItems(raw);
+          setNextCursor(res.nextCursor ?? null);
+          persistFeed(raw, res.nextCursor ?? null);
+          return;
+        }
+        prefetchedRef.current = null;
+        prefetchKeyRef.current = null;
+        setFeedError(null);
+        const mix = mixFeed(raw, session?.user?.id);
+        const serverNext = res.nextCursor ?? null;
+        setItems(mix);
+        setNextCursor(serverNext);
+        persistFeed(mix, serverNext);
+      } catch (e) {
+        if (cancelled) return;
+        console.error("LISTINGS INITIAL FETCH ERROR", e);
+        setFeedError(FETCH_ERROR_MESSAGE);
       }
-      prefetchedRef.current = null;
-      prefetchKeyRef.current = null;
-      setFeedError(null);
-      const mix = mixFeed(raw, session?.user?.id);
-      const serverNext = res.nextCursor ?? null;
-      setItems(mix);
-      setNextCursor(serverNext);
-      persistFeed(mix, serverNext);
     })();
     return () => {
       cancelled = true;
