@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { buildApiUrl } from "./runtimeConfig";
 
 /**
  * Magic link only — шаблон письма в Supabase: ссылка, не OTP.
@@ -11,7 +10,7 @@ export async function signIn(email: string) {
   const timeout = setTimeout(() => controller?.abort(), 12000);
 
   try {
-    const res = await fetch(buildApiUrl("/api/auth/magic-link"), {
+    const res = await fetch("/api/auth/magic-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: trimmed }),
