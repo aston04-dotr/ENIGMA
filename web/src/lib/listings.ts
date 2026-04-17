@@ -39,7 +39,7 @@ function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
 }
 
 function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
-  return {
+  const row: ListingRow = {
     id: String(data.id),
     user_id: String(data.user_id ?? ""),
     title: String(data.title ?? ""),
@@ -53,9 +53,11 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     is_boosted: data.is_boosted === true,
     boosted_at: data.boosted_at != null ? String(data.boosted_at) : null,
     boosted_until: data.boosted_until != null ? String(data.boosted_until) : null,
-    contact_phone: data.contact_phone != null ? String(data.contact_phone) : null,
     images: normalizeListingImages(data.images),
   };
+  (row as ListingRow & { contact_phone?: string | null }).contact_phone =
+    data.contact_phone != null ? String(data.contact_phone) : null;
+  return row;
 }
 
 export type FetchListingsResult = {
@@ -637,7 +639,7 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
 /** Приводим строку из Postgres numeric/json к числу для UI. */
 export function parseListingRow(data: Record<string, unknown>): ListingRow {
   const fc = data.favorite_count;
-  return {
+  const row: ListingRow = {
     id: String(data.id),
     user_id: String(data.user_id),
     title: String(data.title ?? ""),
@@ -657,9 +659,11 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     is_partner_ad: data.is_partner_ad === true,
     is_boosted: data.is_boosted != null ? Boolean(data.is_boosted) : undefined,
     favorite_count: fc != null && fc !== "" ? Number(fc) : undefined,
-    contact_phone: data.contact_phone != null ? String(data.contact_phone) : null,
     images: normalizeListingImages(data.images),
   };
+  (row as ListingRow & { contact_phone?: string | null }).contact_phone =
+    data.contact_phone != null ? String(data.contact_phone) : null;
+  return row;
 }
 
 export type FetchListingDetailResult = {
@@ -748,6 +752,8 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     
     // 2. FORM CLEAN PAYLOAD
     const priceNum = Number(payload.price);
+    const payloadContactPhone = (payload as ListingInsertPayload & { contact_phone?: string | null })
+      .contact_phone;
     const insertPayload = {
       user_id: user.id,
       title: payload.title?.trim() || "",
@@ -755,10 +761,10 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       price: priceNum,
       city: payload.city?.trim() || "Не указан",
       category: payload.category || "other",
-      contact_phone: payload.contact_phone || null,
+      contact_phone: payloadContactPhone || null,
     };
 
-    console.log("INSERT PHONE:", payload.contact_phone);
+    console.log("INSERT PHONE:", payloadContactPhone);
     console.log("INSERT PAYLOAD:", insertPayload);
     
     // 3. VALIDATION BEFORE INSERT
