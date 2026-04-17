@@ -1,5 +1,5 @@
 /* Enigma PWA — SWR для статики; HTML в fetch не кэшируется; API / Supabase — только сеть. */
-const CACHE_NAME = "enigma-v5";
+const CACHE_NAME = "enigma-v6";
 const MAX_ITEMS = 120;
 
 const SHELL = ["/", "/offline.html"];
@@ -11,7 +11,7 @@ function logFetch(url) {
   if (SW_DEV) console.log("SW FETCH:", url);
 }
 
-function fetchWithTimeout(request, timeout = 3000) {
+function fetchWithTimeout(request, timeout = 12000) {
   return Promise.race([
     fetch(request),
     new Promise((_, reject) => setTimeout(() => reject("timeout"), timeout)),
@@ -126,7 +126,7 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetchWithTimeout(request, 3000)
+      fetchWithTimeout(request, 12000)
         .then((res) => res)
         .catch(() =>
           caches.match("/offline.html").then(
