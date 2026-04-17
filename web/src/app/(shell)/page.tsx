@@ -71,31 +71,19 @@ function mixFeed(rows: ListingRow[], userId?: string) {
 }
 
 export default function HomePage() {
-  const { session } = useAuth();
-  const [mounted, setMounted] = useState(false);
+  const { session, loading } = useAuth();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  if (loading && !session?.user) {
+    return <LandingScreen />;
+  }
+
+  if (!session?.user) {
+    return <LandingScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-main">
-      <div
-        className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b0f14] px-6"
-        style={{ display: mounted ? "none" : "flex" }}
-      >
-        <div className="text-center">
-          <h1 className="text-[54px] font-extrabold uppercase tracking-[0.35em] text-transparent bg-clip-text bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee]">
-            ENIGMA
-          </h1>
-        </div>
-      </div>
-      <div style={{ display: mounted && !session?.user ? "block" : "none" }}>
-        <LandingScreen />
-      </div>
-      <div style={{ display: mounted && session?.user ? "block" : "none" }}>
-        {session && <FeedPage session={session} />}
-      </div>
+      <FeedPage session={session} />
     </div>
   );
 }
