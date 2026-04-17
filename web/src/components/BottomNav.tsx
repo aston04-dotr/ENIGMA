@@ -4,7 +4,6 @@ import { IconChat, IconHome, IconPlus, IconUser } from "@/components/NavIcons";
 import { useAuth } from "@/context/auth-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { MouseEvent } from "react";
 
 const tabs = [
   { href: "/", label: "Лента", Icon: IconHome },
@@ -16,15 +15,6 @@ const tabs = [
 export function BottomNav() {
   const { session, loading } = useAuth();
   const pathname = usePathname();
-
-  const onTabClick = (e: MouseEvent<HTMLAnchorElement>, href: string) => {
-    // Жёсткий переход для стабильности: если клиентская навигация/префетч залипли,
-    // профиль всё равно откроется.
-    if (href === "/profile") {
-      e.preventDefault();
-      window.location.assign("/profile");
-    }
-  };
 
   if (loading) return null;
   if (!session?.user) return null;
@@ -44,8 +34,7 @@ export function BottomNav() {
           <Link
             key={t.href}
             href={t.href}
-            prefetch={false}
-            onClick={(e) => onTabClick(e, t.href)}
+            prefetch
             className={`pressable flex min-h-[48px] min-w-[52px] flex-1 flex-col items-center justify-center gap-1 pt-1 text-[10px] font-medium tracking-wide transition-colors duration-ui ${
               active ? "text-accent" : "text-muted"
             }`}
