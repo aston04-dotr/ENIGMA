@@ -1,44 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
 export function LandingScreen({ minimal = false }: { minimal?: boolean }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Всегда рендерим одинаковую структуру - сервер и клиент идентичны
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b0f14] px-6">
-      {/* SSR placeholder - всегда рендерится, прячется через opacity */}
-      <div className="text-center" style={{ opacity: mounted ? 0 : 1, position: mounted ? 'absolute' : 'static', transition: 'opacity 200ms' }}>
-        <h1 className="text-[54px] font-extrabold uppercase tracking-[0.35em] text-transparent bg-clip-text bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee]">
+      <div className="landing-glow pointer-events-none absolute h-[340px] w-[340px] rounded-full bg-[radial-gradient(circle,rgba(139,95,255,0.28)_0%,rgba(34,211,238,0.12)_38%,rgba(11,15,20,0)_72%)] blur-2xl" />
+      <div className="landing-content relative z-10 flex w-full max-w-md flex-col items-center text-center">
+        <h1 className="landing-logo bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[54px] font-extrabold uppercase leading-none tracking-[0.35em] text-transparent sm:text-[64px]">
           ENIGMA
         </h1>
-      </div>
-      {/* Real content - показывается после mount */}
-      <div style={{ opacity: mounted ? 1 : 0, transition: 'opacity 200ms', pointerEvents: mounted ? 'auto' : 'none' }}>
-        <div className="landing-glow pointer-events-none absolute h-[340px] w-[340px] rounded-full bg-[radial-gradient(circle,rgba(139,95,255,0.28)_0%,rgba(34,211,238,0.12)_38%,rgba(11,15,20,0)_72%)] blur-2xl" />
-        <div className="landing-content relative z-10 flex w-full max-w-md flex-col items-center text-center">
-          <h1 className="landing-logo bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[54px] font-extrabold uppercase leading-none tracking-[0.35em] text-transparent sm:text-[64px]">
-            ENIGMA
-          </h1>
-          {!minimal && (
-            <>
-              <p className="landing-subtitle mt-5 text-sm font-medium tracking-[0.08em] text-[#95a1ad]">Объявления нового уровня</p>
-              <Link
-                href="/login"
-                prefetch
-                className="landing-button pressable mt-10 inline-flex min-h-[56px] min-w-[220px] items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] px-8 text-base font-extrabold text-white shadow-[0_14px_40px_rgba(139,92,246,0.42)] transition-transform duration-200 hover:scale-[1.04] active:scale-[0.98]"
-              >
-                Войти
-              </Link>
-            </>
-          )}
-        </div>
+        {!minimal && (
+          <>
+            <p className="landing-subtitle mt-5 text-sm font-medium tracking-[0.08em] text-[#95a1ad]">Объявления нового уровня</p>
+            <Link
+              href="/login"
+              prefetch
+              className="landing-button pressable mt-10 inline-flex min-h-[56px] min-w-[220px] items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] px-8 text-base font-extrabold text-white shadow-[0_14px_40px_rgba(139,92,246,0.42)] transition-transform duration-200 hover:scale-[1.04] active:scale-[0.98]"
+            >
+              Войти
+            </Link>
+          </>
+        )}
       </div>
       <style jsx>{`
         .landing-logo {
