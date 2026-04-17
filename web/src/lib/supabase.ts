@@ -3,15 +3,14 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabasePublicConfig } from "./runtimeConfig";
-import type { Database } from "./supabase.types";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
 
-let browserClient: SupabaseClient<Database> | null = null;
+let browserClient: SupabaseClient | null = null;
 
-function getBrowserSupabaseClient(): SupabaseClient<Database> {
+function getBrowserSupabaseClient(): SupabaseClient {
   if (!browserClient) {
-    browserClient = createBrowserClient<Database>(url, anonKey);
+    browserClient = createBrowserClient(url, anonKey);
   }
   return browserClient;
 }
