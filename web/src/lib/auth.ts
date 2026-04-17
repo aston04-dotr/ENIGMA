@@ -17,15 +17,19 @@ export async function signIn(email: string) {
       signal: controller?.signal,
     });
 
-    let payload: { ok?: boolean; error?: string } = {};
+    let payload: { ok?: boolean; error?: string } | null = null;
     try {
       payload = (await res.json()) as { ok?: boolean; error?: string };
     } catch {
-      /* ignore json parse */
+      payload = null;
     }
 
-    if (!res.ok || payload.ok === false) {
-      return { error: { message: payload.error || "Не удалось отправить ссылку. Попробуйте ещё раз." } };
+    if (!res.ok || !payload || payload.ok !== true) {
+      return {
+        error: {
+          message: payload?.error || "Не удалось отправить ссылку. Попробуйте ещё раз.",
+        },
+      };
     }
 
     return { error: null };

@@ -20,6 +20,13 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   applyNoCacheHeaders(response);
   const pathname = request.nextUrl.pathname;
+  const isApiPath = pathname.startsWith("/api/");
+
+  // API-роуты не должны получать редирект на /login из middleware.
+  // Иначе публичные POST (например, /api/auth/magic-link) ломаются у гостей.
+  if (isApiPath) {
+    return response;
+  }
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
