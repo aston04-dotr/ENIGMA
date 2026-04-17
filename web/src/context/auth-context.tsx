@@ -206,7 +206,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Оптимистично чистим UI-сессию сразу, чтобы не было «мигания» профиля.
+    setSession(null);
+    setProfile(null);
+    setProfileResolved(true);
+    setProfileLoading(false);
+    setAuthResolved(true);
+    setLoading(false);
+    setReady(true);
+
+    try {
+      // Сначала global: чтобы все вкладки/устройства этой сессии вышли.
+      await supabase.auth.signOut({ scope: "global" });
+    } catch (e) {
+      console.warn("[auth-context] signOut global failed, fallback to local", e);
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (localErr) {
+        console.warn("[auth-context] signOut local failed", localErr);
+      }
+    }
+
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const keys = Object.keys(window.localStorage);
+        for (const key of keys) {
+          if (key.startsWith("sb-")) {
+            window.localStorage.removeItem(key);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[auth-context] localStorage clear failed", e);
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.replace("/login?signed_out=1");
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {

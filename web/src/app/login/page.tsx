@@ -32,6 +32,10 @@ export default function LoginPage() {
     }
     if (search.get("deleted") === "1") {
       setBanner("Аккаунт удалён");
+      return;
+    }
+    if (search.get("signed_out") === "1") {
+      setBanner("Вы вышли из аккаунта");
     }
   }, []);
 
@@ -71,6 +75,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-main px-6 pb-12 pt-[max(2rem,env(safe-area-inset-top))]">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-accent/80">ENIGMA</p>
       <Link href="/" className="mb-10 text-sm font-medium text-accent transition-colors duration-ui hover:text-accent-hover">
         ← Лента
       </Link>
@@ -106,7 +111,7 @@ export default function LoginPage() {
         disabled={loading}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "…" : "Получить ссылку"}
+        {loading ? "…" : "Отправить ссылку"}
       </button>
     </main>
   );

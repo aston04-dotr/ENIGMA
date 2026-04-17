@@ -1,25 +1,21 @@
 "use client";
 
-import { createClient } from "./supabaseClient";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabasePublicConfig } from "./runtimeConfig";
+import type { Database } from "./supabase.types";
 
-const supabaseConfig = getSupabasePublicConfig();
-const rawUrl = supabaseConfig.url;
-export const isSupabaseConfigured = supabaseConfig.configured;
+const { url, anonKey, configured } = getSupabasePublicConfig();
 
-if (!isSupabaseConfigured) {
-  console.error(
-    "[Supabase] Missing env: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY " +
-      "(or EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY). App runs in offline-safe mode."
-  );
+let browserClient: SupabaseClient<Database> | null = null;
+
+function getBrowserSupabaseClient(): SupabaseClient<Database> {
+  if (!browserClient) {
+    browserClient = createBrowserClient<Database>(url, anonKey);
+  }
+  return browserClient;
 }
 
-if (isSupabaseConfigured && !rawUrl.startsWith("https://")) {
-  console.error("[Supabase] Invalid URL (must start with https://):", rawUrl.slice(0, 24) + "…");
-}
+export const supabase = getBrowserSupabaseClient();
 
-if (process.env.NODE_ENV === "development") {
-  console.log("[Supabase] URL configured:", isSupabaseConfigured ? "yes" : "dev-fallback");
-}
-
-export const supabase = createClient();
+export const isSupabaseConfigured = configured;
