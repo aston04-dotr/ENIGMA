@@ -27,13 +27,18 @@ export async function POST(request: Request) {
     });
 
     const redirectTo = `${getSiteOrigin()}/auth/callback`;
-    const { error } = await supabase.auth.signInWithOtp({
+    const authPromise = supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: redirectTo,
         shouldCreateUser: true,
       },
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("magic_link_timeout")), 10_000)
+    );
+
+    const { error } = await Promise.race([authPromise, timeoutPromise]);
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 400 });

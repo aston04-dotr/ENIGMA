@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getSiteOrigin } from "./runtimeConfig";
 
 /**
  * Magic link only — шаблон письма в Supabase: ссылка, не OTP.
@@ -7,7 +8,7 @@ import { supabase } from "./supabase";
 export async function signIn(email: string) {
   const trimmed = email.trim().toLowerCase();
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeout = setTimeout(() => controller?.abort(), 12000);
+  const timeout = setTimeout(() => controller?.abort(), 10_000);
 
   try {
     const res = await fetch("/api/auth/magic-link", {
@@ -25,20 +26,41 @@ export async function signIn(email: string) {
     }
 
     if (!res.ok || !payload || payload.ok !== true) {
-      return {
-        error: {
-          message: payload?.error || "Не удалось отправить ссылку. Попробуйте ещё раз.",
+      // Fallback: если API недоступен, пробуем прямой вызов Supabase из браузера.
+      const direct = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: {
+          emailRedirectTo: `${getSiteOrigin()}/auth/callback`,
+          shouldCreateUser: true,
         },
-      };
+      });
+      if (!direct.error) {
+        return { error: null };
+      }
+      return { error: { message: payload?.error || direct.error.message || "Не удалось отправить ссылку. Попробуйте ещё раз." } };
     }
 
     return { error: null };
   } catch (e) {
-    const msg =
-      e instanceof Error && e.name === "AbortError"
-        ? "Превышено время ожидания. Проверьте интернет и повторите."
-        : "Не удалось отправить ссылку. Проверьте интернет и повторите.";
-    return { error: { message: msg } };
+    try {
+      const direct = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: {
+          emailRedirectTo: `${getSiteOrigin()}/auth/callback`,
+          shouldCreateUser: true,
+        },
+      });
+      if (!direct.error) {
+        return { error: null };
+      }
+      return { error: { message: direct.error.message } };
+    } catch {
+      const msg =
+        e instanceof Error && e.name === "AbortError"
+          ? "Превышено время ожидания. Проверьте интернет и повторите."
+          : "Не удалось отправить ссылку. Проверьте интернет и повторите.";
+      return { error: { message: msg } };
+    }
   } finally {
     clearTimeout(timeout);
   }
