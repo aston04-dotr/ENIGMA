@@ -4,9 +4,13 @@ import { supabase } from "./supabase";
 
 /** First login: `profiles` + minimal `public.users` row (FK for listings/chats). */
 export async function ensureProfileAndUserRow(user: User): Promise<void> {
-  const email = user.email?.trim() || null;
+  const { data: authData } = await supabase.auth.getUser();
+  const authUser = authData.user;
+  if (!authUser) return;
+  console.log("UPSERT USER ID:", authUser.id);
+  const email = authUser.email?.trim() || null;
 
-  const { error: pErr } = await supabase.from("profiles").upsert({ id: user.id, email }, { onConflict: "id" });
+  const { error: pErr } = await supabase.from("profiles").upsert({ id: authUser.id, email }, { onConflict: "id" });
   if (pErr && !isSchemaNotInCache(pErr)) {
     if (process.env.NODE_ENV === "development") console.warn("profiles upsert", pErr.message);
   }

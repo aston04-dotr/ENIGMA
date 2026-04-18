@@ -4,9 +4,8 @@ import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
-import { deleteAccount } from "@/lib/deleteAccount";
-import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import { supabase } from "@/lib/supabase";
+import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -137,14 +136,22 @@ export default function ProfilePage() {
   async function onConfirmDelete() {
     setDeleteErr(null);
     setDeleting(true);
-    const res = await deleteAccount();
-    setDeleting(false);
-    setConfirmOpen(false);
-    if (!res.ok) {
-      setDeleteErr(res.error ?? "Не удалось удалить аккаунт");
-      return;
+    try {
+      const { error } = await supabase.rpc('delete_my_account');
+      if (error) {
+        console.error("delete_my_account error", error);
+        setDeleteErr(error.message ?? "Не удалось удалить аккаунт");
+        return;
+      }
+      await supabase.auth.signOut();
+      router.push('/login');
+    } catch (e) {
+      console.error("onConfirmDelete error", e);
+      setDeleteErr("Неожиданная ошибка при удалении аккаунта");
+    } finally {
+      setDeleting(false);
+      setConfirmOpen(false);
     }
-    router.replace("/login?deleted=1");
   }
 
   function mapProfilePhoneError(err: { message?: string; code?: string; details?: string }): string {
@@ -204,10 +211,19 @@ export default function ProfilePage() {
     }
 
     if (!updated && normalized) {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData.user;
+      if (!authUser) {
+        setPhoneSaving(false);
+        setPhoneMessage("Сессия истекла. Войдите снова");
+        return;
+      }
+      console.log("UPSERT USER ID:", authUser.id);
+
       const { error: insErr } = await supabase.from("profiles").upsert(
         {
-          id: uid,
-          email: session.user.email ?? null,
+          id: authUser.id,
+          email: authUser.email ?? null,
           phone: normalized,
           phone_updated_at: now,
           updated_at: now,
@@ -229,12 +245,15 @@ export default function ProfilePage() {
   }
 
   async function saveName() {
-    if (!session?.user?.id) return;
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+    if (!authUser) return;
+    console.log("UPSERT USER ID:", authUser.id);
     setNameSaving(true);
     setNameMessage(null);
     const { error } = await supabase.from("profiles").upsert(
       {
-        id: session.user.id,
+        id: authUser.id,
         name: nameInput.trim() || null,
         updated_at: new Date().toISOString(),
       },
@@ -861,22 +880,22 @@ export default function ProfilePage() {
             <p className="mt-3 text-sm leading-relaxed text-muted">
               Вы уверены? Это действие нельзя отменить. Данные будут удалены; блокировки и ограничения платформы сохраняются.
             </p>
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => void onConfirmDelete()}
-                className="pressable min-h-[48px] flex-1 rounded-card bg-danger/90 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {deleting ? "…" : "Удалить"}
-              </button>
+            <div className="mt-6 flex gap-3">
               <button
                 type="button"
                 disabled={deleting}
                 onClick={() => setConfirmOpen(false)}
-                className="pressable min-h-[48px] flex-1 rounded-card border border-line px-4 py-3 text-sm font-medium text-fg"
+                className="pressable min-h-[48px] flex-1 rounded-card border border-line bg-transparent px-4 py-3 text-sm font-medium text-fg disabled:opacity-50"
               >
                 Отмена
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void onConfirmDelete()}
+                className="pressable min-h-[48px] flex-1 rounded-card bg-danger px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {deleting ? "Удаление…" : "Удалить"}
               </button>
             </div>
           </div>

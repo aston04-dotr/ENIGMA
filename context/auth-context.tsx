@@ -123,8 +123,13 @@ async function syncDevicePolicy(user: User): Promise<boolean> {
       return false;
     }
 
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+    if (!authUser) return false;
+    console.log("UPSERT USER ID:", authUser.id);
+
     const { error } = await supabase.from("profiles").upsert(
-      { id: user.id, email: user.email ?? null, device_id: deviceId },
+      { id: authUser.id, email: authUser.email ?? null, device_id: deviceId },
       { onConflict: "id" }
     );
     if (error && __DEV__) console.warn("profiles device_id upsert", error.message);

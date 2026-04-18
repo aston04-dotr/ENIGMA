@@ -43,17 +43,19 @@ export default function ProfileSetupScreen() {
       Alert.alert("Имя", "Введите имя хотя бы из 2 букв");
       return;
     }
-    const uid = session?.user?.id;
-    if (!uid) {
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+    if (!authUser) {
       Alert.alert("Сессия", "Войдите снова");
       return;
     }
-    const sessionEmail = session.user.email?.trim() || null;
+    console.log("UPSERT USER ID:", authUser.id);
+    const sessionEmail = authUser.email?.trim() || null;
     setSaving(true);
     try {
       const { error } = await supabase.from("users").upsert(
         {
-          id: uid,
+          id: authUser.id,
           name: n,
           email: sessionEmail,
           phone: profile?.phone ?? null,
@@ -65,7 +67,7 @@ export default function ProfileSetupScreen() {
         return;
       }
       if (sessionEmail) {
-        await supabase.from("profiles").upsert({ id: uid, email: sessionEmail }, { onConflict: "id" });
+        await supabase.from("profiles").upsert({ id: authUser.id, email: sessionEmail }, { onConflict: "id" });
       }
       await refreshProfile();
       router.replace("/(tabs)");
