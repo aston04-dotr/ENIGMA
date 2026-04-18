@@ -15,7 +15,7 @@ export async function ensureProfileAndUserRow(user: User): Promise<void> {
     if (__DEV__) console.warn("profiles upsert", pErr.message);
   }
 
-  const { error: uErr } = await supabase.from("users").upsert({ id: user.id, email }, { onConflict: "id" });
+  const { error: uErr } = await supabase.from("users").upsert({ id: authUser.id, email }, { onConflict: "id" });
   if (uErr && !isSchemaNotInCache(uErr)) {
     if (__DEV__) console.warn("users upsert", uErr.message);
   }

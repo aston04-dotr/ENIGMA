@@ -50,9 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [needsProfileSetup] = useState(false);
 
   const ensureProfileExists = useCallback(async (userId: string, email?: string | null) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("SKIP UPSERT: no user");
+      return;
+    }
+    console.log("UPSERT USER ID:", user.id);
     const { error } = await supabase
       .from("profiles")
-      .upsert({ id: userId, email: email ?? null }, { onConflict: "id" });
+      .upsert({ id: user.id, email: email ?? null }, { onConflict: "id" });
     if (error) {
       console.warn("profiles upsert", error);
     }

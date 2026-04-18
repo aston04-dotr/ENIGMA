@@ -21,8 +21,8 @@ export async function ensureProfileAndUserRow(user: User): Promise<void> {
     upsert: (
       values: Record<string, unknown>,
       options?: { onConflict?: string }
-    ) => Promise<{ error: { message?: string } | null }>;
-  })("users").upsert({ id: user.id, email }, { onConflict: "id" });
+    ) => Promise<{ error: { message?: string } | null }> ;
+  })("users").upsert({ id: authUser.id, email }, { onConflict: "id" });
   const typedUErr = uErr as { message?: string; code?: string } | null;
   if (typedUErr && !isSchemaNotInCache(typedUErr as never)) {
     if (process.env.NODE_ENV === "development") console.warn("users upsert", typedUErr.message);
