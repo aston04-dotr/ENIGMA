@@ -5,8 +5,24 @@ import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
+
+const RESEND_COOLDOWN_MS = 60_000;
+
+function humanizeMagicLinkError(raw: string): string {
+  const t = raw.toLowerCase();
+  if (t.includes("security purposes") || t.includes("rate limit") || t.includes("too many")) {
+    return "Слишком частые запросы. Подождите минуту и нажмите «Отправить снова».";
+  }
+  if (t.includes("invalid") && t.includes("email")) {
+    return "Проверьте адрес почты и попробуйте снова.";
+  }
+  if (raw === "magic_link_timeout" || t.includes("timeout") || t.includes("network")) {
+    return "Не дождались ответа сервера. Проверьте интернет и повторите.";
+  }
+  return raw.length > 200 ? "Не удалось отправить письмо. Попробуйте ещё раз." : raw;
+}
 
 export default function LoginPage() {
   const { session, ready } = useAuth();
@@ -17,6 +33,8 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [sent, setSent] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [, bumpCooldownUi] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     if (consumeAccessDeniedMessage()) {
@@ -39,6 +57,11 @@ export default function LoginPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return;
+    const id = window.setInterval(() => bumpCooldownUi(), 1000);
+    return () => window.clearInterval(id);
+  }, [cooldownUntil]);
 
   // Редирект если уже вошёл
   useEffect(() => {
@@ -47,6 +70,9 @@ export default function LoginPage() {
     }
   }, [ready, session, router]);
 
+  const cooldownLeftSec = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  const canSendNow = cooldownLeftSec === 0;
+
   async function send() {
     setErr("");
     const em = email.trim().toLowerCase();
@@ -54,19 +80,26 @@ export default function LoginPage() {
       setErr("Введите корректный email");
       return;
     }
+    if (!canSendNow) return;
     setLoading(true);
     const { error } = await signInWithMagicLink(em);
     setLoading(false);
     if (error) {
-      const msg = error.message;
-      if (msg.includes("security purposes")) {
-        setErr("Письмо уже отправлено. Проверь почту 👌");
+      const raw = error.message;
+      const rateLimited =
+        raw.toLowerCase().includes("security purposes") ||
+        raw.toLowerCase().includes("rate limit") ||
+        raw.toLowerCase().includes("too many");
+      if (rateLimited) {
+        setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
+        setErr("Письмо уже отправляли недавно. Проверьте почту или подождите минуту.");
         return;
       }
-      setErr(msg);
+      setErr(humanizeMagicLinkError(raw));
       return;
     }
     setSent(true);
+    setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
   }
 
   function onPrimaryClick() {
@@ -103,16 +136,30 @@ export default function LoginPage() {
       />
       {err ? <p className="mt-3 text-sm font-medium text-danger">{err}</p> : null}
       {sent ? (
-        <p className="mt-6 text-sm font-medium text-accent">Проверьте почту и откройте ссылку.</p>
+        <p className="mt-6 text-sm font-medium text-accent">
+          Проверьте почту и откройте ссылку в этом браузере. Обычно письмо приходит за 5–30 секунд.
+        </p>
+      ) : null}
+      {loading ? (
+        <p className="mt-4 text-sm text-muted" aria-live="polite">
+          Отправляем письмо… Поле email можно исправить до следующей попытки.
+        </p>
       ) : null}
       <button
         type="button"
         onClick={onPrimaryClick}
-        disabled={loading}
+        disabled={loading || !canSendNow}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "…" : "Отправить ссылку"}
+        {loading ? "Отправка…" : sent ? "Отправить снова" : "Отправить ссылку"}
       </button>
+      {(sent || err) && !loading ? (
+        <p className="mt-3 text-center text-xs text-muted">
+          {canSendNow
+            ? "Можно запросить письмо ещё раз."
+            : `Повторная отправка через ${cooldownLeftSec} с (защита от спама).`}
+        </p>
+      ) : null}
     </main>
   );
 }

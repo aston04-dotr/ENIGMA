@@ -5,6 +5,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { deleteAccount } from "@/lib/deleteAccount";
+import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
+import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -16,19 +18,6 @@ type PackageInfo = {
   price: number;
   perAd: number;
 };
-
-/** Форматирование номера телефона для отображения */
-function formatPhoneDisplay(phone: string | null | undefined): string {
-  if (!phone) return "";
-  
-  // Российский формат +7XXXXXXXXXX
-  if (phone.startsWith("+7") && phone.length === 12) {
-    return `+7 (${phone.slice(2, 5)}) ${phone.slice(5, 8)}-${phone.slice(8, 10)}-${phone.slice(10, 12)}`;
-  }
-  
-  // Международный формат - оставляем как есть
-  return phone;
-}
 
 /** Форматирование цены с пробелами и разделителем */
 function formatPrice(value: number): string {
@@ -113,7 +102,7 @@ function calculateCustomPrice(type: string, quantity: number): { total: number; 
 }
 
 export default function ProfilePage() {
-  const { session, profile, signOut, authResolved, loading } = useAuth();
+  const { session, profile, signOut, authResolved, loading, refreshProfile } = useAuth();
   const { theme, mounted } = useTheme();
   // Use dark as default for SSR consistency, switch after mount
   const isDark = mounted ? theme === "dark" : true;
@@ -125,11 +114,25 @@ export default function ProfilePage() {
   const [customQuantity, setCustomQuantity] = useState<string>("");
   const [customType, setCustomType] = useState<string>("general");
   const [isCustom, setIsCustom] = useState<boolean>(false);
+  const [nameInput, setNameInput] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameMessage, setNameMessage] = useState<string | null>(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneMessage, setPhoneMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authResolved || loading) return;
     if (!session) router.replace("/login");
   }, [session, router, authResolved, loading]);
+
+  useEffect(() => {
+    setNameInput(profile?.name ?? "");
+  }, [profile?.name]);
+
+  useEffect(() => {
+    setPhoneInput(profile?.phone ?? "");
+  }, [profile?.phone]);
 
   async function onConfirmDelete() {
     setDeleteErr(null);
@@ -142,6 +145,108 @@ export default function ProfilePage() {
       return;
     }
     router.replace("/login?deleted=1");
+  }
+
+  function mapProfilePhoneError(err: { message?: string; code?: string; details?: string }): string {
+    const m = (err.message ?? "").toLowerCase();
+    const raw = err.message ?? "";
+    if (raw.includes("PHONE_CHANGE_TOO_SOON") || m.includes("phone_change_too_soon")) {
+      return "Номер недавно меняли. Следующая смена через 60 дней.";
+    }
+    if (m.includes("duplicate") || m.includes("unique_phone") || m.includes("profiles_phone")) {
+      return "Этот номер уже привязан к другому аккаунту.";
+    }
+    if (m.includes("row-level security") || err.code === "42501") {
+      return "Нет прав на сохранение. Выйдите и войдите снова.";
+    }
+    return raw || "Не удалось сохранить телефон";
+  }
+
+  async function savePhone() {
+    if (!session?.user?.id) return;
+    const raw = phoneInput.trim();
+    const normalized = raw ? normalizeRussianPhone(phoneInput) : null;
+    if (raw && !normalized) {
+      setPhoneMessage("Некорректный формат. Нужен мобильный РФ: +7 и 10 цифр.");
+      return;
+    }
+    if (raw && !isValidRussianPhone(phoneInput)) {
+      setPhoneMessage("Проверьте номер: должно быть +7 и 10 цифр после кода страны.");
+      return;
+    }
+
+    setPhoneSaving(true);
+    setPhoneMessage(null);
+    const uid = session.user.id;
+    const now = new Date().toISOString();
+    const t0 = typeof performance !== "undefined" ? performance.now() : 0;
+    console.log("[profile] phone:update:start", {
+      userId: `${uid.slice(0, 8)}…`,
+      digitsLen: normalized?.replace(/\D/g, "").length ?? 0,
+    });
+
+    const { data: updated, error } = await supabase
+      .from("profiles")
+      .update({
+        phone: normalized,
+        phone_updated_at: normalized ? now : null,
+        updated_at: now,
+      })
+      .eq("id", uid)
+      .select("id, phone")
+      .maybeSingle();
+
+    if (error) {
+      console.error("[profile] phone:update:error", error);
+      setPhoneSaving(false);
+      setPhoneMessage(mapProfilePhoneError(error));
+      return;
+    }
+
+    if (!updated && normalized) {
+      const { error: insErr } = await supabase.from("profiles").upsert(
+        {
+          id: uid,
+          email: session.user.email ?? null,
+          phone: normalized,
+          phone_updated_at: now,
+          updated_at: now,
+        },
+        { onConflict: "id" }
+      );
+      if (insErr) {
+        console.error("[profile] phone:upsert:error", insErr);
+        setPhoneSaving(false);
+        setPhoneMessage(mapProfilePhoneError(insErr));
+        return;
+      }
+    }
+
+    console.log("[profile] phone:update:ok", { ms: t0 ? Math.round(performance.now() - t0) : 0 });
+    setPhoneSaving(false);
+    await refreshProfile();
+    setPhoneMessage(normalized ? "Телефон сохранён" : "Телефон очищен");
+  }
+
+  async function saveName() {
+    if (!session?.user?.id) return;
+    setNameSaving(true);
+    setNameMessage(null);
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: session.user.id,
+        name: nameInput.trim() || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+    setNameSaving(false);
+    if (error) {
+      setNameMessage(error.message || "Не удалось сохранить имя");
+      return;
+    }
+    await refreshProfile();
+    setNameMessage("Имя сохранено");
   }
 
   if (!session) {
@@ -159,44 +264,65 @@ export default function ProfilePage() {
         <p className="text-sm text-muted">Доверие: {profile.trust_score}</p>
       ) : null}
 
+      <div className={`mt-4 rounded-[16px] p-4 border ${
+        !profile?.name
+          ? (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
+          : (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
+      }`}>
+        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Имя</p>
+        <input
+          value={nameInput}
+          onChange={(e) => {
+            setNameInput(e.target.value);
+            if (nameMessage) setNameMessage(null);
+          }}
+          placeholder="Введите имя"
+          className="w-full min-h-[48px] rounded-xl border border-line bg-main px-4 text-[16px] text-fg placeholder:text-muted/60 outline-none transition-colors duration-200 focus:ring-2 focus:ring-accent/35"
+        />
+        <button
+          type="button"
+          onClick={() => void saveName()}
+          disabled={nameSaving}
+          className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-[14px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
+        >
+          {nameSaving ? "Сохранение..." : "Сохранить"}
+        </button>
+        {nameMessage ? (
+          <p className={`mt-2 text-sm ${nameMessage === "Имя сохранено" ? "text-accent" : "text-danger"}`}>
+            {nameMessage}
+          </p>
+        ) : null}
+      </div>
+
       {/* Phone block */}
       <div className={`mt-4 rounded-[16px] p-4 border ${
         !profile?.phone 
           ? (isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200")
           : (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
       }`}>
-        {!profile?.phone ? (
-          <>
-            <p className={`text-[14px] ${isDark ? "text-amber-200" : "text-amber-800"}`}>
-              📱 Добавьте номер телефона, чтобы покупатели могли с вами связаться
-            </p>
-            <Link 
-              href="/auth/phone" 
-              className={`mt-3 inline-flex items-center justify-center w-full min-h-[44px] rounded-xl text-[14px] font-semibold transition-all duration-200 ${
-                isDark 
-                  ? "bg-amber-500/20 text-amber-200 hover:bg-amber-500/30" 
-                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
-              }`}
-            >
-              Добавить номер
-            </Link>
-          </>
-        ) : (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={`text-[13px] mb-1 ${isDark ? "text-muted" : "text-gray-500"}`}>Номер телефона</p>
-              <p className={`text-[18px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
-                📱 {formatPhoneDisplay(profile.phone)}
-              </p>
-            </div>
-            <Link 
-              href="/auth/phone" 
-              className="min-h-[40px] px-4 rounded-xl border border-line text-[14px] font-medium text-muted hover:text-fg hover:bg-elevated transition-all duration-200 flex items-center"
-            >
-              Изменить
-            </Link>
-          </div>
-        )}
+        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Номер телефона</p>
+        <input
+          value={phoneInput}
+          onChange={(e) => {
+            setPhoneInput(e.target.value);
+            if (phoneMessage) setPhoneMessage(null);
+          }}
+          placeholder="Введите телефон"
+          className="w-full min-h-[48px] rounded-xl border border-line bg-main px-4 text-[16px] text-fg placeholder:text-muted/60 outline-none transition-colors duration-200 focus:ring-2 focus:ring-accent/35"
+        />
+        <button
+          type="button"
+          onClick={() => void savePhone()}
+          disabled={phoneSaving}
+          className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-[14px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
+        >
+          {phoneSaving ? "Сохранение..." : "Сохранить"}
+        </button>
+        {phoneMessage ? (
+          <p className={`mt-2 text-sm ${phoneMessage === "Телефон сохранён" ? "text-accent" : "text-danger"}`}>
+            {phoneMessage}
+          </p>
+        ) : null}
       </div>
 
       {/* МОЙ СТАТУС */}

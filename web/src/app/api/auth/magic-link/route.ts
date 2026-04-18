@@ -6,6 +6,12 @@ type MagicLinkBody = {
   email?: string;
 };
 
+function maskEmail(email: string) {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  return `${local.slice(0, 2)}***@${domain}`;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as MagicLinkBody;
@@ -14,8 +20,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Введите корректный email" }, { status: 400 });
     }
 
+    console.log("[api/magic-link] request", { email: maskEmail(email) });
+
     const { url, anonKey, configured } = getSupabasePublicConfig();
     if (!configured) {
+      console.error("[api/magic-link] supabase_not_configured");
       return NextResponse.json(
         { ok: false, error: "Auth временно недоступен: Supabase не настроен" },
         { status: 503 }
@@ -41,12 +50,15 @@ export async function POST(request: Request) {
     const { error } = await Promise.race([authPromise, timeoutPromise]);
 
     if (error) {
+      console.error("[api/magic-link] signInWithOtp_error", { email: maskEmail(email), message: error.message });
       return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
     }
 
+    console.log("[api/magic-link] ok", { email: maskEmail(email) });
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "unexpected_error";
+    console.error("[api/magic-link] exception", msg);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

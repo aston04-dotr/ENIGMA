@@ -83,6 +83,7 @@ export default function CreateListingScreen() {
       price: priceNum,
       category,
       city: city.trim() || "Не указан",
+      contact_phone: profile?.phone ?? null,
     });
     console.log("CREATE LISTING RESULT", res);
     if (res.error) {

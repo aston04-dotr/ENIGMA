@@ -41,7 +41,6 @@ function parseSupabaseError(error: unknown): string {
 export async function createPendingPayment(payload: CreatePendingPaymentPayload): Promise<{ ok: boolean; id?: string; error?: string }> {
   const userId = String(payload.user_id ?? "").trim();
   const paymentType = String(payload.type ?? "").trim() as ManualPaymentType;
-  const targetId = payload.target_id ? String(payload.target_id).trim() : null;
 
   if (!userId) return { ok: false, error: "missing_user_id" };
   if (!paymentType) return { ok: false, error: "missing_type" };
@@ -52,8 +51,7 @@ export async function createPendingPayment(payload: CreatePendingPaymentPayload)
       .from("payments")
       .insert({
         user_id: userId,
-        type: paymentType,
-        target_id: targetId,
+        amount: 0,
         status: payload.status ?? "pending",
       })
       .select("id")
@@ -79,9 +77,15 @@ export async function createSupportTicket(payload: SupportTicketPayload): Promis
   if (!message) return { ok: false, error: "empty_message" };
 
   try {
-    const { data, error } = await supabase
-      .schema("public")
-      .from("support_tickets")
+    const { data, error } = await ((supabase.schema("public").from as unknown as (
+      relation: string
+    ) => {
+      insert: (
+        values: Record<string, unknown>
+      ) => {
+        select: (columns: string) => { single: () => Promise<{ data: { id?: string } | null; error: { message?: string } | null }> };
+      };
+    })("support_tickets"))
       .insert({
         user_id: userId,
         message,

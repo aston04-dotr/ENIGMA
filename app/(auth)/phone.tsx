@@ -26,16 +26,12 @@ export default function ProfilePhoneScreen() {
     if (!authResolved || loading) return;
     if (!session) {
       router.replace("/(auth)/email");
+      return;
+    }
+    if (session) {
+      router.replace("/(tabs)");
     }
   }, [authResolved, loading, session, router]);
-
-  useEffect(() => {
-    if (!authResolved || loading) return;
-    if (session && !needsPhone) {
-      if (needsName) router.replace("/(auth)/profile-setup");
-      else router.replace("/(tabs)");
-    }
-  }, [authResolved, loading, session, needsPhone, needsName, router]);
 
   async function save() {
     if (saving) return;

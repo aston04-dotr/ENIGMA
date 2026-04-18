@@ -1,5 +1,5 @@
-/* Enigma PWA — SWR для статики; HTML-навигация идёт напрямую в сеть (без offline fallback). */
-const CACHE_NAME = "enigma-v7";
+/* Enigma PWA — SWR для статики; HTML-навигация не перехватывается (избегаем Failed to fetch на /). */
+const CACHE_NAME = "enigma-v8";
 const MAX_ITEMS = 120;
 
 const SHELL = ["/", "/offline.html"];
@@ -45,6 +45,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
+
+  // Документ не трогаем — иначе при сбое fetch страница «висит», в консоли sw.js: uncaught.
+  if (request.mode === "navigate" || request.destination === "document") {
+    return;
+  }
 
   const url = request.url;
   logFetch(url);

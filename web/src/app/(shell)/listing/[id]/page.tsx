@@ -6,7 +6,6 @@ import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
 import { fetchListingById, incrementViews } from "@/lib/listings";
-import { supabase } from "@/lib/supabase";
 import { categoryLabel } from "@/lib/categories";
 import Image from "next/image";
 import Link from "next/link";
@@ -36,7 +35,6 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [row, setRow] = useState<import("@/lib/types").ListingRow | null>(null);
-  const [ownerPhone, setOwnerPhone] = useState<string | null>(null);
   const [showStickyBoost, setShowStickyBoost] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -51,16 +49,6 @@ export default function ListingDetailPage() {
         if (res.row) {
           setRow(res.row);
           void incrementViews(res.row.id);
-          
-          // Fetch owner phone from profiles
-          const { data: profileData } = await supabase
-            .from("profiles")
-            .select("phone")
-            .eq("id", res.row.user_id)
-            .maybeSingle();
-          if (!cancelled) {
-            setOwnerPhone(profileData?.phone ?? null);
-          }
         } else {
           const msg = res.loadError ?? "Не найдено";
           console.error("FETCH ERROR", msg);
@@ -142,6 +130,25 @@ export default function ListingDetailPage() {
 
   const boostHref =
     viewerId && row.id ? `/payment?${webBoostPaymentQuery(String(row.id), viewerId)}` : "/login";
+  const ownerPhone = row.contact_phone?.trim() || null;
+
+  const copyPhone = useCallback(async () => {
+    if (!ownerPhone) {
+      setToast({ message: "Продавец не указал номер", type: "info" });
+      return;
+    }
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(ownerPhone);
+      } else if (typeof window !== "undefined") {
+        window.prompt("Скопируйте номер", ownerPhone);
+      }
+      setToast({ message: "Copied!", type: "success" });
+    } catch (copyError) {
+      console.error("COPY PHONE ERROR", copyError);
+      setToast({ message: "Не удалось скопировать номер", type: "error" });
+    }
+  }, [ownerPhone]);
 
   return (
     <main className={`safe-pt ${isOwnListing && !partnerListing ? "pb-28" : "pb-8"}`}>
@@ -180,7 +187,7 @@ export default function ListingDetailPage() {
             </Link>
           </div>
         ) : (
-          /* Others see: Write + Call */
+          /* Others see: Write + Copy Phone */
           <div className="mt-8 space-y-3">
             <button
               type="button"
@@ -192,17 +199,14 @@ export default function ListingDetailPage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (ownerPhone) {
-                  window.location.href = `tel:${ownerPhone}`;
-                } else {
-                  setToast({ message: "Продавец не указал номер", type: "info" });
-                }
-              }}
+              onClick={() => void copyPhone()}
               className="w-full min-h-[56px] rounded-card border border-line bg-elevated py-4 text-[17px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-md active:scale-[0.98]"
             >
-              📞 Позвонить
+              {ownerPhone ? "📋 Copy Phone" : "Телефон не указан"}
             </button>
+            <p className="text-center text-sm text-muted">
+              {ownerPhone ? ownerPhone : "Телефон не указан"}
+            </p>
           </div>
         )}
       </div>

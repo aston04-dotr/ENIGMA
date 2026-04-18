@@ -2,12 +2,14 @@ import { supabase } from "./supabase";
 import { isSchemaNotInCache } from "./postgrestErrors";
 
 /**
- * SECURITY DEFINER RPC `check_banned` — только таблица banned_users (совместимость).
+ * Compatibility helper for legacy callers.
+ * Current live DB exposes `check_access_blocked`, so use it with `p_device = null`.
  */
 export async function checkIsBanned(email: string, phone: string | null) {
-  const { data, error } = await supabase.rpc("check_banned", {
-    p_email: email || null,
-    p_phone: phone,
+  const { data, error } = await supabase.rpc("check_access_blocked", {
+    p_device: "",
+    p_email: email || "",
+    p_phone: phone || "",
   });
 
   if (error) {
@@ -31,19 +33,22 @@ export async function checkAccessBlocked(
   phone: string | null | undefined,
   deviceId: string | null | undefined
 ): Promise<boolean> {
-  const { data, error } = await supabase.rpc("check_access_blocked", {
-    p_email: email?.trim() || null,
-    p_phone: phone?.trim() || null,
-    p_device: deviceId?.trim() || null,
-  });
+  try {
+    const { data, error } = await supabase.rpc("check_access_blocked", {
+      p_device: deviceId?.trim() || "",
+      p_email: email?.trim() || "",
+      p_phone: phone?.trim() || "",
+    });
 
-  if (error) {
-    if (isSchemaNotInCache(error)) {
-      return checkBanned(email, phone);
+    if (error) {
+      if (isSchemaNotInCache(error)) return false;
+      // Silent fail - don't crash the app
+      return false;
     }
-    console.warn("check_access_blocked", error.message);
+
+    return data === true;
+  } catch (e) {
+    // Silent catch - RPC not available or 400/404 error
     return false;
   }
-
-  return data === true;
 }

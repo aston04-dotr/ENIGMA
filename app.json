@@ -48,9 +48,6 @@
         }
       ],
       "expo-av"
-    ],
-    "extra": {
-      "supabaseUrl": "https://jggpvjfvdvqmwaaqetqu.supabase.co"
-    }
+    ]
   }
 }

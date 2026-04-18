@@ -22,8 +22,11 @@ export function registerRapidListingCreated(userId: string): void {
 
 /** Lower own trust (spam, duplicates, device limits, etc.). Triggers auto-ban at 0. */
 export async function decreaseTrust(userId: string, amount: number): Promise<{ error: string | null }> {
-  const { data: authData, error: authErr } = await supabase.auth.getUser();
-  const self = authData.user?.id;
+  const {
+    data: { session },
+    error: authErr,
+  } = await supabase.auth.getSession();
+  const self = session?.user?.id;
   if (authErr || !self) {
     return { error: "Нет сессии" };
   }
@@ -47,7 +50,10 @@ export async function reportListingTrustPenalty(
   listingId: string,
   reason: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc("report_listing_trust_penalty", {
+  const { error } = await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>
+  ) => Promise<{ error: { message?: string } | null }>)("report_listing_trust_penalty", {
     p_listing: listingId,
     p_reason: reason,
   });

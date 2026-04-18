@@ -26,7 +26,7 @@ type AuthCtx = {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-type LoadResult = { row: UserRow | null; needsPhone: boolean };
+type LoadResult = { row: UserRow | null };
 
 let isProcessingMagicLink = false;
 
@@ -152,10 +152,10 @@ async function enforceAccessOrLogout(
 async function loadProfile(userId: string): Promise<LoadResult> {
   await tryDailyTrustRecovery();
   const { data: u, error: uErr } = await supabase.from("users").select("*").eq("id", userId).maybeSingle();
-  if (uErr && isSchemaNotInCache(uErr)) return { row: null, needsPhone: false };
+  if (uErr && isSchemaNotInCache(uErr)) return { row: null };
   if (uErr) {
     if (__DEV__) console.warn("loadProfile users", uErr.message);
-    return { row: null, needsPhone: false };
+    return { row: null };
   }
 
   let { data: p, error: pErr } = await supabase
@@ -180,7 +180,7 @@ async function loadProfile(userId: string): Promise<LoadResult> {
     }
   }
 
-  if (!u) return { row: null, needsPhone: false };
+  if (!u) return { row: null };
 
   const row = u as UserRow;
   const merged: UserRow = {
@@ -191,14 +191,12 @@ async function loadProfile(userId: string): Promise<LoadResult> {
     device_id: p?.device_id ?? null,
     trust_score: p?.trust_score ?? row.trust_score ?? null,
   };
-  const needsPhone = !p?.phone?.trim();
-  return { row: merged, needsPhone };
+  return { row: merged };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserRow | null>(null);
-  const [needsPhone, setNeedsPhone] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authResolved, setAuthResolved] = useState(false);
 
@@ -206,16 +204,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const uid = (await supabase.auth.getSession()).data.session?.user?.id;
     if (!uid) {
       setProfile(null);
-      setNeedsPhone(false);
       return;
     }
     try {
-      const { row, needsPhone: np } = await loadProfile(uid);
+      const { row } = await loadProfile(uid);
       setProfile(row);
-      setNeedsPhone(np);
     } catch {
       setProfile(null);
-      setNeedsPhone(false);
     }
   }, []);
 
@@ -259,23 +254,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!deviceOk) {
             setSession(null);
             setProfile(null);
-            setNeedsPhone(false);
             return;
           }
-          const { row, needsPhone: np } = await loadProfile(s.user.id);
+          const { row } = await loadProfile(s.user.id);
           if (!mounted) return;
           if (await enforceAccessOrLogout(s.user, row?.phone ?? null, row?.device_id ?? null)) {
             setSession(null);
             setProfile(null);
-            setNeedsPhone(false);
             Alert.alert("Доступ", "Аккаунт заблокирован.");
             return;
           }
           setProfile(row);
-          setNeedsPhone(np);
         } else {
           setProfile(null);
-          setNeedsPhone(false);
         }
       } finally {
         if (mounted) {
@@ -289,7 +280,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       if (!s?.user?.id) {
         setProfile(null);
-        setNeedsPhone(false);
         return;
       }
       if (event === "TOKEN_REFRESHED") return;
@@ -298,19 +288,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!deviceOk) {
         setSession(null);
         setProfile(null);
-        setNeedsPhone(false);
         return;
       }
-      const { row, needsPhone: np } = await loadProfile(s.user.id);
+      const { row } = await loadProfile(s.user.id);
       if (await enforceAccessOrLogout(s.user, row?.phone ?? null, row?.device_id ?? null)) {
         setSession(null);
         setProfile(null);
-        setNeedsPhone(false);
         Alert.alert("Доступ", "Аккаунт заблокирован.");
         return;
       }
       setProfile(row);
-      setNeedsPhone(np);
     });
 
     const linkSub = Linking.addEventListener("url", (e) => {
@@ -330,16 +317,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void registerPushTokenForUser(uid);
   }, [session?.user?.id]);
 
-  const needsName = Boolean(
-    session?.user && (!profile || !profile.name || String(profile.name).trim().length === 0)
-  );
-
-  const needsProfileSetup = Boolean(session?.user && (needsPhone || needsName));
+  const needsPhone = false;
+  const needsName = false;
+  const needsProfileSetup = false;
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
-    setNeedsPhone(false);
   }, []);
 
   const value = useMemo(

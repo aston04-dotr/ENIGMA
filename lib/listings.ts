@@ -168,7 +168,7 @@ export async function fetchListings(filters: {
   search?: string;
   city?: string;
 }): Promise<FetchListingsResult> {
-  console.log("SUPABASE URL", process.env.EXPO_PUBLIC_SUPABASE_URL ?? "(unset)");
+  console.log("SUPABASE URL", process.env.NEXT_PUBLIC_SUPABASE_URL ?? "(unset)");
   if (isBrowserOffline()) {
     return { listings: [], sqlSetupRequired: false, error: "Нет интернета" };
   }
@@ -298,7 +298,7 @@ export async function fetchListingFavoriteCount(listingId: string): Promise<numb
   return Number(data ?? 0);
 }
 
-/** Пакетно для ленты: id → count (объявления без строк в favorites получают 0). */
+/** Пакетно для ленты: id → count (объявления без строк в listing_favorites получают 0). */
 export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   const ids = [...new Set(listingIds.map((x) => String(x ?? "").trim()).filter(Boolean))];
@@ -382,6 +382,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     is_partner_ad: data.is_partner_ad === true,
     is_boosted: data.is_boosted != null ? Boolean(data.is_boosted) : undefined,
     favorite_count: fc != null && fc !== "" ? Number(fc) : undefined,
+    contact_phone: data.contact_phone != null ? String(data.contact_phone) : null,
     images: normalizeListingImages(data.images),
   };
 }
@@ -483,6 +484,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       description: payload.description.trim(),
       price: priceNum,
       category: payload.category,
+      contact_phone: payload.contact_phone?.trim() || null,
     };
 
     const insertPayload = { ...base, city: cityVal };

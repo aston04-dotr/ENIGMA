@@ -5,7 +5,6 @@ import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { logSupabaseResult } from "@/lib/postgrestErrors";
 import { supabase } from "@/lib/supabase";
-import type { UserRow } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -23,48 +22,54 @@ export default function ChatsPage() {
     if (!me) return;
     setLoadErr(null);
     try {
-      const memberRes = await supabase.from("chat_members").select("chat_id").eq("user_id", me);
-      logSupabaseResult("chat_members", { data: memberRes.data, error: memberRes.error });
-      const chatIds = [...new Set((memberRes.data ?? []).map((r) => r.chat_id))];
+      const sentRes = await supabase
+        .from("messages")
+        .select("chat_id,created_at")
+        .eq("sender_id", me)
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      logSupabaseResult("messages_sent", { data: sentRes.data, error: sentRes.error });
+
+      const chatIds = [
+        ...new Set(
+          (sentRes.data ?? [])
+            .map((r) => r.chat_id)
+            .filter((chatId): chatId is string => typeof chatId === "string" && chatId.length > 0)
+        ),
+      ];
       if (!chatIds.length) {
         setRows([]);
         return;
       }
+
       const chatsRes = await supabase
         .from("chats")
-        .select("id,user1,user2,created_at,title,is_group")
+        .select("id,created_at")
         .in("id", chatIds)
         .order("created_at", { ascending: false });
+
       const chats = chatsRes.data;
       if (chatsRes.error || !chats?.length) {
         setRows([]);
         return;
       }
-      const others = chats
-        .filter((c) => !c.is_group && c.user1 && c.user2)
-        .map((c) => (c.user1 === me ? c.user2 : c.user1) as string);
-      const { data: users } = await supabase.from("users").select("*").in("id", others);
-      const umap = new Map((users ?? []).map((u) => [u.id, u as UserRow]));
+
       const enriched: Row[] = [];
       for (const c of chats) {
-        if (c.is_group) continue;
-        const oid = c.user1 === me ? c.user2 : c.user1;
-        if (!oid) continue;
-        const other = umap.get(oid);
-        const displayName = other?.name ?? "Пользователь";
         const lastRes = await supabase
           .from("messages")
-          .select("text,image_url,voice_url,deleted")
+          .select("text")
           .eq("chat_id", c.id)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+
         let preview = "Напишите первым";
         const last = lastRes.data;
-        if (last?.deleted) preview = "Сообщение удалено";
-        else if (last?.image_url) preview = "Фото";
-        else if (last?.voice_url) preview = "Голосовое";
-        else if (last?.text) preview = last.text.slice(0, 80);
+        if (last?.text) preview = String(last.text).slice(0, 80);
+
+        const displayName = `Чат ${String(c.id).slice(0, 8)}`;
         enriched.push({ id: c.id, displayName, preview });
       }
       setRows(Array.isArray(enriched) ? enriched : []);

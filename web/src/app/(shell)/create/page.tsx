@@ -7,6 +7,7 @@ import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
+import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import { supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
@@ -34,6 +35,9 @@ function parseUnknownError(error: unknown): string {
 const inputClass =
   "w-full min-h-[48px] rounded-card border border-line bg-elevated px-4 text-fg placeholder:text-muted/60 transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/35";
 
+const MAX_LISTING_PHOTOS = getMaxListingPhotos();
+const PHONE_REQUIRED_PROMPT = "Please add a phone number so buyers can contact you.";
+
 export default function CreatePage() {
   const { session, profile, refreshProfile } = useAuth();
   const router = useRouter();
@@ -45,6 +49,7 @@ export default function CreatePage() {
   const [category, setCategory] = useState("other");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
 
   const publish = useCallback(async () => {
@@ -72,15 +77,40 @@ export default function CreatePage() {
       setErr("Укажите цену");
       return;
     }
+    if (!profile?.phone?.trim()) {
+      setErr(PHONE_REQUIRED_PROMPT);
+      if (typeof window !== "undefined") {
+        window.alert(PHONE_REQUIRED_PROMPT);
+      }
+      return;
+    }
     setBusy(true);
+    setPublishStage("uploading");
     try {
+      const uploadGroupId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const url = await uploadListingPhotoWeb(uid, uploadGroupId, files[i]!, i);
+        const normalizedUrl = url.trim();
+        if (!normalizedUrl) {
+          throw new Error("Не удалось загрузить фото");
+        }
+        uploadedUrls.push(normalizedUrl);
+      }
+
+      setPublishStage("creating");
+
       const res = await insertListingRow({
-        user_id: uid,
         title: title.trim(),
         description: description.trim(),
         price: priceNum,
         category,
         city: city.trim() || "Не указан",
+        contact_phone: profile?.phone || null,
       });
       console.log("CREATE LISTING RESULT", res);
       if (res.error) {
@@ -92,15 +122,30 @@ export default function CreatePage() {
         return;
       }
       const lid = res.id;
-      for (let i = 0; i < files.length; i++) {
-        const url = await uploadListingPhotoWeb(uid, lid, files[i]!, i);
-        const { error: ie } = await supabase
-          .schema("public")
-          .from("images")
-          .insert({ user_id: uid, listing_id: lid, url, sort_order: i });
+
+      if (uploadedUrls.length > 0) {
+        const hasInvalidUrl = uploadedUrls.some((url) => !/^https?:\/\//i.test(url));
+        if (hasInvalidUrl) {
+          throw new Error("Некорректная ссылка изображения");
+        }
+
+        const imageRows = uploadedUrls.map((url, sortOrder) => ({
+          listing_id: lid,
+          url,
+          sort_order: sortOrder,
+        }));
+
+        const { error: ie } = await supabase.schema("public").from("images").insert(imageRows);
         logRlsIfBlocked(ie);
-        if (ie) throw ie;
+        if (ie) {
+          const { error: rollbackError } = await supabase.from("listings").delete().eq("id", lid);
+          if (rollbackError) {
+            console.warn("LISTING ROLLBACK ERROR", rollbackError);
+          }
+          throw new Error(ie.message || "Не удалось сохранить фотографии объявления");
+        }
       }
+
       registerRapidListingCreated(uid);
       await refreshProfile();
       router.push(`/listing/${lid}`);
@@ -110,6 +155,7 @@ export default function CreatePage() {
       setErr(message);
     } finally {
       setBusy(false);
+      setPublishStage("idle");
     }
   }, [uid, profile, title, description, price, city, category, files, router, refreshProfile]);
 
@@ -137,7 +183,7 @@ export default function CreatePage() {
           accept="image/*"
           multiple
           disabled={!canEditListingsAndListingPhotos(profile?.trust_score)}
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 8))}
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, MAX_LISTING_PHOTOS))}
           className="mt-2 min-h-[48px] w-full text-sm text-muted file:mr-4 file:rounded-card file:border-0 file:bg-elev-2 file:px-4 file:py-2 file:text-sm file:font-medium file:text-fg"
         />
       </div>
@@ -180,13 +226,21 @@ export default function CreatePage() {
         </select>
       </div>
       {err ? <p className="text-sm font-medium text-danger">{err}</p> : null}
+      {err === PHONE_REQUIRED_PROMPT ? (
+        <Link
+          href="/profile"
+          className="inline-flex min-h-[48px] w-full items-center justify-center rounded-card border border-line bg-elevated px-4 py-3 text-sm font-medium text-fg transition-colors duration-ui hover:bg-elev-2"
+        >
+          Открыть профиль
+        </Link>
+      ) : null}
       <button
         type="button"
         disabled={busy}
         onClick={() => void publish()}
         className="pressable w-full min-h-[52px] rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {busy ? "…" : "Опубликовать"}
+        {busy ? (publishStage === "uploading" ? "Загрузка фото..." : "Создание объявления...") : "Опубликовать"}
       </button>
     </main>
   );

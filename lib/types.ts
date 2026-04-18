@@ -28,6 +28,8 @@ export type ListingInsertPayload = {
   price: number;
   category: string;
   city: string;
+  /** Контактный телефон продавца (копируется из profiles.phone). */
+  contact_phone?: string | null;
 };
 
 export type ListingRow = {
@@ -52,8 +54,10 @@ export type ListingRow = {
   is_partner_ad?: boolean | null;
   /** Флаг буста для сортировки ленты (миграция 022). */
   is_boosted?: boolean | null;
-  /** Число строк в `favorites` (RPC `listing_favorites_counts`), для ленты. */
+  /** Число строк в `listing_favorites` (RPC `listing_favorites_counts`), для ленты. */
   favorite_count?: number;
+  /** Контактный телефон продавца (копируется из profiles.phone при создании). */
+  contact_phone?: string | null;
   images?: { url: string; sort_order?: number }[];
 };
 

@@ -28,17 +28,10 @@ export default function ProfileSetupScreen() {
       router.replace("/(auth)/email");
       return;
     }
-    if (needsPhone) {
-      router.replace("/(auth)/phone");
-    }
-  }, [authResolved, loading, session, needsPhone, router]);
-
-  useEffect(() => {
-    if (!authResolved || loading) return;
-    if (session && !needsProfileSetup) {
+    if (session) {
       router.replace("/(tabs)");
     }
-  }, [authResolved, loading, session, needsProfileSetup, router]);
+  }, [authResolved, loading, session, router]);
 
   useEffect(() => {
     if (profile?.name) setName(profile.name);

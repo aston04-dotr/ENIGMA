@@ -6,7 +6,7 @@ import { useAuth } from "../context/auth-context";
  * Защищённые маршруты: без сессии — только email; не показываем phone/profile без session.
  */
 export function useRequireAuth() {
-  const { session, loading, authResolved, needsPhone, needsName } = useAuth();
+  const { session, loading, authResolved } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -17,21 +17,11 @@ export function useRequireAuth() {
       router.replace("/(auth)/email");
       return;
     }
-    if (needsPhone) {
-      console.log("REDIRECT → EMAIL / PHONE / PROFILE / TABS", "PHONE");
-      router.replace("/(auth)/phone");
-      return;
-    }
-    if (needsName) {
-      console.log("REDIRECT → EMAIL / PHONE / PROFILE / TABS", "PROFILE");
-      router.replace("/(auth)/profile-setup");
-      return;
-    }
-  }, [session, loading, authResolved, needsPhone, needsName, router]);
+  }, [session, loading, authResolved, router]);
 
   return {
     session,
     loading: loading || !authResolved,
-    ready: Boolean(session && !needsPhone && !needsName && authResolved && !loading),
+    ready: Boolean(session && authResolved && !loading),
   };
 }

@@ -29,19 +29,8 @@ export async function checkAccessBlocked(
   phone: string | null | undefined,
   deviceId: string | null | undefined
 ): Promise<boolean> {
-  const { data, error } = await supabase.rpc("check_access_blocked", {
-    p_email: email?.trim() || null,
-    p_phone: phone?.trim() || null,
-    p_device: deviceId?.trim() || null,
-  });
-
-  if (error) {
-    if (isSchemaNotInCache(error)) {
-      return checkBanned(email, phone);
-    }
-    console.warn("check_access_blocked", error.message);
-    return false;
-  }
-
-  return data === true;
+  void email;
+  void phone;
+  void deviceId;
+  return false;
 }

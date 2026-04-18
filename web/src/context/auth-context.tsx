@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       console.log("[auth-context] Auth state change:", event);
 
       if (event === "SIGNED_OUT") {
@@ -149,9 +149,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSession(s);
 
+      // Не блокируем внутреннюю очередь Supabase: профиль — фоном после навигации.
       if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        await ensureProfileExists(s.user.id, s.user.email ?? null);
-        await loadProfile(s.user.id);
+        const uid = s.user.id;
+        const mail = s.user.email ?? null;
+        queueMicrotask(() => {
+          void (async () => {
+            const p0 = performance.now();
+            console.log("[auth-context] profileFetch:start", { event, userId: uid.slice(0, 8) + "…" });
+            await ensureProfileExists(uid, mail);
+            await loadProfile(uid);
+            console.log("[auth-context] profileFetch:end", { ms: Math.round(performance.now() - p0) });
+          })();
+        });
       }
     });
 
@@ -164,16 +174,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     (async () => {
+      const boot0 = typeof performance !== "undefined" ? performance.now() : 0;
       try {
+        console.log("[auth-context] getSession:start");
         const {
           data: { session: s },
         } = await supabase.auth.getSession();
         if (!mounted) return;
+        console.log("[auth-context] getSession:end", { ms: boot0 ? Math.round(performance.now() - boot0) : 0, hasUser: Boolean(s?.user?.id) });
 
         if (s?.user?.id) {
           setSession(s);
-          await ensureProfileExists(s.user.id, s.user.email ?? null);
-          await loadProfile(s.user.id);
+          // Сразу считаем auth готовым; профиль догружается в фоне (не блокируем UI).
+          void (async () => {
+            const p0 = performance.now();
+            console.log("[auth-context] bootstrap profileFetch:start", { userId: s.user.id.slice(0, 8) + "…" });
+            await ensureProfileExists(s.user.id, s.user.email ?? null);
+            await loadProfile(s.user.id);
+            console.log("[auth-context] bootstrap profileFetch:end", { ms: Math.round(performance.now() - p0) });
+          })();
         } else if (!sessionRef.current?.user?.id) {
           // Чистим профиль только если и раньше сессии не было.
           setSession(null);
@@ -188,6 +207,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthResolved(true);
           setLoading(false);
           setReady(true);
+          console.log("[auth-context] auth ready (profile may still load)", {
+            ms: boot0 ? Math.round(performance.now() - boot0) : 0,
+          });
         }
       }
     })();
@@ -195,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [bootstrapKey]);
+  }, [bootstrapKey, ensureProfileExists, loadProfile]);
 
   const retryBootstrap = useCallback((opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
     void opts;

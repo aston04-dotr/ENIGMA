@@ -22,12 +22,13 @@ export type UserRow = {
 
 /** INSERT в `public.listings`: без `id` (default gen_random_uuid). В БД колонка `city`, не `location`; поля `status` нет. */
 export type ListingInsertPayload = {
-  user_id: string;
   title: string;
   description: string;
   price: number;
   category: string;
   city: string;
+  /** Контактный телефон продавца (копируется из profiles.phone). */
+  contact_phone?: string | null;
 };
 
 export type ListingRow = {
@@ -52,19 +53,17 @@ export type ListingRow = {
   is_partner_ad?: boolean | null;
   /** Флаг буста для сортировки ленты (миграция 022). */
   is_boosted?: boolean | null;
-  /** Число строк в `favorites` (RPC `listing_favorites_counts`), для ленты. */
+  /** Число строк в `listing_favorites` (RPC `listing_favorites_counts`), для ленты. */
   favorite_count?: number;
+  /** Контактный телефон продавца (копируется из profiles.phone при создании). */
+  contact_phone?: string | null;
   images?: { url: string; sort_order?: number }[];
 };
 
 export type ChatRow = {
   id: string;
-  user1: string | null;
-  user2: string | null;
+  listing_id: string | null;
   created_at: string;
-  title?: string | null;
-  is_group?: boolean | null;
-  pinned_message_id?: string | null;
 };
 
 export type MessageRow = {
@@ -72,14 +71,5 @@ export type MessageRow = {
   chat_id: string;
   sender_id: string;
   text: string;
-  image_url: string | null;
-  voice_url?: string | null;
   created_at: string;
-  /** sent | delivered | seen */
-  status?: string | null;
-  payload?: unknown;
-  reply_to?: string | null;
-  edited_at?: string | null;
-  deleted?: boolean | null;
-  hidden_for_user_ids?: string[] | null;
 };

@@ -11,8 +11,16 @@ export async function ensureProfileAndUserRow(user: User): Promise<void> {
     if (process.env.NODE_ENV === "development") console.warn("profiles upsert", pErr.message);
   }
 
-  const { error: uErr } = await supabase.from("users").upsert({ id: user.id, email }, { onConflict: "id" });
-  if (uErr && !isSchemaNotInCache(uErr)) {
-    if (process.env.NODE_ENV === "development") console.warn("users upsert", uErr.message);
+  const { error: uErr } = await (supabase.from as unknown as (
+    relation: string
+  ) => {
+    upsert: (
+      values: Record<string, unknown>,
+      options?: { onConflict?: string }
+    ) => Promise<{ error: { message?: string } | null }>;
+  })("users").upsert({ id: user.id, email }, { onConflict: "id" });
+  const typedUErr = uErr as { message?: string; code?: string } | null;
+  if (typedUErr && !isSchemaNotInCache(typedUErr as never)) {
+    if (process.env.NODE_ENV === "development") console.warn("users upsert", typedUErr.message);
   }
 }

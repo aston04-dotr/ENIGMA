@@ -1,25 +1,13 @@
 import "react-native-url-polyfill/auto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-import Constants from "expo-constants";
 
-const url =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ??
-  (Constants.expoConfig?.extra as { supabaseUrl?: string } | undefined)?.supabaseUrl ??
-  "";
-const anonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
-  (Constants.expoConfig?.extra as { supabaseAnonKey?: string } | undefined)?.supabaseAnonKey ??
-  "";
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
-/** Пустые значения ломают createClient — значения по умолчанию, чтобы UI открывался без .env (запросы к API не пройдут). */
-const DEV_URL = "https://placeholder.supabase.co";
-const DEV_ANON =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJlbmlnbWEtbG9jYWwiLCJyb2xlIjoiYW5vbiJ9.dummy";
-
-export const supabase = createClient(isSupabaseConfigured ? url : DEV_URL, isSupabaseConfigured ? anonKey : DEV_ANON, {
+export const supabase = createClient(url, anonKey, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: isSupabaseConfigured,

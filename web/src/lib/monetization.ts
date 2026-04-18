@@ -360,13 +360,17 @@ export async function applyPromotionTariff(
       .eq("id", id);
     if (u1) return { ok: false, message: u1.message };
 
-    const { error: i1 } = await supabase.from("listing_boosts").insert({
+    const { error: i1 } = await ((supabase.from as unknown as (
+      relation: string
+    ) => {
+      insert: (values: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+    })("listing_boosts")).insert({
       listing_id: id,
       type: "boost",
       expires_at: newBoostedUntil,
       created_at: boostedAtIso,
     });
-    if (i1) return { ok: false, message: i1.message };
+    if (i1) return { ok: false, message: i1.message ?? "Не удалось сохранить boost" };
     return { ok: true };
   }
 
@@ -382,12 +386,16 @@ export async function applyPromotionTariff(
     .update({ is_vip: true, vip_until: vipUntil, updated_at: nowIso() })
     .eq("id", id);
   if (u2) return { ok: false, message: u2.message };
-  const { error: i2 } = await supabase.from("listing_boosts").insert({
+  const { error: i2 } = await ((supabase.from as unknown as (
+    relation: string
+  ) => {
+    insert: (values: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+  })("listing_boosts")).insert({
     listing_id: id,
     type: "vip",
     expires_at: vipUntil,
   });
-  if (i2) return { ok: false, message: i2.message };
+  if (i2) return { ok: false, message: i2.message ?? "Не удалось сохранить VIP" };
   return { ok: true };
 }
 
@@ -422,11 +430,15 @@ export async function applyListingPromotionMock(
     .update({ is_top: true, top_until: topUntil, updated_at: nowIso() })
     .eq("id", id);
   if (u3) return { ok: false, message: u3.message };
-  const { error: i3 } = await supabase.from("listing_boosts").insert({
+  const { error: i3 } = await ((supabase.from as unknown as (
+    relation: string
+  ) => {
+    insert: (values: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+  })("listing_boosts")).insert({
     listing_id: id,
     type: "top",
     expires_at: topUntil,
   });
-  if (i3) return { ok: false, message: i3.message };
+  if (i3) return { ok: false, message: i3.message ?? "Не удалось сохранить TOP" };
   return { ok: true };
 }

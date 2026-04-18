@@ -31,7 +31,10 @@ export function consumeAccessDeniedMessage(): boolean {
  * Удаление данных через RPC; удаление auth — только через POST /api/account/delete (service role).
  */
 export async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
-  const { error: rpcError } = await supabase.rpc("delete_my_account");
+  const { error: rpcError } = await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>
+  ) => Promise<{ error: { message?: string } | null }>)("delete_my_account");
   if (rpcError) {
     console.error("delete_my_account", rpcError);
     return { ok: false, error: rpcError.message };

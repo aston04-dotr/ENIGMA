@@ -10,7 +10,7 @@ import { colors, radius } from "../lib/theme";
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { session, loading, authResolved, needsPhone, needsName } = useAuth();
+  const { session, loading, authResolved } = useAuth();
 
   useEffect(() => {
     if (!authResolved || loading) return;
@@ -20,19 +20,9 @@ export default function WelcomeScreen() {
       router.replace("/(auth)/email");
       return;
     }
-    if (needsPhone) {
-      console.log("REDIRECT → EMAIL / PHONE / PROFILE / TABS", "PHONE");
-      router.replace("/(auth)/phone");
-      return;
-    }
-    if (needsName) {
-      console.log("REDIRECT → EMAIL / PHONE / PROFILE / TABS", "PROFILE");
-      router.replace("/(auth)/profile-setup");
-      return;
-    }
     console.log("REDIRECT → EMAIL / PHONE / PROFILE / TABS", "TABS");
     router.replace("/(tabs)");
-  }, [session, loading, authResolved, needsPhone, needsName, router]);
+  }, [session, loading, authResolved, router]);
 
   return (
     <LinearGradient colors={[colors.navy, "#2d2659", colors.violet]} style={styles.grad}>
@@ -44,7 +34,7 @@ export default function WelcomeScreen() {
         <View style={styles.footer}>
           {!isSupabaseConfigured ? (
             <Text style={styles.warn}>
-              Добавьте EXPO_PUBLIC_SUPABASE_URL и EXPO_PUBLIC_SUPABASE_ANON_KEY в .env
+              Добавьте NEXT_PUBLIC_SUPABASE_URL и NEXT_PUBLIC_SUPABASE_ANON_KEY в .env
             </Text>
           ) : null}
           <UiButton

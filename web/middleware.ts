@@ -47,9 +47,12 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  // getUser() ходит в сеть Supabase на каждый запрос — ощутимо тормозит после magic link.
+  // Для гейта достаточно JWT из cookie (getSession); клиент при необходимости обновит сессию.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const isAuthPath = pathname === "/login" || pathname.startsWith("/auth");
 

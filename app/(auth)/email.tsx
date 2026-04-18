@@ -22,7 +22,7 @@ export default function EmailAuthScreen() {
       return;
     }
     if (!isSupabaseConfigured) {
-      Alert.alert("Настройка", "Добавьте EXPO_PUBLIC_SUPABASE_URL и ключ в .env");
+      Alert.alert("Настройка", "Добавьте NEXT_PUBLIC_SUPABASE_URL и NEXT_PUBLIC_SUPABASE_ANON_KEY в .env");
       return;
     }
     setLoading(true);

@@ -54,40 +54,25 @@ export function formatRussianPhoneInput(raw: string): string {
  */
 export function normalizeRussianPhone(raw: string): string | null {
   if (!raw) return null;
-  
-  // Remove all non-digits
+
   const digits = raw.replace(/\D/g, "");
-  
   if (!digits) return null;
-  
-  // Russian mobile: 11 digits starting with 7 or 8 or 9
-  if (digits.length === 11) {
-    if (digits.startsWith("7") || digits.startsWith("8") || digits.startsWith("9")) {
-      // If starts with 8, convert to 7
-      const normalized = digits.startsWith("8") ? "7" + digits.slice(1) : digits;
-      // If starts with 9, it's missing the 7
-      const finalDigits = digits.startsWith("9") ? "7" + digits : normalized;
-      return "+" + finalDigits;
-    }
+
+  // UI mask target is Russian format: +7 (999) 123-45-67 -> +79991234567
+  if (digits.length === 11 && digits.startsWith("7")) {
+    return `+${digits}`;
   }
-  
-  // Already has +7 format
-  if (digits.length === 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
-    const normalized = digits.startsWith("8") ? "7" + digits.slice(1) : digits;
-    return "+" + normalized;
+
+  // Local Russian format with trunk prefix 8XXXXXXXXXX
+  if (digits.length === 11 && digits.startsWith("8")) {
+    return `+7${digits.slice(1)}`;
   }
-  
-  // If 10 digits starting with 9, add +7
+
+  // 10-digit mobile body: 9XXXXXXXXX
   if (digits.length === 10 && digits.startsWith("9")) {
-    return "+7" + digits;
+    return `+7${digits}`;
   }
-  
-  // If starts with + and looks valid, try to use it
-  const hasPlus = raw.startsWith("+");
-  if (hasPlus && digits.length >= 10) {
-    return "+" + digits.slice(0, 15);
-  }
-  
+
   return null;
 }
 
@@ -97,15 +82,9 @@ export function normalizeRussianPhone(raw: string): string | null {
 export function isValidRussianPhone(raw: string): boolean {
   const normalized = normalizeRussianPhone(raw);
   if (!normalized) return false;
-  
-  // Must be +7XXXXXXXXXX (12 chars total)
-  if (normalized.startsWith("+7") && normalized.length === 12) {
-    // Second digit after +7 must be 9 for mobile
-    const secondDigit = normalized[2];
-    return secondDigit === "9";
-  }
-  
-  return false;
+
+  // Must match stored format from mask/normalizer: +7XXXXXXXXXX
+  return /^\+7\d{10}$/.test(normalized);
 }
 
 /**

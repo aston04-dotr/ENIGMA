@@ -19,14 +19,14 @@ function parseStorageError(error: unknown): string {
 
 export async function uploadListingPhotoWeb(
   userId: string,
-  listingId: string,
+  objectGroupId: string,
   file: File,
   index: number
 ): Promise<string> {
   const extRaw = file.name.split(".").pop() || "jpg";
   const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
   const contentType = file.type?.trim() || "image/jpeg";
-  const path = `${userId}/${listingId}/${index}-${Date.now()}.${ext}`;
+  const path = `${userId}/${objectGroupId}/${index}-${Date.now()}.${ext}`;
 
   try {
     const data = await file.arrayBuffer();
@@ -34,11 +34,17 @@ export async function uploadListingPhotoWeb(
       upsert: true,
       contentType,
     });
-    if (error) throw error;
+    if (error) {
+      throw new Error(parseStorageError(error));
+    }
   } catch (error) {
     throw new Error(parseStorageError(error));
   }
 
   const { data } = supabase.storage.from("listing-images").getPublicUrl(path);
-  return data.publicUrl;
+  const publicUrl = data?.publicUrl?.trim();
+  if (!publicUrl) {
+    throw new Error("Не удалось получить ссылку на фото");
+  }
+  return publicUrl;
 }
