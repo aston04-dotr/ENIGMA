@@ -1,6 +1,7 @@
 {
   "name": "enigma",
   "version": "1.0.2",
+  "type": "module",
   "main": "expo-router/entry",
   "scripts": {
     "web": "npm run dev --prefix web",
