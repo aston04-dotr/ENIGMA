@@ -3,7 +3,7 @@ import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
 import { getListingsPageSize } from "./runtimeConfig";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { cities as staticCities } from "../../../lib/cities";
+import { RUSSIAN_CITIES } from "./russianCities";
 import type { ListingInsertPayload, ListingRow } from "./types";
 
 const LISTING_DETAIL_FETCH_MS = 5000;
@@ -411,14 +411,17 @@ export async function getCitiesFromDb(): Promise<string[]> {
 
     if (error) {
       console.error("Error fetching cities:", error);
-      return ["Вся Россия", ...staticCities.map((city) => city.name)]; // fallback to full static list
+      return ["Вся Россия", ...RUSSIAN_CITIES]; // fallback to full static list
     }
 
     const uniqueCities = Array.from(new Set(data.map((row) => row.city)));
+    if (uniqueCities.length === 0) {
+      return ["Вся Россия", ...RUSSIAN_CITIES]; // fallback to full static list
+    }
     return ["Вся Россия", ...uniqueCities.sort()];
   } catch (e) {
     console.error("Network error fetching cities:", e);
-    return ["Вся Россия", ...staticCities.map((city) => city.name)]; // fallback to full static list
+    return ["Вся Россия", ...RUSSIAN_CITIES]; // fallback to full static list
   }
 }
 let favoriteSingleRpcUnavailableUntil = 0;

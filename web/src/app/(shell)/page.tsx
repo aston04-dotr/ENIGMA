@@ -6,8 +6,7 @@ import { ErrorUi, FETCH_ERROR_MESSAGE, LISTINGS_FEED_ERROR_MESSAGE } from "@/com
 import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
-import { CITY_ALL_RUSSIA } from "@/lib/russianCities";
-import { cities as staticCities } from "../../../../lib/cities";
+import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import { fetchListings, getCitiesFromDb, type FeedListingsCursor } from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
@@ -97,7 +96,7 @@ function FeedPage({ session }: { session: Session }) {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...staticCities.map((c) => c.name)]);
+  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...RUSSIAN_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
 
   useEffect(() => {
