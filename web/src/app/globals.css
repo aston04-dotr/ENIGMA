@@ -48,6 +48,66 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* React Select styles */
+.react-select-container .react-select__control {
+  background-color: var(--color-elevated);
+  border-color: var(--color-line);
+  border-radius: 8px;
+  min-height: 48px;
+  box-shadow: none;
+}
+
+.react-select-container .react-select__control:hover {
+  border-color: var(--color-accent);
+}
+
+.react-select-container .react-select__control--is-focused {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.2);
+}
+
+.react-select-container .react-select__menu {
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+}
+
+.react-select-container .react-select__option {
+  color: var(--color-fg);
+  background-color: transparent;
+  padding: 12px 16px;
+}
+
+.react-select-container .react-select__option--is-selected {
+  background-color: rgba(77, 163, 255, 0.1);
+  color: var(--color-accent);
+}
+
+.react-select-container .react-select__option--is-focused {
+  background-color: var(--color-elev-2);
+}
+
+.react-select-container .react-select__single-value {
+  color: var(--color-fg);
+}
+
+.react-select-container .react-select__input {
+  color: var(--color-fg);
+}
+
+.react-select-container .react-select__placeholder {
+  color: var(--color-muted);
+}
+
+.react-select-container .react-select__indicator-separator {
+  background-color: var(--color-line);
+}
+
+.react-select-container .react-select__dropdown-indicator {
+  color: var(--color-muted);
+}
+
 .safe-pt {
   padding-top: env(safe-area-inset-top, 0px);
 }

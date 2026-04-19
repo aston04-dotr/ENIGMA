@@ -47,6 +47,7 @@ export default function FeedScreen() {
   const [category, setCategory] = useState<string | undefined>();
   const [selectedCity, setSelectedCity] = useState<string>(CITY_ALL_RUSSIA);
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState("");
   const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...RUSSIAN_CITIES.slice(1)]);
   const [minP, setMinP] = useState("");
   const [maxP, setMaxP] = useState("");
@@ -82,6 +83,12 @@ export default function FeedScreen() {
       setCities(dbCities);
     })();
   }, []);
+
+  const filteredCities = useMemo(() => {
+    if (!cityQuery.trim()) return cities;
+    const q = cityQuery.toLowerCase();
+    return cities.filter(c => c.toLowerCase().includes(q));
+  }, [cityQuery, cities]);
 
   const persistSelectedCity = useCallback(async (city: string) => {
     setSelectedCity(city);
@@ -399,13 +406,22 @@ export default function FeedScreen() {
           <Pressable style={styles.modalBackdrop} onPress={() => setCityPickerOpen(false)} />
           <View style={styles.cityPickerSheet}>
             <Text style={styles.sheetTitle}>Город</Text>
+            <TextInput
+              style={styles.citySearchInput}
+              placeholder="Поиск города..."
+              value={cityQuery}
+              onChangeText={setCityQuery}
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
             <ScrollView style={styles.cityScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-              {cities.map((c) => (
+              {filteredCities.map((c) => (
                 <Pressable
                   key={c}
                   onPress={() => {
                     void persistSelectedCity(c);
                     setCityPickerOpen(false);
+                    setCityQuery("");
                   }}
                   style={[styles.cityRow, selectedCity === c && styles.cityRowOn]}
                 >
@@ -495,6 +511,16 @@ const styles = StyleSheet.create({
     maxHeight: "78%",
   },
   sheetTitle: { fontSize: 22, fontWeight: "700", color: colors.ink, marginBottom: 16 },
+  citySearchInput: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    padding: 12,
+    fontSize: 16,
+    color: colors.ink,
+    backgroundColor: colors.surface2,
+    marginBottom: 8,
+  },
   sheetLabel: { fontSize: 14, fontWeight: "600", color: colors.muted, marginBottom: 10, marginTop: 8 },
   catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catChip: {

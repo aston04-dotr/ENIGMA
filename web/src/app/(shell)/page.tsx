@@ -14,6 +14,7 @@ import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import type { ListingRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Select from 'react-select';
 
 const CACHE_KEY = "cached_listings";
 
@@ -96,7 +97,6 @@ function FeedPage({ session }: { session: Session }) {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cityFilter, setCityFilter] = useState("");
   const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...TOP_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
 
@@ -281,20 +281,7 @@ function FeedPage({ session }: { session: Session }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [nextCursor, runPrefetch, loadMore]);
 
-  const filteredCities = useMemo(() => {
-    const query = cityFilter.trim().toLowerCase();
-    if (!query) return cities;
-    return cities.filter((item) => item.name.toLowerCase().includes(query));
-  }, [cityFilter]);
-
-  const filtered = useMemo(() => {
-    if (!Array.isArray(items)) return [];
-    return items.filter((x) => {
-      if (!listingIsRussiaForFeed(x)) return false;
-      if (city === CITY_ALL_RUSSIA) return true;
-      return x.city?.toLowerCase().trim() === city.toLowerCase().trim();
-    });
-  }, [items, city]);
+  const cityOptions = cities.map(c => ({ value: c.name, label: c.name }));
 
   return (
     <main className="safe-pt min-h-screen bg-main">
@@ -307,48 +294,16 @@ function FeedPage({ session }: { session: Session }) {
         </div>
         <div className="mt-6">
           <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Город</label>
-          <div className="mt-2 rounded-card border border-line bg-elevated p-4">
-            <div className="relative">
-              <input
-                value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
-                placeholder="Поиск города"
-                className="w-full min-h-[48px] rounded-card border border-line bg-main px-4 text-sm font-medium text-fg transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/40"
-              />
-              <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-muted">🔍</div>
-            </div>
-
-            <div className="mt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Популярные</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {cities.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCity(c)}
-                    className={`pressable min-h-[44px] rounded-card border px-3 py-2 text-left text-sm font-medium transition duration-ui ${city === c ? "border-accent bg-accent/10 text-accent" : "border-line bg-main text-fg"}`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Все города</p>
-              <div className="mt-3 max-h-[240px] space-y-2 overflow-y-auto rounded-card border border-line bg-main p-2">
-                {filteredCities.map((item) => (
-                  <button
-                    key={item.name}
-                    type="button"
-                    onClick={() => setCity(item.name)}
-                    className="pressable w-full rounded-card px-3 py-2 text-left text-sm font-medium text-fg transition duration-ui hover:bg-elev-2"
-                  >
-                    {item.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="mt-2">
+            <Select
+              value={cityOptions.find(option => option.value === city)}
+              onChange={(selectedOption) => setCity(selectedOption?.value || CITY_ALL_RUSSIA)}
+              options={cityOptions}
+              placeholder="Выберите город"
+              isSearchable
+              className="react-select-container"
+              classNamePrefix="react-select"
+            />
           </div>
         </div>
       </header>

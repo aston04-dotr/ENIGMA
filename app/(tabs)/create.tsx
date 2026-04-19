@@ -32,6 +32,7 @@ import { supabase } from "../../lib/supabase";
 import { colors, radius, shadow } from "../../lib/theme";
 import { filterCitiesByQuery } from "../../lib/russianCities";
 import { parseNonNegativePrice } from "../../lib/validate";
+import { getCitiesFromDb } from "../../lib/listings";
 
 export default function CreateListingScreen() {
   const router = useRouter();
@@ -43,11 +44,25 @@ export default function CreateListingScreen() {
   const [city, setCity] = useState("Москва");
   const [cityModalOpen, setCityModalOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState("");
+  const [cities, setCities] = useState<string[]>([]);
   const [category, setCategory] = useState<string>("other");
   const [uris, setUris] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const filteredCities = useMemo(() => filterCitiesByQuery(cityQuery), [cityQuery]);
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        const dbCities = await getCitiesFromDb();
+        setCities(dbCities);
+      })();
+    }, [])
+  );
+
+  const filteredCities = useMemo(() => {
+    if (!cityQuery.trim()) return cities;
+    const q = cityQuery.toLowerCase();
+    return cities.filter(c => c.toLowerCase().includes(q));
+  }, [cityQuery, cities]);
 
   function validateForm(): string | null {
     if (!title.trim() || title.trim().length < 2) {
