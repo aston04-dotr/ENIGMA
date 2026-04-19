@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/auth-context";
 import { CATEGORIES } from "@/lib/categories";
-import { insertListingRow } from "@/lib/listings";
+import { insertListingRow, getCitiesFromDb } from "@/lib/listings";
 import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
@@ -11,9 +11,11 @@ import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import { supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
+import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "@/lib/russianCities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Select from "react-select";
 
 function parseUnknownError(error: unknown): string {
   if (!error) return "Не удалось создать объявление. Попробуй снова.";
@@ -45,12 +47,21 @@ export default function CreatePage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [city, setCity] = useState("Москва");
+  const [city, setCity] = useState(CITY_ALL_RUSSIA);
+  const [cities, setCities] = useState<string[]>(RUSSIAN_CITIES);
   const [category, setCategory] = useState("other");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      const dbCities = await getCitiesFromDb();
+      console.log("[CITIES-CREATE DEBUG] Loaded:", dbCities.length, "cities");
+      setCities(dbCities);
+    })();
+  }, []);
 
   const publish = useCallback(async () => {
     if (!uid) {
@@ -173,6 +184,12 @@ export default function CreatePage() {
     );
   }
 
+  console.log("[CITIES-CREATE DEBUG] state:", cities?.length, cities);
+
+  const cityOptions = cities.map((c) => ({ value: c, label: c }));
+
+  console.log("[CITIES-CREATE DEBUG] options:", cityOptions?.length, cityOptions);
+
   return (
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
@@ -213,7 +230,17 @@ export default function CreatePage() {
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Город</label>
-        <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Город" className={`mt-2 ${inputClass}`} />
+        <div className="mt-2">
+          <Select
+            value={cityOptions.find(option => option.value === city)}
+            onChange={(selectedOption) => setCity(selectedOption?.value || CITY_ALL_RUSSIA)}
+            options={cityOptions}
+            placeholder="Выберите город"
+            isSearchable
+            className="react-select-container"
+            classNamePrefix="react-select"
+          />
+        </div>
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Категория</label>
