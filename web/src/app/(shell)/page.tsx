@@ -290,7 +290,11 @@ function FeedPage({ session }: { session: Session }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [nextCursor, runPrefetch, loadMore]);
 
+  console.log("[CITIES DEBUG] state:", cities?.length, cities);
+
   const cityOptions = cities.map((c) => ({ value: c, label: c }));
+
+  console.log("[CITIES DEBUG] options:", cityOptions?.length, cityOptions);
 
   return (
     <main className="safe-pt min-h-screen bg-main">

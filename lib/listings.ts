@@ -561,8 +561,11 @@ export async function getCitiesFromDb(): Promise<string[]> {
       .select("name")
       .order("name");
 
+    console.log("[CITIES DEBUG] raw DB:", data);
+    console.log("[CITIES DEBUG] count:", data?.length);
+
     if (error) {
-      console.error("[CITIES] Error fetching from DB:", error);
+      console.error("[CITIES ERROR]", error);
       console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
       return RUSSIAN_CITIES; // fallback to static
     }

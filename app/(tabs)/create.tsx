@@ -59,11 +59,15 @@ export default function CreateListingScreen() {
     }, [])
   );
 
+  console.log("[CITIES DEBUG] state:", cities?.length, cities);
+
   const filteredCities = useMemo(() => {
     if (!cityQuery.trim()) return cities;
     const q = cityQuery.toLowerCase();
     return cities.filter(c => c.toLowerCase().includes(q));
   }, [cityQuery, cities]);
+
+  console.log("[CITIES DEBUG] filtered:", filteredCities?.length, filteredCities);
 
   function validateForm(): string | null {
     if (!title.trim() || title.trim().length < 2) {

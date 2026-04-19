@@ -85,11 +85,15 @@ export default function FeedScreen() {
     })();
   }, []);
 
+  console.log("[CITIES DEBUG] state:", cities?.length, cities);
+
   const filteredCities = useMemo(() => {
     if (!cityQuery.trim()) return cities;
     const q = cityQuery.toLowerCase();
     return cities.filter(c => c.toLowerCase().includes(q));
   }, [cityQuery, cities]);
+
+  console.log("[CITIES DEBUG] filtered:", filteredCities?.length, filteredCities);
 
   const persistSelectedCity = useCallback(async (city: string) => {
     setSelectedCity(city);
