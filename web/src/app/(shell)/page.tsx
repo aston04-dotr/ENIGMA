@@ -102,6 +102,7 @@ function FeedPage({ session }: { session: Session }) {
   useEffect(() => {
     void (async () => {
       const dbCities = await getCitiesFromDb();
+      console.log("[CITIES-FEED] Loaded:", dbCities.length, "cities");
       setCities(dbCities);
     })();
   }, []);

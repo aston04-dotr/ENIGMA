@@ -562,17 +562,22 @@ export async function getCitiesFromDb(): Promise<string[]> {
       .order("name");
 
     if (error) {
-      console.error("Error fetching cities:", error);
+      console.error("[CITIES] Error fetching from DB:", error);
+      console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
       return RUSSIAN_CITIES; // fallback to static
     }
 
     if (!Array.isArray(data) || data.length === 0) {
+      console.warn("[CITIES] DB returned empty array, using fallback:", RUSSIAN_CITIES.length, "cities");
       return RUSSIAN_CITIES; // fallback to full static list
     }
 
-    return data.map((row) => row.name);
+    const cities = data.map((row) => row.name);
+    console.log("[CITIES] Loaded from DB:", cities.length, "cities");
+    return cities;
   } catch (e) {
-    console.error("Network error fetching cities:", e);
+    console.error("[CITIES] Network error:", e);
+    console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
     return RUSSIAN_CITIES; // fallback
   }
 }

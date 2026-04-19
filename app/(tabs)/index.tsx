@@ -80,6 +80,7 @@ export default function FeedScreen() {
   useEffect(() => {
     void (async () => {
       const dbCities = await getCitiesFromDb();
+      console.log("[CITIES-HOME] Loaded:", dbCities.length, "cities");
       setCities(dbCities);
     })();
   }, []);

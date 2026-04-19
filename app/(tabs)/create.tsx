@@ -53,6 +53,7 @@ export default function CreateListingScreen() {
     useCallback(() => {
       void (async () => {
         const dbCities = await getCitiesFromDb();
+        console.log("[CITIES-CREATE] Loaded:", dbCities.length, "cities");
         setCities(dbCities);
       })();
     }, [])
