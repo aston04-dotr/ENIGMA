@@ -565,16 +565,16 @@ export async function getCitiesFromDb(): Promise<string[]> {
 
     if (error) {
       console.error("Error fetching cities:", error);
-      return [CITY_ALL_RUSSIA, ...RUSSIAN_CITIES]; // fallback to static
+      return RUSSIAN_CITIES; // fallback to static
     }
 
     const uniqueCities = Array.from(new Set(data.map(row => row.city)));
     if (uniqueCities.length === 0) {
-      return [CITY_ALL_RUSSIA, ...RUSSIAN_CITIES]; // fallback to full static list
+      return RUSSIAN_CITIES; // fallback to full static list
     }
-    return [CITY_ALL_RUSSIA, ...uniqueCities.sort()];
+    return Array.from(new Set([CITY_ALL_RUSSIA, ...uniqueCities.sort()]));
   } catch (e) {
     console.error("Network error fetching cities:", e);
-    return [CITY_ALL_RUSSIA, ...RUSSIAN_CITIES]; // fallback
+    return RUSSIAN_CITIES; // fallback
   }
 }

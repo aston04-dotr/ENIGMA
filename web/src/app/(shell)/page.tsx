@@ -96,7 +96,7 @@ function FeedPage({ session }: { session: Session }) {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...RUSSIAN_CITIES]);
+  const [cities, setCities] = useState<string[]>(RUSSIAN_CITIES);
   const [feedNonce, setFeedNonce] = useState(0);
 
   useEffect(() => {
