@@ -7,7 +7,7 @@ import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
 import { CITY_ALL_RUSSIA } from "@/lib/russianCities";
-import { cities } from "../../../../lib/cities";
+import { cities as staticCities } from "../../../../lib/cities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import { fetchListings, getCitiesFromDb, type FeedListingsCursor } from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
@@ -97,7 +97,7 @@ function FeedPage({ session }: { session: Session }) {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...TOP_CITIES]);
+  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...staticCities.map((c) => c.name)]);
   const [feedNonce, setFeedNonce] = useState(0);
 
   useEffect(() => {
@@ -120,6 +120,15 @@ function FeedPage({ session }: { session: Session }) {
     if (city.trim() && city !== CITY_ALL_RUSSIA) f.city = city.trim();
     return f;
   }, [city]);
+
+  const filtered = useMemo(() => {
+    if (!Array.isArray(items)) return [];
+    return items.filter((x) => {
+      if (city === CITY_ALL_RUSSIA) return true;
+      if (listingIsRussiaForFeed(x)) return true;
+      return x.city?.toLowerCase().trim() === city.toLowerCase().trim();
+    });
+  }, [items, city]);
 
   const applyRes = useCallback(
     (res: Awaited<ReturnType<typeof fetchListings>>, mode: "replace" | "append") => {
@@ -281,7 +290,7 @@ function FeedPage({ session }: { session: Session }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [nextCursor, runPrefetch, loadMore]);
 
-  const cityOptions = cities.map(c => ({ value: c.name, label: c.name }));
+  const cityOptions = cities.map((c) => ({ value: c, label: c }));
 
   return (
     <main className="safe-pt min-h-screen bg-main">

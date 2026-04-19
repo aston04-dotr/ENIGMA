@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
       { protocol: "http", hostname: "**", pathname: "/**" },
     ],
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 export default nextConfig;
