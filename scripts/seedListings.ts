@@ -51,52 +51,48 @@ const categories = [
 ]
 
 const titleStarts = [
-  'Продам',
-  'Отдам',
-  'Куплю в хорошем состоянии',
-  'Идеальное предложение',
-  'Срочно',
-  'Новый',
-  'Почти новый',
-  'Дёшево',
-  'Выгодно',
-  'Лучшее предложение',
+  'iPhone',
+  'Samsung Galaxy',
+  'MacBook',
+  'Lenovo',
+  'Sony',
+  'LG',
+  'Bosch',
+  'Xiaomi',
+  'Huawei',
+  'Nokia',
 ]
 
 const titleItems = [
-  'смартфон',
-  'ноутбук',
-  'холодильник',
+  '13 Pro',
+  'S23 Ultra',
+  'Air M1',
+  'ThinkPad',
+  'Xperia',
+  'OLED TV',
   'стиральная машина',
-  'диван',
-  'шуба',
-  'велосипед',
-  'электросамокат',
-  'посудомоечная машина',
-  'телевизор',
-  'зеркальный фотоаппарат',
-  'гитара',
-  'робот-пылесос',
-  'пароварка',
+  'холодильник',
+  'ноутбук',
+  'планшет',
+  'наушники',
+  'колонка',
+  'фотоаппарат',
   'принтер',
-  'стол и стул',
-  'кресло',
-  'пылесос',
-  'кухонный гарнитур',
-  'комплект мебели',
+  'роутер',
+  'монитор',
+  'клавиатура',
+  'мышь',
+  'диван',
+  'кровать',
 ]
 
 const titleQualities = [
-  'как новый',
-  'с гарантией',
-  'с документами',
-  'без царапин',
+  'новый',
+  'почти новый',
+  'б/у',
   'в отличном состоянии',
-  'с минимальным пробегом',
-  'для дома и офиса',
-  'для комфортной жизни',
-  'отличный вариант',
-  'срочно, торг уместен',
+  'с гарантией',
+  'оригинал',
 ]
 
 const descriptionPhrases = [
@@ -142,11 +138,11 @@ const random = (min: number, max: number) => Math.floor(Math.random() * (max - m
 const choose = <T>(items: T[]) => items[random(0, items.length - 1)]
 const shuffle = <T>(items: T[]) => [...items].sort(() => Math.random() - 0.5)
 
-const buildTitle = (city: string): string => {
+const buildTitle = (): string => {
   const start = choose(titleStarts)
   const item = choose(titleItems)
-  const quality = choose(titleQualities)
-  return `${start} ${item} ${quality} в ${city}`
+  const quality = random(0, 2) === 0 ? '' : ` ${choose(titleQualities)}`
+  return `${start} ${item}${quality}`.trim()
 }
 
 const buildDescription = (category: string, city: string): string => {
@@ -157,37 +153,42 @@ const buildDescription = (category: string, city: string): string => {
 
 const buildPrice = (category: string): number => {
   const base = {
-    'Телефоны и аксессуары': [7000, 70000],
-    'Компьютеры и ноутбуки': [12000, 130000],
-    'Бытовая техника': [5000, 85000],
-    'Мебель и интерьер': [1500, 95000],
-    'Одежда и обувь': [400, 22000],
-    'Детские товары': [500, 45000],
-    'Спорт и отдых': [800, 52000],
-    'Красота и здоровье': [400, 28000],
-    'Авто и мото': [45000, 900000],
-    'Недвижимость': [500000, 12000000],
-    'Работа': [10000, 250000],
-    'Животные': [1000, 18000],
-    'Инструменты': [700, 45000],
-    'Книги и журналы': [100, 5500],
-    'Коллекционирование': [300, 150000],
-    'Фото и видео': [2500, 210000],
-    'Музыкальные инструменты': [1200, 120000],
-    'Хобби и творчество': [300, 31000],
-    'Сад и дача': [500, 67000],
-    'Товары для дома': [700, 32000],
-  }[category] || [500, 50000]
+    'Телефоны и аксессуары': [15000, 150000],
+    'Компьютеры и ноутбуки': [20000, 200000],
+    'Бытовая техника': [10000, 100000],
+    'Мебель и интерьер': [5000, 50000],
+    'Одежда и обувь': [1000, 20000],
+    'Детские товары': [2000, 30000],
+    'Спорт и отдых': [3000, 50000],
+    'Красота и здоровье': [500, 15000],
+    'Авто и мото': [50000, 1000000],
+    'Недвижимость': [1000000, 50000000],
+    'Работа': [20000, 300000],
+    'Животные': [1000, 20000],
+    'Инструменты': [1000, 30000],
+    'Книги и журналы': [100, 5000],
+    'Коллекционирование': [500, 100000],
+    'Фото и видео': [5000, 150000],
+    'Музыкальные инструменты': [2000, 100000],
+    'Хобби и творчество': [500, 20000],
+    'Сад и дача': [1000, 50000],
+    'Товары для дома': [1000, 25000],
+  }[category] || [1000, 50000]
 
   const [min, max] = base
-  return Math.round((random(min, max) / 100) * 100)
+  const price = random(min, max)
+  // Округлять до сотен или тысяч
+  if (price < 10000) {
+    return Math.round(price / 100) * 100
+  } else {
+    return Math.round(price / 1000) * 1000
+  }
 }
 
 const buildImages = (seed: string): string[] => {
-  const count = random(3, 5)
-  const keyword = choose(imageKeywords)
+  const count = random(1, 3) // минимум 1, максимум 3
   return Array.from({ length: count }, (_, index) => {
-    return `https://loremflickr.com/640/480/${keyword}?lock=${seed}-${index}`
+    return `https://picsum.photos/400/400?random=${seed}-${index}`
   })
 }
 
@@ -261,7 +262,7 @@ const validateReadiness = async () => {
 const insertListing = async (index: number, cityOverride?: string) => {
   const category = choose(categories)
   const city = cityOverride ?? choose(cities)
-  const title = buildTitle(city)
+  const title = buildTitle()
   const description = buildDescription(category, city)
   const price = buildPrice(category)
   const images = buildImages(`${Date.now()}-${index}`)

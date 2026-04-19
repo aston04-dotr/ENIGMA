@@ -19,7 +19,7 @@ import { ListingCardSkeleton } from "../../components/Skeleton";
 import { useAuth } from "../../context/auth-context";
 import { CATEGORIES } from "../../lib/categories";
 import { listingIsRussiaForFeed } from "../../lib/feedGeo";
-import { fetchListings } from "../../lib/listings";
+import { fetchListings, getCitiesFromDb } from "../../lib/listings";
 import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "../../lib/russianCities";
 import {
   subscribeListingCreated,
@@ -47,6 +47,7 @@ export default function FeedScreen() {
   const [category, setCategory] = useState<string | undefined>();
   const [selectedCity, setSelectedCity] = useState<string>(CITY_ALL_RUSSIA);
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
+  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...RUSSIAN_CITIES.slice(1)]);
   const [minP, setMinP] = useState("");
   const [maxP, setMaxP] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -68,10 +69,17 @@ export default function FeedScreen() {
         } else {
           saved = await AsyncStorage.getItem("selectedCity");
         }
-        if (saved && RUSSIAN_CITIES.includes(saved)) setSelectedCity(saved);
+        if (saved && cities.includes(saved)) setSelectedCity(saved);
       } catch {
         /* ignore */
       }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const dbCities = await getCitiesFromDb();
+      setCities(dbCities);
     })();
   }, []);
 
@@ -392,7 +400,7 @@ export default function FeedScreen() {
           <View style={styles.cityPickerSheet}>
             <Text style={styles.sheetTitle}>Город</Text>
             <ScrollView style={styles.cityScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-              {RUSSIAN_CITIES.map((c) => (
+              {cities.map((c) => (
                 <Pressable
                   key={c}
                   onPress={() => {

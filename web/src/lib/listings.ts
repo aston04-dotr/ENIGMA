@@ -398,6 +398,28 @@ export async function fetchListingFavoriteCount(listingId: string): Promise<numb
 type SingleFavoriteCacheEntry = { value: number; ts: number };
 let favoriteSingleCache = new Map<string, SingleFavoriteCacheEntry>();
 const FAVORITE_SINGLE_CACHE_LIMIT = 500;
+
+export async function getCitiesFromDb(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from("listings")
+      .select("city")
+      .not("city", "is", null)
+      .not("city", "eq", "")
+      .order("city");
+
+    if (error) {
+      console.error("Error fetching cities:", error);
+      return ["Вся Россия", ...TOP_CITIES]; // fallback
+    }
+
+    const uniqueCities = Array.from(new Set(data.map(row => row.city)));
+    return ["Вся Россия", ...uniqueCities.sort()];
+  } catch (e) {
+    console.error("Network error fetching cities:", e);
+    return ["Вся Россия", ...TOP_CITIES]; // fallback
+  }
+}
 let favoriteSingleRpcUnavailableUntil = 0;
 
 function setFavoriteSingleCache(listingId: string, value: number) {

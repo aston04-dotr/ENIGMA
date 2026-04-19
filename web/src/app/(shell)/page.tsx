@@ -7,9 +7,9 @@ import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
 import { CITY_ALL_RUSSIA } from "@/lib/russianCities";
-import { cities, TOP_CITIES } from "../../../../lib/cities";
+import { cities } from "../../../../lib/cities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
-import { fetchListings, type FeedListingsCursor } from "@/lib/listings";
+import { fetchListings, getCitiesFromDb, type FeedListingsCursor } from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import type { ListingRow } from "@/lib/types";
@@ -97,7 +97,16 @@ function FeedPage({ session }: { session: Session }) {
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState(CITY_ALL_RUSSIA);
   const [cityFilter, setCityFilter] = useState("");
+  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...TOP_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
+
+  useEffect(() => {
+    void (async () => {
+      const dbCities = await getCitiesFromDb();
+      setCities(dbCities);
+    })();
+  }, []);
+
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const prefetchedRef = useRef<FeedCache | null>(null);
@@ -312,7 +321,7 @@ function FeedPage({ session }: { session: Session }) {
             <div className="mt-5">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Популярные</p>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {[CITY_ALL_RUSSIA, ...TOP_CITIES].map((c) => (
+                {cities.map((c) => (
                   <button
                     key={c}
                     type="button"

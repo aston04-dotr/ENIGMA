@@ -553,3 +553,25 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     return { error: msg };
   }
 }
+
+export async function getCitiesFromDb(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from("listings")
+      .select("city")
+      .not("city", "is", null)
+      .not("city", "eq", "")
+      .order("city");
+
+    if (error) {
+      console.error("Error fetching cities:", error);
+      return [CITY_ALL_RUSSIA, ...RUSSIAN_CITIES.slice(1)]; // fallback to static
+    }
+
+    const uniqueCities = Array.from(new Set(data.map(row => row.city)));
+    return [CITY_ALL_RUSSIA, ...uniqueCities.sort()];
+  } catch (e) {
+    console.error("Network error fetching cities:", e);
+    return [CITY_ALL_RUSSIA, ...RUSSIAN_CITIES.slice(1)]; // fallback
+  }
+}
