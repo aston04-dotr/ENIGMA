@@ -557,22 +557,20 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
 export async function getCitiesFromDb(): Promise<string[]> {
   try {
     const { data, error } = await supabase
-      .from("listings")
-      .select("city")
-      .not("city", "is", null)
-      .not("city", "eq", "")
-      .order("city");
+      .from("cities")
+      .select("name")
+      .order("name");
 
     if (error) {
       console.error("Error fetching cities:", error);
       return RUSSIAN_CITIES; // fallback to static
     }
 
-    const uniqueCities = Array.from(new Set(data.map(row => row.city)));
-    if (uniqueCities.length === 0) {
+    if (!Array.isArray(data) || data.length === 0) {
       return RUSSIAN_CITIES; // fallback to full static list
     }
-    return Array.from(new Set([CITY_ALL_RUSSIA, ...uniqueCities.sort()]));
+
+    return data.map((row) => row.name);
   } catch (e) {
     console.error("Network error fetching cities:", e);
     return RUSSIAN_CITIES; // fallback
