@@ -323,29 +323,7 @@ export default function PaymentScreen() {
             : "generic:payment";
 
     if (!paymentsEnabled) {
-      const order = await purchaseFlow.createOrder(uid, productId);
-      logPaymentIntent({
-        userId: uid,
-        listingId: lid,
-        productId,
-        amountRub: secureAmount,
-        orderId: order.id,
-        rail,
-        promoKind: promoKindRaw ?? null,
-        paymentType: paymentType ?? null,
-      });
-      console.info("[payments-disabled] YooKassa keys are missing; payment attempt was not processed.");
-      setPaymentState("failed");
-      logPaymentEvent({
-        user_id: uid,
-        listing_id: lid,
-        promoKind: promoKindRaw ?? null,
-        amount: secureAmount,
-        payment_id: order.id,
-        status: "failed",
-      });
-      Alert.alert("Платежи временно недоступны", PAYMENTS_UNAVAILABLE_MESSAGE);
-      return;
+      console.info("[payments-mock] YooKassa не подключена. Заказ будет подтверждён автоматически.");
     }
 
     setPaymentState("creating");
@@ -360,6 +338,19 @@ export default function PaymentScreen() {
     try {
       const order = await purchaseFlow.createOrder(uid, productId);
 
+      if (!paymentsEnabled) {
+        logPaymentIntent({
+          userId: uid,
+          listingId: lid,
+          productId,
+          amountRub: secureAmount,
+          orderId: order.id,
+          rail,
+          promoKind: promoKindRaw ?? null,
+          paymentType: paymentType ?? null,
+        });
+      }
+
       setPaymentState("pending");
       logPaymentEvent({
         user_id: uid,
@@ -371,7 +362,7 @@ export default function PaymentScreen() {
       });
 
       const confirmedOrder = await purchaseFlow.confirmPayment(order.id);
-      if (confirmedOrder.status !== "confirmed") {
+      if (confirmedOrder.status !== "confirmed" && confirmedOrder.status !== "success") {
         setPaymentState("failed");
         Alert.alert("Ошибка", "Платёж не подтверждён. Попробуйте ещё раз.");
         logPaymentEvent({
@@ -497,7 +488,7 @@ export default function PaymentScreen() {
         <Text style={styles.tapHint}>
           {paymentsEnabled
             ? "Apple Pay / Google Pay — при подключении эквайринга."
-            : "ЮKassa ещё не подключена. Экран оплаты работает как безопасная заглушка без списания."}
+            : "Тестовый режим: заказ подтверждается автоматически, пакет начисляется сразу."}
         </Text>
 
         <View style={[styles.sumCard, shadow.soft]}>

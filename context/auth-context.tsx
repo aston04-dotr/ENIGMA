@@ -165,7 +165,7 @@ async function loadProfile(userId: string): Promise<LoadResult> {
 
   let { data: p, error: pErr } = await supabase
     .from("profiles")
-    .select("phone,email,phone_updated_at,device_id,trust_score")
+    .select("phone,email,phone_updated_at,device_id,trust_score,real_estate_package_count,auto_package_count,other_package_count")
     .eq("id", userId)
     .maybeSingle();
 
@@ -177,7 +177,7 @@ async function loadProfile(userId: string): Promise<LoadResult> {
       await ensureProfileAndUserRow(auth.user);
       const retry = await supabase
         .from("profiles")
-        .select("phone,email,phone_updated_at,device_id,trust_score")
+        .select("phone,email,phone_updated_at,device_id,trust_score,real_estate_package_count,auto_package_count,other_package_count")
         .eq("id", userId)
         .maybeSingle();
       p = retry.data;
@@ -195,6 +195,9 @@ async function loadProfile(userId: string): Promise<LoadResult> {
     phone_updated_at: p?.phone_updated_at ?? null,
     device_id: p?.device_id ?? null,
     trust_score: p?.trust_score ?? row.trust_score ?? null,
+    real_estate_package_count: p?.real_estate_package_count ?? row.real_estate_package_count ?? 0,
+    auto_package_count: p?.auto_package_count ?? row.auto_package_count ?? 0,
+    other_package_count: p?.other_package_count ?? row.other_package_count ?? 0,
   };
   return { row: merged };
 }

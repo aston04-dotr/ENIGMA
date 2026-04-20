@@ -337,7 +337,7 @@ function envMap(): Record<string, string | undefined> {
   return g.process?.env ?? {};
 }
 
-export const PAYMENTS_UNAVAILABLE_MESSAGE = "Платежи временно недоступны. ЮKassa ещё не подключена.";
+export const PAYMENTS_UNAVAILABLE_MESSAGE = "Тестовый режим оплаты: заказ подтверждается автоматически.";
 
 export function isPaymentsEnabled(): boolean {
   const env = envMap();
@@ -373,7 +373,7 @@ export function logPaymentIntent(payload: {
 export type PromotionType = "boost" | "vip" | "top";
 export type PackageCounterKind = "real_estate" | "auto" | "other";
 
-export type PurchaseOrderStatus = "pending" | "confirmed" | "failed";
+export type PurchaseOrderStatus = "pending" | "confirmed" | "success" | "failed";
 
 export type PurchaseOrder = {
   id: string;
@@ -463,7 +463,7 @@ function getConfirmedOrder(
   const order = mockPurchaseOrders.get(orderId);
   if (!order) return null;
   if (order.userId !== userId) return null;
-  if (order.status !== "confirmed") return null;
+  if (order.status !== "confirmed" && order.status !== "success") return null;
   if (order.productId !== expectedProductId) return null;
   return order;
 }
@@ -481,7 +481,7 @@ export const purchaseFlow = {
       productId,
       status: "pending",
       createdAt: nowIso(),
-      provider: enabled ? "yookassa" : "disabled",
+      provider: enabled ? "yookassa" : "mock",
       note: enabled ? undefined : PAYMENTS_UNAVAILABLE_MESSAGE,
     };
     mockPurchaseOrders.set(order.id, order);
@@ -495,16 +495,16 @@ export const purchaseFlow = {
     if (!current) throw new Error("Заказ не найден.");
 
     if (!isPaymentsEnabled()) {
-      const failed: PurchaseOrder = {
+      const succeeded: PurchaseOrder = {
         ...current,
-        status: "failed",
+        status: "success",
         confirmedAt: nowIso(),
-        provider: "disabled",
+        provider: "mock",
         note: PAYMENTS_UNAVAILABLE_MESSAGE,
       };
-      mockPurchaseOrders.set(orderId, failed);
-      await updatePurchaseOrder(failed);
-      return failed;
+      mockPurchaseOrders.set(orderId, succeeded);
+      await updatePurchaseOrder(succeeded);
+      return succeeded;
     }
 
     const confirmed: PurchaseOrder = {
@@ -545,6 +545,95 @@ export function legacyPromotionToParams(kind: PromotionKind): { type: PromotionT
   return { type: "top", days: 7 };
 }
 
+type PackageProfileField = "auto_package_count" | "real_estate_package_count" | "other_package_count";
+
+const PACKAGE_FIELD_MAP = {
+  auto: "auto_package_count",
+  real_estate: "real_estate_package_count",
+  general: "other_package_count",
+  other: "other_package_count",
+} as const;
+
+function packageFieldByKind(type: PackageCounterKind): PackageProfileField {
+  return PACKAGE_FIELD_MAP[type] ?? PACKAGE_FIELD_MAP.other;
+}
+
+function packageFieldByCategory(category: string): PackageProfileField {
+  if (category === "auto") return PACKAGE_FIELD_MAP.auto;
+  if (category === "realestate") return PACKAGE_FIELD_MAP.real_estate;
+  return PACKAGE_FIELD_MAP.other;
+}
+
+async function incrementProfilePackageBalance(
+  userId: string,
+  field: PackageProfileField,
+  amount: number
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { error } = await supabase.rpc("increment_package", {
+    field_name: field,
+    inc_value: amount,
+  });
+
+  if (!error) return { ok: true };
+
+  console.warn("increment_package RPC fallback", error.message ?? error);
+
+  const { data: currentRow, error: selectError } = await supabase
+    .from("profiles")
+    .select(field)
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (selectError) {
+    return { ok: false, message: selectError.message ?? "Не удалось загрузить профиль." };
+  }
+
+  const current = Number((currentRow as Record<string, unknown> | null)?.[field] ?? 0);
+  const nextValue = current + amount;
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ [field]: nextValue } as Record<string, number>)
+    .eq("id", userId);
+
+  if (updateError) {
+    return { ok: false, message: updateError.message ?? "Не удалось начислить пакет." };
+  }
+
+  return { ok: true };
+}
+
+async function decrementProfilePackageBalance(
+  userId: string,
+  field: PackageProfileField
+): Promise<{ ok: true; consumed: boolean } | { ok: false; message: string }> {
+  const { data: currentRow, error: selectError } = await supabase
+    .from("profiles")
+    .select(field)
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (selectError) {
+    return { ok: false, message: selectError.message ?? "Не удалось загрузить профиль." };
+  }
+
+  const current = Number((currentRow as Record<string, unknown> | null)?.[field] ?? 0);
+  if (current <= 0) {
+    return { ok: true, consumed: false };
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ [field]: current - 1 } as Record<string, number>)
+    .eq("id", userId);
+
+  if (updateError) {
+    return { ok: false, message: updateError.message ?? "Не удалось списать пакет." };
+  }
+
+  return { ok: true, consumed: true };
+}
+
 export async function tryConsumePackage(
   userId: string,
   category: string
@@ -557,11 +646,12 @@ export async function tryConsumePackage(
     p_category: category,
   });
 
-  if (error) {
-    return { ok: false, message: error.message ?? "Не удалось списать пакет." };
+  if (!error) {
+    return { ok: true, consumed: data === true };
   }
 
-  return { ok: true, consumed: data === true };
+  console.warn("try_consume_listing_package RPC fallback", error.message ?? error);
+  return decrementProfilePackageBalance(userId, packageFieldByCategory(category));
 }
 
 export async function addPackage(
@@ -579,16 +669,18 @@ export async function addPackage(
   if (!order) {
     return { ok: false, message: "Нельзя начислить пакет без подтверждённой оплаты." };
   }
-  void order;
 
-  const { error } = await supabase.rpc("add_package_credits", {
-    p_kind: type,
-    p_slots: amount,
-  });
-
-  if (error) {
-    return { ok: false, message: error.message ?? "Не удалось начислить пакет." };
+  const field = packageFieldByKind(type);
+  const balanceRes = await incrementProfilePackageBalance(userId, field, amount);
+  if (!balanceRes.ok) {
+    return balanceRes;
   }
+
+  console.log("PAYMENT SUCCESS:", {
+    orderId: order.id,
+    type,
+    count: amount,
+  });
 
   return { ok: true };
 }
