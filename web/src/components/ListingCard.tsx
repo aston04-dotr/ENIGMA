@@ -6,6 +6,7 @@ import { categoryLabel } from "@/lib/categories";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
+import { normalizeListingImages } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
@@ -21,8 +22,12 @@ type Props = {
 export function ListingCard({ item }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
-  const imgs = [...(item.images ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const uri = imgs[0]?.url;
+  const imgs = normalizeListingImages((item as ListingRow & { images?: unknown })?.images).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+  const uri = imgs[0]?.url ?? null;
+  const itemTitle = typeof item.title === "string" && item.title.trim() ? item.title : "Без названия";
+  const itemCity = typeof item.city === "string" && item.city.trim() ? item.city : "Город не указан";
   const boosted = isBoostActive(item);
   const lid = item?.id;
   const viewerId = session?.user?.id ?? null;
@@ -73,10 +78,10 @@ export function ListingCard({ item }: Props) {
           ) : null}
         </div>
         <div className="space-y-2 p-4">
-          <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-fg">{item.title}</p>
+          <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-fg">{itemTitle}</p>
           <p className="text-xl font-bold tracking-tight text-fg">{formatPrice(Number(item.price))}</p>
           <p className="text-xs text-muted">
-            {item.city} · {categoryLabel(item.category)}
+            {itemCity} · {categoryLabel(item.category)}
           </p>
         </div>
       </Link>

@@ -5,7 +5,7 @@ import { useAuth } from "@/context/auth-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
-import { fetchListingById, incrementViews } from "@/lib/listings";
+import { fetchListingById, incrementViews, normalizeListingImages } from "@/lib/listings";
 import { categoryLabel } from "@/lib/categories";
 import Image from "next/image";
 import Link from "next/link";
@@ -120,17 +120,24 @@ export default function ListingDetailPage() {
     );
   }
 
-  const imgs = [...(row.images ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const uri = imgs[0]?.url;
+  const imgs = normalizeListingImages((row as { images?: unknown })?.images).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+  const uri = imgs[0]?.url ?? null;
+  const title = typeof row.title === "string" && row.title.trim() ? row.title : "Без названия";
+  const description = typeof row.description === "string" && row.description.trim() ? row.description : "Без описания";
+  const city = typeof row.city === "string" && row.city.trim() ? row.city : "Город не указан";
+  const category = typeof row.category === "string" ? row.category : "";
+  const viewCount = Number.isFinite(Number(row.view_count)) ? Number(row.view_count) : 0;
   const price = new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency: "RUB",
     maximumFractionDigits: 0,
-  }).format(Number(row.price));
+  }).format(Number.isFinite(Number(row.price)) ? Number(row.price) : 0);
 
   const boostHref =
     viewerId && row.id ? `/payment?${webBoostPaymentQuery(String(row.id), viewerId)}` : "/login";
-  const ownerPhone = row.contact_phone?.trim() || null;
+  const ownerPhone = typeof row.contact_phone === "string" && row.contact_phone.trim() ? row.contact_phone.trim() : null;
 
   const copyPhone = useCallback(async () => {
     if (!ownerPhone) {
@@ -162,11 +169,11 @@ export default function ListingDetailPage() {
       </div>
       <div className="p-5">
         <p className="text-3xl font-bold tracking-tight text-fg">{price}</p>
-        <h1 className="mt-2 text-xl font-semibold leading-snug text-fg">{row.title}</h1>
+        <h1 className="mt-2 text-xl font-semibold leading-snug text-fg">{title}</h1>
         <p className="mt-3 text-sm text-muted">
-          {row.city} · {categoryLabel(row.category)} · {row.view_count} просм.
+          {city} · {categoryLabel(category)} · {viewCount} просм.
         </p>
-        <p className="mt-6 whitespace-pre-wrap text-[15px] leading-relaxed text-fg opacity-90">{row.description}</p>
+        <p className="mt-6 whitespace-pre-wrap text-[15px] leading-relaxed text-fg opacity-90">{description}</p>
         
         {/* Action buttons */}
         {isOwnListing ? (

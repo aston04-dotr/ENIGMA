@@ -29,16 +29,20 @@ import { fetchListingById } from "../lib/listings";
 import { markPublishSlotPaid } from "../lib/paymentBridge";
 import { isPaymentProcessed, logPaymentEvent, markPaymentProcessed } from "../lib/paymentLogs";
 import { validatePromotionPaymentAmount } from "../lib/paymentValidation";
-import { confirmPayment, createPaymentIntent, paymentRailLabel, verifyPayment, type PaymentRail } from "../lib/payments";
+import { paymentRailLabel, type PaymentRail } from "../lib/payments";
 import { safeGoBack } from "../lib/safeNavigation";
 import {
-  applyListingPromotionMock,
-  applyPromotionTariff,
+  addPackage,
+  applyPromotion,
+  buildPackageProductId,
+  buildPromotionProductId,
+  legacyPromotionToParams,
   parsePromotionKind,
   parsePromotionTariffKind,
+  promotionTariffToParams,
+  purchaseFlow,
 } from "../lib/monetization";
 import { packageByKind, parsePackageKind } from "../lib/packages";
-import { supabase } from "../lib/supabase";
 import { colors, radius, shadow } from "../lib/theme";
 import type { ListingRow } from "../lib/types";
 
@@ -279,6 +283,14 @@ export default function PaymentScreen() {
     const uid = session.user.id;
     const lid = listingId?.trim() ?? null;
     const tariffKind = parsePromotionTariffKind(promoKindRaw);
+    const pkgKind = parsePackageKind(packageTypeRaw);
+    const pkgDef = pkgKind ? packageByKind(pkgKind) : undefined;
+    const legacyKind = parsePromotionKind(promoKindRaw);
+    const promoConfig = tariffKind
+      ? promotionTariffToParams(tariffKind)
+      : legacyKind
+        ? legacyPromotionToParams(legacyKind)
+        : null;
     let secureAmount = amountNum;
     if (tariffKind) {
       const amountCheck = validatePromotionPaymentAmount(tariffKind, amountNum);
@@ -307,11 +319,16 @@ export default function PaymentScreen() {
     });
 
     try {
-      const intent = await createPaymentIntent(rail, secureAmount, description, {
-        user_id: uid,
-        listing_id: lid ?? "",
-        promoKind: promoKindRaw ?? "",
-      });
+      const productId =
+        paymentType === "package" && pkgKind && pkgDef
+          ? buildPackageProductId(pkgKind, pkgDef.slots)
+          : promoConfig
+            ? buildPromotionProductId(promoConfig.type, promoConfig.days)
+            : isPublishFlow
+              ? "publish:single"
+              : "generic:payment";
+
+      const order = await purchaseFlow.createOrder(uid, productId);
 
       setPaymentState("pending");
       logPaymentEvent({
@@ -319,12 +336,12 @@ export default function PaymentScreen() {
         listing_id: lid,
         promoKind: promoKindRaw ?? null,
         amount: secureAmount,
-        payment_id: intent.id,
+        payment_id: order.id,
         status: "pending",
       });
 
-      const confirmedStatus = await confirmPayment(intent.id);
-      if (confirmedStatus !== "confirmed") {
+      const confirmedOrder = await purchaseFlow.confirmPayment(order.id);
+      if (confirmedOrder.status !== "confirmed") {
         setPaymentState("failed");
         Alert.alert("Ошибка", "Платёж не подтверждён. Попробуйте ещё раз.");
         logPaymentEvent({
@@ -332,22 +349,7 @@ export default function PaymentScreen() {
           listing_id: lid,
           promoKind: promoKindRaw ?? null,
           amount: secureAmount,
-          payment_id: intent.id,
-          status: "failed",
-        });
-        return;
-      }
-
-      const verifyStatus = await verifyPayment(intent.id);
-      if (verifyStatus !== "confirmed") {
-        setPaymentState("failed");
-        Alert.alert("Ошибка", "Платёж не прошёл проверку.");
-        logPaymentEvent({
-          user_id: uid,
-          listing_id: lid,
-          promoKind: promoKindRaw ?? null,
-          amount: secureAmount,
-          payment_id: intent.id,
+          payment_id: order.id,
           status: "failed",
         });
         return;
@@ -359,11 +361,11 @@ export default function PaymentScreen() {
         listing_id: lid,
         promoKind: promoKindRaw ?? null,
         amount: secureAmount,
-        payment_id: intent.id,
+        payment_id: confirmedOrder.id,
         status: "confirmed",
       });
 
-      if (isPaymentProcessed(intent.id)) {
+      if (isPaymentProcessed(confirmedOrder.id)) {
         Alert.alert("Оплата уже обработана", "Повторное списание не выполняется.");
         return;
       }
@@ -375,52 +377,31 @@ export default function PaymentScreen() {
       }
 
       if (paymentType === "package") {
-        const pkgKind = parsePackageKind(packageTypeRaw);
-        const def = pkgKind ? packageByKind(pkgKind) : undefined;
-        if (!pkgKind || !def) {
+        if (!pkgKind || !pkgDef) {
           Alert.alert("Ошибка", "Неизвестный тип пакета.");
           return;
         }
-        const { error } = await supabase.rpc("add_package_credits", {
-          p_kind: pkgKind,
-          p_slots: def.slots,
+        const packageRes = await addPackage(uid, pkgKind, pkgDef.slots, {
+          orderId: confirmedOrder.id,
         });
-        if (error) {
+        if (!packageRes.ok) {
           Alert.alert(
             "Не удалось начислить пакет",
-            `${error.message}\n\nЕсли колонок ещё нет в БД, выполните миграцию 006_listing_packages.sql в Supabase.`
+            `${packageRes.message}\n\nЕсли колонок ещё нет в БД, выполните миграцию 006_listing_packages.sql в Supabase.`
           );
           return;
         }
         await refreshProfile();
-        Alert.alert("Готово", `Пакет «${def.headline}» активирован: +${def.slots} размещений.`, [
+        Alert.alert("Готово", `Пакет «${pkgDef.headline}» активирован: +${pkgDef.slots} размещений.`, [
           { text: "OK", onPress: () => safeGoBack(router) },
         ]);
         return;
       }
 
-      if (lid && tariffKind) {
-        const guard = validatePromotionPaymentAmount(tariffKind, secureAmount);
-        if (!guard.valid) {
-          setPaymentState("failed");
-          Alert.alert("Ошибка", guard.reason ?? "Сумма не прошла проверку.");
-          logPaymentEvent({
-            user_id: uid,
-            listing_id: lid,
-            promoKind: tariffKind,
-            amount: secureAmount,
-            payment_id: intent.id,
-            status: "invalid",
-          });
-          return;
-        }
-        const { data: fresh, error } = await supabase.from("listings").select("*").eq("id", lid).maybeSingle();
-        if (error || !fresh) {
-          setPaymentState("failed");
-          Alert.alert("Ошибка", "Не удалось загрузить объявление.");
-          return;
-        }
-        const res = await applyPromotionTariff(fresh as ListingRow, tariffKind);
+      if (lid && promoConfig) {
+        const res = await applyPromotion(uid, lid, promoConfig.type, promoConfig.days, {
+          orderId: confirmedOrder.id,
+        });
         if (!res.ok) {
           setPaymentState("failed");
           Alert.alert("Ошибка", res.message);
@@ -429,16 +410,16 @@ export default function PaymentScreen() {
         logPaymentEvent({
           user_id: uid,
           listing_id: lid,
-          promoKind: tariffKind,
+          promoKind: promoKindRaw ?? null,
           amount: secureAmount,
-          payment_id: intent.id,
+          payment_id: confirmedOrder.id,
           status: "applied",
         });
-        markPaymentProcessed(intent.id);
-        const isBoost = tariffKind === "boost_3" || tariffKind === "boost_7";
+        markPaymentProcessed(confirmedOrder.id);
+        const isBoost = promoConfig.type === "boost";
         if (isBoost) {
           emitBoostActivated(lid);
-          trackBoostEvent("boost_paid", { listingId: lid, promoKind: tariffKind });
+          trackBoostEvent("boost_paid", { listingId: lid, promoKind: promoKindRaw ?? "boost" });
           setBoostSuccess({ listingId: lid });
         } else {
           emitListingPromotionApplied(lid);
@@ -446,34 +427,6 @@ export default function PaymentScreen() {
             { text: "OK", onPress: () => safeGoBack(router) },
           ]);
         }
-        return;
-      }
-
-      const kind = parsePromotionKind(promoKindRaw);
-      if (lid && kind) {
-        const { data: fresh, error } = await supabase.from("listings").select("*").eq("id", lid).maybeSingle();
-        if (error || !fresh) {
-          setPaymentState("failed");
-          Alert.alert("Ошибка", "Не удалось загрузить объявление.");
-          return;
-        }
-        const res = await applyListingPromotionMock(fresh as ListingRow, kind);
-        if (!res.ok) {
-          setPaymentState("failed");
-          Alert.alert("Ошибка", res.message);
-          return;
-        }
-        if (kind === "boost") {
-          emitBoostActivated(lid);
-          trackBoostEvent("boost_paid", { listingId: lid, kind: "boost" });
-          setBoostSuccess({ listingId: lid });
-        } else {
-          emitListingPromotionApplied(lid);
-          Alert.alert("Оплата прошла успешно", "Услуга подключена.", [
-            { text: "OK", onPress: () => safeGoBack(router) },
-          ]);
-        }
-        markPaymentProcessed(intent.id);
         return;
       }
 

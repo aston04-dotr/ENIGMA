@@ -27,6 +27,7 @@ import { isBoostExpiredForUpsell, isBoostLastHours } from "../lib/boostUi";
 import { isBoostActive, isTopActive, isVipActive } from "../lib/monetization";
 import { stashListingRow } from "../lib/listingStash";
 import { colors, radius, shadow } from "../lib/theme";
+import { normalizeListingImages } from "../lib/listings";
 import type { ListingRow } from "../lib/types";
 
 function formatPrice(n: number) {
@@ -136,8 +137,12 @@ export function ListingCard({
   onToggleFavorite,
 }: Props) {
   const router = useRouter();
-  const imgs = [...(item.images ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const uri = imgs[0]?.url;
+  const imgs = normalizeListingImages((item as ListingRow & { images?: unknown })?.images).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+  const uri = imgs[0]?.url ?? null;
+  const itemTitle = typeof item.title === "string" && item.title.trim() ? item.title : "Без названия";
+  const itemCity = typeof item.city === "string" && item.city.trim() ? item.city : "Россия";
   const top = isTopActive(item);
   const vip = isVipActive(item);
   const boosted = isBoostActive(item);
@@ -273,10 +278,10 @@ export function ListingCard({
             {formatPrice(Number(item.price))}
           </Text>
           <Text style={[styles.title, luxuryPartnerRe && styles.titleLuxury]} numberOfLines={2}>
-            {item.title}
+            {itemTitle}
           </Text>
           <View style={styles.row}>
-            <Text style={styles.meta}>{item.city || "Россия"}</Text>
+            <Text style={styles.meta}>{itemCity}</Text>
             <Text style={styles.dot}>·</Text>
             <Text style={styles.meta}>{categoryLabel(item.category)}</Text>
           </View>

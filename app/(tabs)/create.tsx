@@ -22,7 +22,7 @@ import { clearPublishSlotPaid, isPublishSlotPaid } from "../../lib/paymentBridge
 import { emitListingCreated } from "../../lib/listingPromotionEvents";
 import { insertListingRow } from "../../lib/listings";
 import { hasListingPackageBalance } from "../../lib/packages";
-import { countListingsInCategoryWindow, getCategoryRule } from "../../lib/monetization";
+import { countListingsInCategoryWindow, getCategoryRule, tryConsumePackage } from "../../lib/monetization";
 import { formatPostgrestError, logRlsIfBlocked } from "../../lib/postgrestErrors";
 import { uploadListingPhoto } from "../../lib/storageUpload";
 import { registerRapidListingCreated } from "../../lib/trust";
@@ -235,10 +235,8 @@ export default function CreateListingScreen() {
       const rule = getCategoryRule(category);
       const inWindow = await countListingsInCategoryWindow(uid, category, rule.periodDays);
       if (inWindow >= rule.freeLimit) {
-        const { data: consumed, error: pkgErr } = await supabase.rpc("try_consume_listing_package", {
-          p_category: category,
-        });
-        if (!pkgErr && consumed === true) {
+        const packageRes = await tryConsumePackage(uid, category);
+        if (packageRes.ok && packageRes.consumed) {
           await runInsert();
           await refreshProfile();
           return;

@@ -332,15 +332,28 @@ export async function incrementViews(listingId: string): Promise<boolean> {
   return !error;
 }
 
-/** PostgREST иногда отдаёт `images` как null, один объект или массив — приводим к массиву. */
+function normalizeListingText(raw: unknown, fallback = ""): string {
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  if (raw && typeof raw === "object" && "name" in raw) {
+    const name = (raw as { name?: unknown }).name;
+    if (typeof name === "string") return name;
+  }
+  return fallback;
+}
+
+/** PostgREST иногда отдаёт `images` как null, один объект, { data: [] } или массив — приводим к массиву. */
 export function normalizeListingImages(raw: unknown): { url: string; sort_order?: number }[] {
   if (raw == null) return [];
+  if (typeof raw === "object" && raw !== null && "data" in raw) {
+    return normalizeListingImages((raw as { data?: unknown }).data);
+  }
   if (Array.isArray(raw)) {
     const out: { url: string; sort_order?: number }[] = [];
     for (const x of raw) {
       if (x && typeof x === "object" && "url" in x) {
         const o = x as { url: unknown; sort_order?: unknown };
-        const url = String(o.url ?? "");
+        const url = String(o.url ?? "").trim();
         if (!url) continue;
         const so = o.sort_order;
         const sort_order =
@@ -352,7 +365,7 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
   }
   if (typeof raw === "object" && raw !== null && "url" in raw) {
     const o = raw as { url: unknown; sort_order?: unknown };
-    const url = String(o.url ?? "");
+    const url = String(o.url ?? "").trim();
     if (!url) return [];
     return [{ url, sort_order: o.sort_order != null ? Number(o.sort_order) : undefined }];
   }
@@ -362,15 +375,17 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
 /** Приводим строку из Postgres numeric/json к числу для UI. */
 export function parseListingRow(data: Record<string, unknown>): ListingRow {
   const fc = data.favorite_count;
+  const price = Number(data.price);
+  const viewCount = Number(data.view_count ?? 0);
   return {
-    id: String(data.id),
-    user_id: String(data.user_id),
-    title: String(data.title ?? ""),
-    description: String(data.description ?? ""),
-    price: Number(data.price),
-    category: String(data.category ?? ""),
-    city: String(data.city ?? data.location ?? ""),
-    view_count: Number(data.view_count ?? 0),
+    id: String(data.id ?? ""),
+    user_id: String(data.user_id ?? ""),
+    title: normalizeListingText(data.title, ""),
+    description: normalizeListingText(data.description, ""),
+    price: Number.isFinite(price) ? price : 0,
+    category: normalizeListingText(data.category, ""),
+    city: normalizeListingText(data.city ?? data.location, ""),
+    view_count: Number.isFinite(viewCount) ? viewCount : 0,
     created_at: String(data.created_at ?? ""),
     updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
     is_vip: data.is_vip as boolean | null | undefined,
@@ -567,12 +582,12 @@ export async function getCitiesFromDb(): Promise<string[]> {
     if (error) {
       console.error("[CITIES ERROR]", error);
       console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-      return RUSSIAN_CITIES; // fallback to static
+      return [...RUSSIAN_CITIES]; // fallback to static
     }
 
     if (!Array.isArray(data) || data.length === 0) {
       console.warn("[CITIES] DB returned empty array, using fallback:", RUSSIAN_CITIES.length, "cities");
-      return RUSSIAN_CITIES; // fallback to full static list
+      return [...RUSSIAN_CITIES]; // fallback to full static list
     }
 
     const cities = data.map((row) => row.name);
@@ -581,6 +596,6 @@ export async function getCitiesFromDb(): Promise<string[]> {
   } catch (e) {
     console.error("[CITIES] Network error:", e);
     console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-    return RUSSIAN_CITIES; // fallback
+    return [...RUSSIAN_CITIES]; // fallback
   }
 }

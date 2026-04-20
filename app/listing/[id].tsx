@@ -12,7 +12,7 @@ import { categoryLabel } from "../../lib/categories";
 import { isValidListingUuid, resolveListingRouteId } from "../../lib/listingParams";
 import { peekStashedListing } from "../../lib/listingStash";
 import { subscribeListingPromotionApplied } from "../../lib/listingPromotionEvents";
-import { fetchListingById, fetchListingFavoriteCount, incrementViews } from "../../lib/listings";
+import { fetchListingById, fetchListingFavoriteCount, incrementViews, normalizeListingImages } from "../../lib/listings";
 import { hasDeviceViewFlag, setDeviceViewFlag } from "../../lib/listingViewDedupe";
 import { safeGoBack } from "../../lib/safeNavigation";
 import {
@@ -273,12 +273,23 @@ function ListingDetailScreenInner() {
     );
   }
 
-  const row = listing!;
+  const row = listing;
+  const profile = seller ?? null;
   const me = session?.user?.id;
-  const isOwner = !!me && me === row.user_id;
-
-  const imgs = [...(row.images ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const uri = imgs[idx]?.url;
+  const rowId = typeof row?.id === "string" ? row.id : "";
+  const ownerId = typeof row?.user_id === "string" ? row.user_id : "";
+  const isOwner = !!me && !!ownerId && me === ownerId;
+  const imgs = normalizeListingImages((row as ListingRow & { images?: unknown })?.images).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+  const safeIdx = idx >= 0 && idx < imgs.length ? idx : 0;
+  const uri = imgs[safeIdx]?.url ?? null;
+  const title = typeof row?.title === "string" && row.title.trim() ? row.title : "Без названия";
+  const description = typeof row?.description === "string" && row.description.trim() ? row.description : "Без описания";
+  const city = typeof row?.city === "string" && row.city.trim() ? row.city : "Город не указан";
+  const category = typeof row?.category === "string" ? row.category : "";
+  const viewCount = Number.isFinite(Number(row?.view_count)) ? Number(row.view_count) : 0;
+  const priceValue = Number(row?.price);
 
   async function openChat() {
     const uid = session?.user?.id;
@@ -286,11 +297,15 @@ function ListingDetailScreenInner() {
       router.push("/(auth)/email");
       return;
     }
-    if (uid === row.user_id) {
+    if (!ownerId) {
+      Alert.alert("Ошибка", "Не найден владелец объявления.");
+      return;
+    }
+    if (uid === ownerId) {
       Alert.alert("Это ваше объявление");
       return;
     }
-    const chatRes = await getOrCreateChat(row.user_id);
+    const chatRes = await getOrCreateChat(ownerId);
     if (!chatRes.ok) {
       Alert.alert("Чат", chatRes.error);
       return;
@@ -304,7 +319,11 @@ function ListingDetailScreenInner() {
       router.push("/(auth)/email");
       return;
     }
-    if (me === row.user_id) {
+    if (!rowId) {
+      Alert.alert("Ошибка", "Объявление не найдено.");
+      return;
+    }
+    if (me === ownerId) {
       Alert.alert("Это ваше объявление");
       return;
     }
@@ -314,7 +333,7 @@ function ListingDetailScreenInner() {
         text: "Спам / мошенничество",
         style: "destructive",
         onPress: async () => {
-          const { error } = await reportListingTrustPenalty(row.id, "spam");
+          const { error } = await reportListingTrustPenalty(rowId, "spam");
           if (error) {
             Alert.alert("Ошибка", error);
             return;
@@ -325,7 +344,7 @@ function ListingDetailScreenInner() {
       {
         text: "Запрещённый товар",
         onPress: async () => {
-          const { error } = await reportListingTrustPenalty(row.id, "prohibited");
+          const { error } = await reportListingTrustPenalty(rowId, "prohibited");
           if (error) {
             Alert.alert("Ошибка", error);
             return;
@@ -340,9 +359,9 @@ function ListingDetailScreenInner() {
     style: "currency",
     currency: "RUB",
     maximumFractionDigits: 0,
-  }).format(Number(row.price));
+  }).format(Number.isFinite(priceValue) ? priceValue : 0);
 
-  const sellerPhoneDigits = normalizePhoneForTel(seller?.phone);
+  const sellerPhoneDigits = normalizePhoneForTel(profile?.phone);
   const sellerPhoneDisplay = sellerPhoneDigits ? formatRuPhoneDisplay(sellerPhoneDigits) : null;
 
   return (
@@ -381,16 +400,16 @@ function ListingDetailScreenInner() {
         </View>
 
         <Text style={styles.price}>{price}</Text>
-        <Text style={styles.title}>{row.title}</Text>
+        <Text style={styles.title}>{title}</Text>
         <Text style={styles.viewsLine}>
-          {row.view_count} {ruViewsWord(row.view_count)}
+          {viewCount} {ruViewsWord(viewCount)}
         </Text>
         <View style={styles.favCountRow}>
           <Ionicons name="heart" size={15} color="#DC2626" />
           <Text style={styles.favCountNum}>{favoriteCount}</Text>
         </View>
         <Text style={styles.meta}>
-          {row.city} · {categoryLabel(row.category)}
+          {city} · {categoryLabel(category)}
         </Text>
 
         {row.is_partner_ad ? (
@@ -403,10 +422,10 @@ function ListingDetailScreenInner() {
           </Text>
         ) : null}
 
-        {isOwner && row.view_count >= 1 && row.view_count <= 12 ? (
+        {isOwner && viewCount >= 1 && viewCount <= 12 ? (
           <View style={styles.nudge}>
             <Text style={styles.nudgeTx}>
-              Ваше объявление посмотрели {row.view_count} {ruTimesWord(row.view_count)}. Поднимите, чтобы ускорить
+              Ваше объявление посмотрели {viewCount} {ruTimesWord(viewCount)}. Поднимите, чтобы ускорить
               продажу.
             </Text>
           </View>
@@ -435,7 +454,7 @@ function ListingDetailScreenInner() {
                     onPress={() =>
                       router.push({
                         pathname: "/payment",
-                        params: expoBoostPaymentParams(row.id, session?.user?.id),
+                        params: expoBoostPaymentParams(rowId, session?.user?.id),
                       })
                     }
                     style={styles.termPrimaryBtn}
@@ -466,7 +485,7 @@ function ListingDetailScreenInner() {
                   onPress={() =>
                     router.push({
                       pathname: "/payment",
-                      params: expoBoostPaymentParams(row.id, session?.user?.id),
+                      params: expoBoostPaymentParams(rowId, session?.user?.id),
                     })
                   }
                   style={styles.termPrimaryBtn}
@@ -477,7 +496,7 @@ function ListingDetailScreenInner() {
             ) : null}
             <Pressable
               onPress={() =>
-                router.push({ pathname: "/settings-promotion", params: { listingId: row.id } })
+                router.push({ pathname: "/settings-promotion", params: { listingId: rowId } })
               }
               style={styles.sellBtn}
             >
@@ -487,21 +506,23 @@ function ListingDetailScreenInner() {
         ) : null}
 
         <Pressable
-          onPress={() => router.push(`/user/${row.user_id}`)}
+          onPress={() => {
+            if (ownerId) router.push(`/user/${ownerId}`);
+          }}
           style={[styles.seller, shadow.soft]}
         >
           <View style={styles.sav}>
-            <Text style={styles.savTx}>{(seller?.name ?? "П").slice(0, 1).toUpperCase()}</Text>
+            <Text style={styles.savTx}>{(profile?.name ?? "П").slice(0, 1).toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sname}>{seller?.name ?? "Продавец"}</Text>
-            <Text style={styles.sid}>ID {seller?.public_id ?? "—"}</Text>
+            <Text style={styles.sname}>{profile?.name ?? "Продавец"}</Text>
+            <Text style={styles.sid}>ID {profile?.public_id ?? "—"}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
 
         <Text style={styles.h2}>Описание</Text>
-        <Text style={styles.desc}>{row.description || "Без описания"}</Text>
+        <Text style={styles.desc}>{description}</Text>
 
         <View style={styles.phoneRow}>
           {sellerPhoneDisplay ? (

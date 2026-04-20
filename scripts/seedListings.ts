@@ -223,7 +223,7 @@ const validateCities = () => {
 const validateGeneration = () => {
   const sampleCity = choose(cities)
   const sampleCategory = choose(categories)
-  const sampleTitle = buildTitle(sampleCity)
+  const sampleTitle = buildTitle()
   const sampleDescription = buildDescription(sampleCategory, sampleCity)
 
   if (!sampleCity) {

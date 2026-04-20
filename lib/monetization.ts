@@ -321,77 +321,103 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-/** Mock-оплата: применить выбранный тариф BOOST/VIP. */
-export async function applyPromotionTariff(
-  listing: ListingRow,
-  kind: PromotionTariffKind
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  await new Promise((r) => setTimeout(r, 450));
-
-  const id = listing.id;
-  const now = new Date();
-
-  if (kind === "boost_3" || kind === "boost_7") {
-    const days = kind === "boost_3" ? 3 : 7;
-    const nowDate = new Date();
-    const nowMs = nowDate.getTime();
-
-    const boostedUntilRaw = listing.boosted_until;
-    const parsed =
-      boostedUntilRaw && !isNaN(new Date(boostedUntilRaw).getTime())
-        ? new Date(boostedUntilRaw)
-        : nowDate;
-    const current = parsed;
-
-    const base = current.getTime() > nowMs ? current : nowDate;
-
-    const newBoostedUntil = new Date(
-      base.getTime() + days * 24 * 60 * 60 * 1000
-    ).toISOString();
-    const boostedAtIso = nowDate.toISOString();
-
-    const { error: u1 } = await supabase
-      .from("listings")
-      .update({
-        boosted_until: newBoostedUntil,
-        boosted_at: boostedAtIso,
-        updated_at: boostedAtIso,
-      })
-      .eq("id", id);
-    if (u1) return { ok: false, message: u1.message };
-
-    const { error: i1 } = await supabase.from("listing_boosts").insert({
-      listing_id: id,
-      type: "boost",
-      expires_at: newBoostedUntil,
-      created_at: boostedAtIso,
-    });
-    if (i1) return { ok: false, message: i1.message };
-    return { ok: true };
-  }
-
-  const days = kind === "vip_3" ? 3 : kind === "vip_7" ? 7 : 30;
-  let vipUntil: string;
-  if (isVipActive(listing) && listing.vip_until) {
-    vipUntil = addDays(new Date(listing.vip_until), days).toISOString();
-  } else {
-    vipUntil = addDays(now, days).toISOString();
-  }
-  const { error: u2 } = await supabase
-    .from("listings")
-    .update({ is_vip: true, vip_until: vipUntil, updated_at: nowIso() })
-    .eq("id", id);
-  if (u2) return { ok: false, message: u2.message };
-  const { error: i2 } = await supabase.from("listing_boosts").insert({
-    listing_id: id,
-    type: "vip",
-    expires_at: vipUntil,
-  });
-  if (i2) return { ok: false, message: i2.message };
-  return { ok: true };
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** @deprecated Используйте parsePromotionTariffKind + applyPromotionTariff */
+function extendActivePeriod(currentUntil: string | null | undefined, days: number): string {
+  const nowMs = Date.now();
+  const parsedMs = currentUntil ? new Date(currentUntil).getTime() : 0;
+  const baseMs = Number.isFinite(parsedMs) && parsedMs > nowMs ? parsedMs : nowMs;
+  return new Date(baseMs + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export type PromotionType = "boost" | "vip" | "top";
+export type PackageCounterKind = "real_estate" | "auto" | "other";
+
+export type PurchaseOrderStatus = "pending" | "confirmed" | "failed";
+
+export type PurchaseOrder = {
+  id: string;
+  userId: string;
+  productId: string;
+  status: PurchaseOrderStatus;
+  createdAt: string;
+  confirmedAt?: string;
+};
+
+const mockPurchaseOrders = new Map<string, PurchaseOrder>();
+
+function makeOrderId(): string {
+  return `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function buildPromotionProductId(type: PromotionType, days: number): string {
+  return `promotion:${type}_${days}`;
+}
+
+export function buildPackageProductId(type: PackageCounterKind, amount: number): string {
+  return `package:${type}:${amount}`;
+}
+
+function getConfirmedOrder(
+  userId: string,
+  orderId: string | null | undefined,
+  expectedProductId: string
+): PurchaseOrder | null {
+  if (!userId?.trim() || !orderId?.trim()) return null;
+  const order = mockPurchaseOrders.get(orderId);
+  if (!order) return null;
+  if (order.userId !== userId) return null;
+  if (order.status !== "confirmed") return null;
+  if (order.productId !== expectedProductId) return null;
+  return order;
+}
+
+export const purchaseFlow = {
+  async createOrder(userId: string, productId: string): Promise<PurchaseOrder> {
+    if (!userId?.trim()) throw new Error("Не указан пользователь для заказа.");
+    if (!productId?.trim()) throw new Error("Не указан товар для заказа.");
+
+    await wait(150);
+    const order: PurchaseOrder = {
+      id: makeOrderId(),
+      userId,
+      productId,
+      status: "pending",
+      createdAt: nowIso(),
+    };
+    mockPurchaseOrders.set(order.id, order);
+    return order;
+  },
+
+  async confirmPayment(orderId: string): Promise<PurchaseOrder> {
+    await wait(300);
+    const current = mockPurchaseOrders.get(orderId);
+    if (!current) throw new Error("Заказ не найден.");
+
+    const confirmed: PurchaseOrder = {
+      ...current,
+      status: "confirmed",
+      confirmedAt: nowIso(),
+    };
+    mockPurchaseOrders.set(orderId, confirmed);
+    return confirmed;
+  },
+};
+
+export function promotionTariffToParams(kind: PromotionTariffKind): {
+  type: Extract<PromotionType, "boost" | "vip">;
+  days: number;
+} {
+  if (kind === "boost_3") return { type: "boost", days: 3 };
+  if (kind === "boost_7") return { type: "boost", days: 7 };
+  if (kind === "vip_3") return { type: "vip", days: 3 };
+  if (kind === "vip_7") return { type: "vip", days: 7 };
+  return { type: "vip", days: 30 };
+}
+
+/** @deprecated Используйте parsePromotionTariffKind + applyPromotion */
 export type PromotionKind = "boost" | "vip" | "top3" | "top7";
 
 export function parsePromotionKind(s: string | undefined | null): PromotionKind | null {
@@ -399,34 +425,167 @@ export function parsePromotionKind(s: string | undefined | null): PromotionKind 
   return null;
 }
 
-/** Legacy TOP / старые виды boost без дней — оставлено для совместимости. */
+export function legacyPromotionToParams(kind: PromotionKind): { type: PromotionType; days: number } {
+  if (kind === "boost") return { type: "boost", days: 3 };
+  if (kind === "vip") return { type: "vip", days: 7 };
+  if (kind === "top3") return { type: "top", days: 3 };
+  return { type: "top", days: 7 };
+}
+
+export async function tryConsumePackage(
+  userId: string,
+  category: string
+): Promise<{ ok: true; consumed: boolean } | { ok: false; message: string }> {
+  if (!userId?.trim()) {
+    return { ok: false, message: "Нужен вход в аккаунт." };
+  }
+
+  const { data, error } = await supabase.rpc("try_consume_listing_package", {
+    p_category: category,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message ?? "Не удалось списать пакет." };
+  }
+
+  return { ok: true, consumed: data === true };
+}
+
+export async function addPackage(
+  userId: string,
+  type: PackageCounterKind,
+  amount: number,
+  options?: { orderId?: string | null }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!userId?.trim()) return { ok: false, message: "Нужен вход в аккаунт." };
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, message: "Некорректное количество пакетов." };
+  }
+
+  const order = getConfirmedOrder(userId, options?.orderId, buildPackageProductId(type, amount));
+  if (!order) {
+    return { ok: false, message: "Нельзя начислить пакет без подтверждённой оплаты." };
+  }
+  void order;
+
+  const { error } = await supabase.rpc("add_package_credits", {
+    p_kind: type,
+    p_slots: amount,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message ?? "Не удалось начислить пакет." };
+  }
+
+  return { ok: true };
+}
+
+export async function applyPromotion(
+  userId: string,
+  listingId: string,
+  type: PromotionType,
+  days: number,
+  options?: { orderId?: string | null }
+): Promise<{ ok: true; expiresAt: string } | { ok: false; message: string }> {
+  if (!userId?.trim()) return { ok: false, message: "Нужен вход в аккаунт." };
+  if (!listingId?.trim()) return { ok: false, message: "Не найдено объявление." };
+  if (!Number.isInteger(days) || days <= 0) {
+    return { ok: false, message: "Некорректный срок продвижения." };
+  }
+
+  const order = getConfirmedOrder(userId, options?.orderId, buildPromotionProductId(type, days));
+  if (!order) {
+    return { ok: false, message: "Нельзя применить продвижение без подтверждённой оплаты." };
+  }
+  void order;
+
+  const { data: fresh, error: loadError } = await supabase
+    .from("listings")
+    .select("*")
+    .eq("id", listingId)
+    .maybeSingle();
+
+  if (loadError || !fresh) {
+    return { ok: false, message: loadError?.message ?? "Не удалось загрузить объявление." };
+  }
+
+  const listing = fresh as ListingRow;
+  if (listing.user_id !== userId) {
+    return { ok: false, message: "Продвижение можно применять только к своим объявлениям." };
+  }
+
+  const updatedAt = nowIso();
+  const expiresAt =
+    type === "boost"
+      ? extendActivePeriod(listing.boosted_until, days)
+      : type === "vip"
+        ? extendActivePeriod(listing.vip_until, days)
+        : extendActivePeriod(listing.top_until, days);
+
+  const patch =
+    type === "boost"
+      ? {
+          boosted_at: updatedAt,
+          boosted_until: expiresAt,
+          updated_at: updatedAt,
+          is_boosted: true,
+        }
+      : type === "vip"
+        ? {
+            is_vip: true,
+            vip_until: expiresAt,
+            updated_at: updatedAt,
+          }
+        : {
+            is_top: true,
+            top_until: expiresAt,
+            updated_at: updatedAt,
+          };
+
+  const { error: updateError } = await supabase
+    .from("listings")
+    .update(patch)
+    .eq("id", listingId)
+    .eq("user_id", userId);
+
+  if (updateError) {
+    return { ok: false, message: updateError.message ?? "Не удалось применить продвижение." };
+  }
+
+  const { error: historyError } = await supabase.from("listing_boosts").insert({
+    listing_id: listingId,
+    type,
+    expires_at: expiresAt,
+    created_at: updatedAt,
+  });
+
+  if (historyError) {
+    return { ok: false, message: historyError.message ?? "Не удалось сохранить историю продвижения." };
+  }
+
+  return { ok: true, expiresAt };
+}
+
+/** Тарифы BOOST/VIP теперь проходят через единый production-ready слой. */
+export async function applyPromotionTariff(
+  listing: ListingRow,
+  kind: PromotionTariffKind,
+  options?: { orderId?: string | null }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const config = promotionTariffToParams(kind);
+  const res = await applyPromotion(listing.user_id, listing.id, config.type, config.days, options);
+  if (!res.ok) return res;
+  return { ok: true };
+}
+
+/** Legacy-вызов для старых экранов; реальная логика теперь единая и защищённая. */
 export async function applyListingPromotionMock(
   listing: ListingRow,
-  kind: PromotionKind
+  kind: PromotionKind,
+  options?: { orderId?: string | null }
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  if (kind === "boost") {
-    return applyPromotionTariff(listing, "boost_3");
-  }
-  if (kind === "vip") {
-    return applyPromotionTariff(listing, "vip_7");
-  }
-  await new Promise((r) => setTimeout(r, 450));
-  const id = listing.id;
-  const now = new Date();
-  const days = kind === "top3" ? 3 : 7;
-  const currentUntil = listing.top_until && isTopActive(listing) ? new Date(listing.top_until) : now;
-  const base = currentUntil > now ? currentUntil : now;
-  const topUntil = addDays(base, days).toISOString();
-  const { error: u3 } = await supabase
-    .from("listings")
-    .update({ is_top: true, top_until: topUntil, updated_at: nowIso() })
-    .eq("id", id);
-  if (u3) return { ok: false, message: u3.message };
-  const { error: i3 } = await supabase.from("listing_boosts").insert({
-    listing_id: id,
-    type: "top",
-    expires_at: topUntil,
-  });
-  if (i3) return { ok: false, message: i3.message };
+  const config = legacyPromotionToParams(kind);
+  const res = await applyPromotion(listing.user_id, listing.id, config.type, config.days, options);
+  if (!res.ok) return res;
   return { ok: true };
 }
