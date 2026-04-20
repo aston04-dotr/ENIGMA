@@ -444,15 +444,27 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
 
     if (row.user_id) {
       const { data: sellerRow, error: sellerError } = await supabase
-        .from("users")
-        .select("*")
+        .from("profiles")
+        .select("id, phone, phone_updated_at, device_id, email, trust_score")
         .eq("id", row.user_id)
         .maybeSingle();
 
       if (sellerError) {
         console.warn("LISTING_SELLER_LOAD_ERROR", sellerError.message);
       } else if (sellerRow) {
-        seller = sellerRow as UserRow;
+        const p = sellerRow as Record<string, unknown>;
+        seller = {
+          id: String(p.id ?? row.user_id),
+          phone: p.phone != null ? String(p.phone) : null,
+          phone_updated_at: p.phone_updated_at != null ? String(p.phone_updated_at) : null,
+          device_id: p.device_id != null ? String(p.device_id) : null,
+          name: null,
+          email: p.email != null ? String(p.email) : null,
+          avatar: null,
+          public_id: "—",
+          created_at: "",
+          trust_score: typeof p.trust_score === "number" ? p.trust_score : null,
+        };
       }
     }
 
