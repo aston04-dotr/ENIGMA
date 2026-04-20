@@ -332,6 +332,44 @@ function extendActivePeriod(currentUntil: string | null | undefined, days: numbe
   return new Date(baseMs + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function envMap(): Record<string, string | undefined> {
+  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  return g.process?.env ?? {};
+}
+
+export const PAYMENTS_UNAVAILABLE_MESSAGE = "Платежи временно недоступны. ЮKassa ещё не подключена.";
+
+export function isPaymentsEnabled(): boolean {
+  const env = envMap();
+  const mode = String(
+    env.PAYMENT_MODE ?? env.EXPO_PUBLIC_PAYMENT_MODE ?? env.NEXT_PUBLIC_PAYMENT_MODE ?? "mock"
+  ).toLowerCase();
+
+  if (mode !== "yookassa") return false;
+
+  const shopId = String(
+    env.YOOKASSA_SHOP_ID ?? env.EXPO_PUBLIC_YOOKASSA_SHOP_ID ?? env.NEXT_PUBLIC_YOOKASSA_SHOP_ID ?? ""
+  ).trim();
+  const secretKey = String(
+    env.YOOKASSA_SECRET_KEY ?? env.EXPO_PUBLIC_YOOKASSA_SECRET_KEY ?? env.NEXT_PUBLIC_YOOKASSA_SECRET_KEY ?? ""
+  ).trim();
+
+  return Boolean(shopId && secretKey);
+}
+
+export function logPaymentIntent(payload: {
+  userId: string;
+  productId: string;
+  amountRub: number;
+  listingId?: string | null;
+  orderId?: string | null;
+  rail?: string | null;
+  promoKind?: string | null;
+  paymentType?: string | null;
+}) {
+  console.info("[payments-disabled] intent recorded", payload);
+}
+
 export type PromotionType = "boost" | "vip" | "top";
 export type PackageCounterKind = "real_estate" | "auto" | "other";
 
@@ -344,9 +382,65 @@ export type PurchaseOrder = {
   status: PurchaseOrderStatus;
   createdAt: string;
   confirmedAt?: string;
+  provider?: "disabled" | "mock" | "yookassa";
+  note?: string;
 };
 
 const mockPurchaseOrders = new Map<string, PurchaseOrder>();
+
+async function persistPurchaseOrder(order: PurchaseOrder): Promise<void> {
+  try {
+    const ordersTable = supabase.from as unknown as (relation: string) => {
+      insert: (values: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+      update: (values: Record<string, unknown>) => {
+        eq: (column: string, value: string) => Promise<{ error: { message?: string } | null }>;
+      };
+    };
+
+    const { error } = await ordersTable("payment_orders").insert({
+      id: order.id,
+      user_id: order.userId,
+      product_id: order.productId,
+      provider: order.provider ?? (isPaymentsEnabled() ? "yookassa" : "disabled"),
+      status: order.status,
+      note: order.note ?? null,
+      created_at: order.createdAt,
+      confirmed_at: order.confirmedAt ?? null,
+    });
+
+    if (error) {
+      console.warn("payment_orders insert skipped", error.message ?? error);
+    }
+  } catch (e) {
+    console.warn("payment_orders insert skipped", e);
+  }
+}
+
+async function updatePurchaseOrder(order: PurchaseOrder): Promise<void> {
+  try {
+    const ordersTable = supabase.from as unknown as (relation: string) => {
+      insert: (values: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+      update: (values: Record<string, unknown>) => {
+        eq: (column: string, value: string) => Promise<{ error: { message?: string } | null }>;
+      };
+    };
+
+    const { error } = await ordersTable("payment_orders")
+      .update({
+        provider: order.provider ?? (isPaymentsEnabled() ? "yookassa" : "disabled"),
+        status: order.status,
+        note: order.note ?? null,
+        confirmed_at: order.confirmedAt ?? null,
+      })
+      .eq("id", order.id);
+
+    if (error) {
+      console.warn("payment_orders update skipped", error.message ?? error);
+    }
+  } catch (e) {
+    console.warn("payment_orders update skipped", e);
+  }
+}
 
 function makeOrderId(): string {
   return `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -380,14 +474,18 @@ export const purchaseFlow = {
     if (!productId?.trim()) throw new Error("Не указан товар для заказа.");
 
     await wait(150);
+    const enabled = isPaymentsEnabled();
     const order: PurchaseOrder = {
       id: makeOrderId(),
       userId,
       productId,
       status: "pending",
       createdAt: nowIso(),
+      provider: enabled ? "yookassa" : "disabled",
+      note: enabled ? undefined : PAYMENTS_UNAVAILABLE_MESSAGE,
     };
     mockPurchaseOrders.set(order.id, order);
+    await persistPurchaseOrder(order);
     return order;
   },
 
@@ -396,12 +494,27 @@ export const purchaseFlow = {
     const current = mockPurchaseOrders.get(orderId);
     if (!current) throw new Error("Заказ не найден.");
 
+    if (!isPaymentsEnabled()) {
+      const failed: PurchaseOrder = {
+        ...current,
+        status: "failed",
+        confirmedAt: nowIso(),
+        provider: "disabled",
+        note: PAYMENTS_UNAVAILABLE_MESSAGE,
+      };
+      mockPurchaseOrders.set(orderId, failed);
+      await updatePurchaseOrder(failed);
+      return failed;
+    }
+
     const confirmed: PurchaseOrder = {
       ...current,
       status: "confirmed",
       confirmedAt: nowIso(),
+      provider: "yookassa",
     };
     mockPurchaseOrders.set(orderId, confirmed);
+    await updatePurchaseOrder(confirmed);
     return confirmed;
   },
 };

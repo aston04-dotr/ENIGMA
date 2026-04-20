@@ -36,9 +36,12 @@ import {
   applyPromotion,
   buildPackageProductId,
   buildPromotionProductId,
+  isPaymentsEnabled,
   legacyPromotionToParams,
+  logPaymentIntent,
   parsePromotionKind,
   parsePromotionTariffKind,
+  PAYMENTS_UNAVAILABLE_MESSAGE,
   promotionTariffToParams,
   purchaseFlow,
 } from "../lib/monetization";
@@ -223,6 +226,7 @@ export default function PaymentScreen() {
   const [boostSuccess, setBoostSuccess] = useState<{ listingId: string } | null>(null);
   const [vipUpsell, setVipUpsell] = useState(false);
   const busy = paymentState === "creating" || paymentState === "pending";
+  const paymentsEnabled = isPaymentsEnabled();
 
   const description = useMemo(() => `ENIGMA — ${orderTitle}`, [orderTitle]);
   const viewEst = useMemo(() => {
@@ -309,6 +313,41 @@ export default function PaymentScreen() {
       secureAmount = amountCheck.normalizedAmountRub;
     }
 
+    const productId =
+      paymentType === "package" && pkgKind && pkgDef
+        ? buildPackageProductId(pkgKind, pkgDef.slots)
+        : promoConfig
+          ? buildPromotionProductId(promoConfig.type, promoConfig.days)
+          : isPublishFlow
+            ? "publish:single"
+            : "generic:payment";
+
+    if (!paymentsEnabled) {
+      const order = await purchaseFlow.createOrder(uid, productId);
+      logPaymentIntent({
+        userId: uid,
+        listingId: lid,
+        productId,
+        amountRub: secureAmount,
+        orderId: order.id,
+        rail,
+        promoKind: promoKindRaw ?? null,
+        paymentType: paymentType ?? null,
+      });
+      console.info("[payments-disabled] YooKassa keys are missing; payment attempt was not processed.");
+      setPaymentState("failed");
+      logPaymentEvent({
+        user_id: uid,
+        listing_id: lid,
+        promoKind: promoKindRaw ?? null,
+        amount: secureAmount,
+        payment_id: order.id,
+        status: "failed",
+      });
+      Alert.alert("Платежи временно недоступны", PAYMENTS_UNAVAILABLE_MESSAGE);
+      return;
+    }
+
     setPaymentState("creating");
     logPaymentEvent({
       user_id: uid,
@@ -319,15 +358,6 @@ export default function PaymentScreen() {
     });
 
     try {
-      const productId =
-        paymentType === "package" && pkgKind && pkgDef
-          ? buildPackageProductId(pkgKind, pkgDef.slots)
-          : promoConfig
-            ? buildPromotionProductId(promoConfig.type, promoConfig.days)
-            : isPublishFlow
-              ? "publish:single"
-              : "generic:payment";
-
       const order = await purchaseFlow.createOrder(uid, productId);
 
       setPaymentState("pending");
@@ -464,7 +494,11 @@ export default function PaymentScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.tapLine}>⚡ Оплатить в 1 тап</Text>
-        <Text style={styles.tapHint}>Apple Pay / Google Pay — при подключении эквайринга.</Text>
+        <Text style={styles.tapHint}>
+          {paymentsEnabled
+            ? "Apple Pay / Google Pay — при подключении эквайринга."
+            : "ЮKassa ещё не подключена. Экран оплаты работает как безопасная заглушка без списания."}
+        </Text>
 
         <View style={[styles.sumCard, shadow.soft]}>
           <Text style={styles.sumLabel}>К оплате</Text>
