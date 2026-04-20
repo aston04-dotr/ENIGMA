@@ -270,8 +270,10 @@ function ListingDetailScreenInner() {
     );
   }
 
-  const listingSafe = (listing ?? {}) as Partial<ListingRow>;
+  const listingSafe = (listing || {}) as Partial<ListingRow>;
+  console.log("SAFE LISTING:", listingSafe);
   const sellerSafe = (listingSafe.seller ?? seller ?? null) as UserRow | null;
+  const sellerName = sellerSafe?.name || "Пользователь";
   const me = session?.user?.id;
   const rowId = typeof listingSafe.id === "string" ? listingSafe.id : "";
   const ownerId = typeof listingSafe.user_id === "string" ? listingSafe.user_id : "";
@@ -279,13 +281,14 @@ function ListingDetailScreenInner() {
   const images = Array.isArray(listingSafe.images) ? listingSafe.images : [];
   const imgs = normalizeListingImages(images).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const safeIdx = idx >= 0 && idx < imgs.length ? idx : 0;
-  const uri = imgs[safeIdx]?.url ?? null;
+  const image = imgs?.[safeIdx] || null;
+  const uri = image?.url || null;
   const title = typeof listingSafe.title === "string" && listingSafe.title.trim() ? listingSafe.title : "Без названия";
   const description =
     typeof listingSafe.description === "string" && listingSafe.description.trim()
       ? listingSafe.description
       : "Без описания";
-  const city = typeof listingSafe.city === "string" && listingSafe.city.trim() ? listingSafe.city : "-";
+  const city = listingSafe.city || "-";
   const category = typeof listingSafe.category === "string" ? listingSafe.category : "";
   const viewCount = Number.isFinite(Number(listingSafe.view_count)) ? Number(listingSafe.view_count) : 0;
   const priceValue = Number(listingSafe.price);
@@ -515,7 +518,7 @@ function ListingDetailScreenInner() {
             <Text style={styles.savTx}>{(sellerSafe?.name ?? "П").slice(0, 1).toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sname}>{sellerSafe?.name ?? "Пользователь"}</Text>
+            <Text style={styles.sname}>{sellerName}</Text>
             <Text style={styles.sid}>ID {sellerSafe?.public_id ?? "—"}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />

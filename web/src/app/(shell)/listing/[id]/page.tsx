@@ -120,16 +120,18 @@ export default function ListingDetailPage() {
     );
   }
 
-  const listingSafe = (row ?? {}) as Partial<import("@/lib/types").ListingRow>;
+  const listingSafe = (row || {}) as Partial<import("@/lib/types").ListingRow>;
+  console.log("SAFE LISTING:", listingSafe);
   const images = Array.isArray(listingSafe.images) ? listingSafe.images : [];
   const imgs = normalizeListingImages(images).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const uri = imgs[0]?.url ?? null;
+  const image = imgs?.[0] || null;
+  const uri = image?.url || null;
   const title = typeof listingSafe.title === "string" && listingSafe.title.trim() ? listingSafe.title : "Без названия";
   const description =
     typeof listingSafe.description === "string" && listingSafe.description.trim()
       ? listingSafe.description
       : "Без описания";
-  const city = typeof listingSafe.city === "string" && listingSafe.city.trim() ? listingSafe.city : "-";
+  const city = listingSafe.city || "-";
   const category = typeof listingSafe.category === "string" ? listingSafe.category : "";
   const viewCount = Number.isFinite(Number(listingSafe.view_count)) ? Number(listingSafe.view_count) : 0;
   const price = new Intl.NumberFormat("ru-RU", {
@@ -138,9 +140,14 @@ export default function ListingDetailPage() {
     maximumFractionDigits: 0,
   }).format(Number.isFinite(Number(row.price)) ? Number(row.price) : 0);
 
+  const rowId = typeof listingSafe.id === "string" ? listingSafe.id : "";
+  const ownerId = typeof listingSafe.user_id === "string" ? listingSafe.user_id : "";
   const boostHref =
-    viewerId && row.id ? `/payment?${webBoostPaymentQuery(String(row.id), viewerId)}` : "/login";
-  const ownerPhone = typeof row.contact_phone === "string" && row.contact_phone.trim() ? row.contact_phone.trim() : null;
+    viewerId && rowId ? `/payment?${webBoostPaymentQuery(String(rowId), viewerId)}` : "/login";
+  const ownerPhone =
+    typeof listingSafe.contact_phone === "string" && listingSafe.contact_phone.trim()
+      ? listingSafe.contact_phone.trim()
+      : null;
 
   const copyPhone = useCallback(async () => {
     if (!ownerPhone) {
@@ -183,14 +190,14 @@ export default function ListingDetailPage() {
           /* Owner sees: Edit + Boost */
           <div className="mt-8 space-y-3">
             <Link
-              href={`/listing/edit/${row.id}`}
+              href={`/listing/edit/${rowId}`}
               className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-line bg-elevated py-4 text-[16px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-md active:scale-[0.98]"
             >
               ✏️ Редактировать объявление
             </Link>
             <Link
               href={boostHref}
-              onClick={() => trackBoostEvent("boost_click", { listingId: row.id, own: true, surface: "listing_detail" })}
+              onClick={() => trackBoostEvent("boost_click", { listingId: rowId, own: true, surface: "listing_detail" })}
               className="flex w-full min-h-[56px] items-center justify-center rounded-[16px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-bold text-white shadow-[0_8px_32px_rgba(139,92,246,0.4)] transition-all duration-200 hover:shadow-[0_12px_40px_rgba(139,92,246,0.5)] active:scale-[0.98]"
             >
               🚀 Продвинуть
@@ -202,7 +209,7 @@ export default function ListingDetailPage() {
             <button
               type="button"
               disabled={isChatLoading}
-              onClick={() => void openChat(row.user_id)}
+              onClick={() => void openChat(ownerId)}
               className="w-full min-h-[56px] rounded-card bg-accent py-4 text-[17px] font-semibold text-white transition-all duration-200 hover:bg-accent-hover hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20"
             >
               {isChatLoading ? "Открываем чат…" : "💬 Написать"}
