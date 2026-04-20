@@ -651,6 +651,11 @@ function normalizeListingText(raw: unknown, fallback = ""): string {
   return fallback;
 }
 
+function normalizeNullableListingText(raw: unknown): string | null {
+  const value = normalizeListingText(raw, "").trim();
+  return value ? value : null;
+}
+
 /** PostgREST иногда отдаёт `images` как null, один объект, { data: [] } или массив — приводим к массиву. */
 export function normalizeListingImages(raw: unknown): { url: string; sort_order?: number }[] {
   if (raw == null) return [];
@@ -693,7 +698,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     description: normalizeListingText(data.description, ""),
     price: Number.isFinite(price) ? price : 0,
     category: normalizeListingText(data.category, ""),
-    city: normalizeListingText(data.city ?? data.location, ""),
+    city: normalizeNullableListingText(data.city ?? data.location),
     view_count: Number.isFinite(viewCount) ? viewCount : 0,
     created_at: String(data.created_at ?? ""),
     updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
@@ -734,6 +739,8 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
       error = second.error;
     }
 
+    console.log("RAW LISTING RESPONSE", data);
+
     if (error) {
       console.error("LISTING_LOAD_ERROR:", error);
       return { row: null, loadError: error.message };
@@ -741,7 +748,25 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
     if (!data || typeof data !== "object") {
       return { row: null, loadError: null };
     }
-    return { row: parseListingRow(data as Record<string, unknown>), loadError: null };
+
+    const row = parseListingRow(data as Record<string, unknown>);
+    let seller: UserRow | null = null;
+
+    if (row.user_id) {
+      const { data: sellerRow, error: sellerError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", row.user_id)
+        .maybeSingle();
+
+      if (sellerError) {
+        console.warn("LISTING_SELLER_LOAD_ERROR", sellerError.message);
+      } else if (sellerRow) {
+        seller = sellerRow as UserRow;
+      }
+    }
+
+    return { row: { ...row, seller }, loadError: null };
   } catch (e) {
     console.error("LISTING_LOAD_ERROR:", e);
     return { row: null, loadError: e instanceof Error ? e.message : String(e) };

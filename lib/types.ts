@@ -39,7 +39,7 @@ export type ListingRow = {
   description: string;
   price: number;
   category: string;
-  city: string;
+  city: string | null;
   view_count: number;
   created_at: string;
   updated_at?: string | null;
@@ -59,6 +59,8 @@ export type ListingRow = {
   /** Контактный телефон продавца (копируется из profiles.phone при создании). */
   contact_phone?: string | null;
   images?: { url: string; sort_order?: number }[];
+  /** Безопасно нормализованный продавец для страницы объявления. */
+  seller?: UserRow | null;
 };
 
 export type ChatRow = {

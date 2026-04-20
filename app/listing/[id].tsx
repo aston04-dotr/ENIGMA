@@ -25,7 +25,6 @@ import {
 import { expoBoostPaymentParams } from "../../lib/boostPay";
 import { isBoostActive, isVipActive } from "../../lib/monetization";
 import { reportListingTrustPenalty } from "../../lib/trust";
-import { supabase } from "../../lib/supabase";
 import { colors, radius, shadow } from "../../lib/theme";
 import type { ListingRow, UserRow } from "../../lib/types";
 
@@ -148,9 +147,7 @@ function ListingDetailScreenInner() {
       }
       setListing(res.row);
       setMissing(false);
-      const { data: u } = await supabase.from("users").select("*").eq("id", res.row.user_id).maybeSingle();
-      if (routeIdRef.current !== startedId) return;
-      setSeller(u as UserRow | null);
+      setSeller(res.row.seller ?? null);
 
       void (async () => {
         const n = await fetchListingFavoriteCount(listingId);
@@ -268,28 +265,31 @@ function ListingDetailScreenInner() {
             <Ionicons name="chevron-back" size={28} color={colors.ink} />
           </Pressable>
         </View>
-        <Text style={styles.muted}>{missing ? "Объявление не найдено" : "Нет данных"}</Text>
+        <Text style={styles.muted}>Объявление не найдено</Text>
       </SafeAreaView>
     );
   }
 
-  const row = listing;
-  const profile = seller ?? null;
+  const listingSafe = (listing ?? {}) as Partial<ListingRow>;
+  const sellerSafe = (listingSafe.seller ?? seller ?? null) as UserRow | null;
   const me = session?.user?.id;
-  const rowId = typeof row?.id === "string" ? row.id : "";
-  const ownerId = typeof row?.user_id === "string" ? row.user_id : "";
+  const rowId = typeof listingSafe.id === "string" ? listingSafe.id : "";
+  const ownerId = typeof listingSafe.user_id === "string" ? listingSafe.user_id : "";
   const isOwner = !!me && !!ownerId && me === ownerId;
-  const imgs = normalizeListingImages((row as ListingRow & { images?: unknown })?.images).sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-  );
+  const images = Array.isArray(listingSafe.images) ? listingSafe.images : [];
+  const imgs = normalizeListingImages(images).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const safeIdx = idx >= 0 && idx < imgs.length ? idx : 0;
   const uri = imgs[safeIdx]?.url ?? null;
-  const title = typeof row?.title === "string" && row.title.trim() ? row.title : "Без названия";
-  const description = typeof row?.description === "string" && row.description.trim() ? row.description : "Без описания";
-  const city = typeof row?.city === "string" && row.city.trim() ? row.city : "Город не указан";
-  const category = typeof row?.category === "string" ? row.category : "";
-  const viewCount = Number.isFinite(Number(row?.view_count)) ? Number(row.view_count) : 0;
-  const priceValue = Number(row?.price);
+  const title = typeof listingSafe.title === "string" && listingSafe.title.trim() ? listingSafe.title : "Без названия";
+  const description =
+    typeof listingSafe.description === "string" && listingSafe.description.trim()
+      ? listingSafe.description
+      : "Без описания";
+  const city = typeof listingSafe.city === "string" && listingSafe.city.trim() ? listingSafe.city : "-";
+  const category = typeof listingSafe.category === "string" ? listingSafe.category : "";
+  const viewCount = Number.isFinite(Number(listingSafe.view_count)) ? Number(listingSafe.view_count) : 0;
+  const priceValue = Number(listingSafe.price);
+  const row = listingSafe as ListingRow;
 
   async function openChat() {
     const uid = session?.user?.id;
@@ -361,7 +361,7 @@ function ListingDetailScreenInner() {
     maximumFractionDigits: 0,
   }).format(Number.isFinite(priceValue) ? priceValue : 0);
 
-  const sellerPhoneDigits = normalizePhoneForTel(profile?.phone);
+  const sellerPhoneDigits = normalizePhoneForTel(sellerSafe?.phone);
   const sellerPhoneDisplay = sellerPhoneDigits ? formatRuPhoneDisplay(sellerPhoneDigits) : null;
 
   return (
@@ -412,7 +412,7 @@ function ListingDetailScreenInner() {
           {city} · {categoryLabel(category)}
         </Text>
 
-        {row.is_partner_ad ? (
+        {listingSafe.is_partner_ad === true ? (
           <Text style={styles.partnerNote}>реклама от партнёра</Text>
         ) : null}
 
@@ -512,11 +512,11 @@ function ListingDetailScreenInner() {
           style={[styles.seller, shadow.soft]}
         >
           <View style={styles.sav}>
-            <Text style={styles.savTx}>{(profile?.name ?? "П").slice(0, 1).toUpperCase()}</Text>
+            <Text style={styles.savTx}>{(sellerSafe?.name ?? "П").slice(0, 1).toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sname}>{profile?.name ?? "Продавец"}</Text>
-            <Text style={styles.sid}>ID {profile?.public_id ?? "—"}</Text>
+            <Text style={styles.sname}>{sellerSafe?.name ?? "Пользователь"}</Text>
+            <Text style={styles.sid}>ID {sellerSafe?.public_id ?? "—"}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>

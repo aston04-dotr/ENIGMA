@@ -112,7 +112,7 @@ export default function ListingDetailPage() {
   if (err || !row) {
     return (
       <main className="p-5">
-        {err === FETCH_ERROR_MESSAGE ? <ErrorUi /> : <p className="text-sm text-muted">{err ?? "Нет данных"}</p>}
+        {err === FETCH_ERROR_MESSAGE ? <ErrorUi /> : <p className="text-sm text-muted">Объявление не найдено</p>}
         <Link href="/" className="mt-6 inline-block text-sm font-medium text-accent transition-colors duration-ui hover:text-accent-hover">
           На ленту
         </Link>
@@ -120,15 +120,18 @@ export default function ListingDetailPage() {
     );
   }
 
-  const imgs = normalizeListingImages((row as { images?: unknown })?.images).sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-  );
+  const listingSafe = (row ?? {}) as Partial<import("@/lib/types").ListingRow>;
+  const images = Array.isArray(listingSafe.images) ? listingSafe.images : [];
+  const imgs = normalizeListingImages(images).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const uri = imgs[0]?.url ?? null;
-  const title = typeof row.title === "string" && row.title.trim() ? row.title : "Без названия";
-  const description = typeof row.description === "string" && row.description.trim() ? row.description : "Без описания";
-  const city = typeof row.city === "string" && row.city.trim() ? row.city : "Город не указан";
-  const category = typeof row.category === "string" ? row.category : "";
-  const viewCount = Number.isFinite(Number(row.view_count)) ? Number(row.view_count) : 0;
+  const title = typeof listingSafe.title === "string" && listingSafe.title.trim() ? listingSafe.title : "Без названия";
+  const description =
+    typeof listingSafe.description === "string" && listingSafe.description.trim()
+      ? listingSafe.description
+      : "Без описания";
+  const city = typeof listingSafe.city === "string" && listingSafe.city.trim() ? listingSafe.city : "-";
+  const category = typeof listingSafe.category === "string" ? listingSafe.category : "";
+  const viewCount = Number.isFinite(Number(listingSafe.view_count)) ? Number(listingSafe.view_count) : 0;
   const price = new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency: "RUB",
