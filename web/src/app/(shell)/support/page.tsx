@@ -63,12 +63,7 @@ export default function SupportPage() {
       message: finalText,
       type: topic ?? "other",
       status: "open",
-    });
-
-    notifyAdmin({
-      type: "support_ticket",
-      user_id: userId,
-      message: finalText,
+      notifyByEmail: true,
     });
 
     setBusy(false);
@@ -76,8 +71,13 @@ export default function SupportPage() {
     if (!res.ok) {
       setNotice("Не удалось создать заявку в базе, но сообщение отправлено на почту поддержки.");
       return;
-        notifyByEmail: true,
     }
+
+    setNotice("Заявка отправлена оператору и на почту поддержки.");
+    setMessage("");
+  }
+
+  return (
     <main className="safe-pt min-h-screen bg-main px-5 pb-28 pt-4">
       <div className="mb-4 flex items-center justify-between">
         <Link href="/" className="text-sm font-semibold text-accent">← Назад</Link>

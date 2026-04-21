@@ -10,6 +10,7 @@ export const CATEGORIES = [
   { id: "other", label: "Другое" },
 ] as const;
 
-export function categoryLabel(id: string): string {
-  return CATEGORIES.find((c) => c.id === id)?.label ?? id;
+export function categoryLabel(id: unknown): string {
+  const key = typeof id === "string" ? id : "";
+  return (CATEGORIES || []).find((c) => c.id === key)?.label ?? (key || "Другое");
 }

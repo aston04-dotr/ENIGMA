@@ -16,12 +16,14 @@ function formatPrice(n: number) {
 }
 
 type Props = {
-  item: ListingRow;
+  item?: ListingRow | null;
 };
 
 export function ListingCard({ item }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
+  if (!item || typeof item !== "object") return null;
+
   const imgs = normalizeListingImages((item as ListingRow & { images?: unknown })?.images).sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
   );
@@ -79,9 +81,9 @@ export function ListingCard({ item }: Props) {
         </div>
         <div className="space-y-2 p-4">
           <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-fg">{itemTitle}</p>
-          <p className="text-xl font-bold tracking-tight text-fg">{formatPrice(Number(item.price))}</p>
+          <p className="text-xl font-bold tracking-tight text-fg">{formatPrice(Number(item?.price ?? 0))}</p>
           <p className="text-xs text-muted">
-            {itemCity} · {categoryLabel(item.category)}
+            {itemCity} · {categoryLabel(item?.category)}
           </p>
         </div>
       </Link>

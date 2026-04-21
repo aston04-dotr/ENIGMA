@@ -14,7 +14,7 @@ import { parseNonNegativePrice } from "@/lib/validate";
 import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 
 function parseUnknownError(error: unknown): string {
@@ -55,11 +55,34 @@ export default function CreatePage() {
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
 
+  const safeCities = useMemo(() => {
+    const source = Array.isArray(cities) ? cities : [];
+    const normalized = source
+      .map((c) => (typeof c === "string" ? c.trim() : ""))
+      .filter((c) => c.length > 0);
+    const allowed = normalized.filter((c) => isAllowedListingCity(c));
+    return allowed.length > 0 ? Array.from(new Set(allowed)) : [...ALLOWED_LISTING_CITIES];
+  }, [cities]);
+
+  const safeCategories = useMemo(() => (Array.isArray(CATEGORIES) ? CATEGORIES : []), []);
+
+  const selectedCity = useMemo(() => {
+    const normalized = typeof city === "string" ? city.trim() : "";
+    if (isAllowedListingCity(normalized) && safeCities.includes(normalized)) return normalized;
+    return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
+  }, [city, safeCities]);
+
   useEffect(() => {
     void (async () => {
-      const dbCities = await getCitiesFromDb();
-      console.log("[CITIES-CREATE DEBUG] Loaded:", dbCities.length, "cities");
-      setCities(dbCities);
+      try {
+        const dbCities = await getCitiesFromDb();
+        const normalized = Array.isArray(dbCities) ? dbCities : [];
+        console.log("[CITIES-CREATE DEBUG] Loaded:", normalized.length, "cities");
+        setCities(normalized);
+      } catch (loadError) {
+        console.error("CREATE PAGE CRASH", loadError);
+        setCities([...ALLOWED_LISTING_CITIES]);
+      }
     })();
   }, []);
 
@@ -88,7 +111,7 @@ export default function CreatePage() {
       setErr("Укажите цену");
       return;
     }
-    if (!isAllowedListingCity(city.trim())) {
+    if (!isAllowedListingCity(selectedCity.trim())) {
       setErr("Пожалуйста, выберите город из списка (Москва/Сочи)");
       return;
     }
@@ -108,8 +131,11 @@ export default function CreatePage() {
           : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       const uploadedUrls: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const url = await uploadListingPhotoWeb(uid, uploadGroupId, files[i]!, i);
+      const safeFiles = Array.isArray(files) ? files : [];
+      for (let i = 0; i < safeFiles.length; i++) {
+        const file = safeFiles[i];
+        if (!file) continue;
+        const url = await uploadListingPhotoWeb(uid, uploadGroupId, file, i);
         const normalizedUrl = url.trim();
         if (!normalizedUrl) {
           throw new Error("Не удалось загрузить фото");
@@ -124,7 +150,7 @@ export default function CreatePage() {
         description: description.trim(),
         price: priceNum,
         category,
-        city: city.trim(),
+        city: selectedCity.trim(),
         contact_phone: profile?.phone || null,
       });
       console.log("CREATE LISTING RESULT", res);
@@ -172,7 +198,7 @@ export default function CreatePage() {
       setBusy(false);
       setPublishStage("idle");
     }
-  }, [uid, profile, title, description, price, city, category, files, router, refreshProfile]);
+  }, [uid, profile, title, description, price, selectedCity, category, files, router, refreshProfile]);
 
   if (!session) {
     return (
@@ -188,13 +214,14 @@ export default function CreatePage() {
     );
   }
 
-  console.log("[CITIES-CREATE DEBUG] state:", cities?.length, cities);
+  console.log("[CITIES-CREATE DEBUG] state:", safeCities.length, safeCities);
 
-  const cityOptions = cities.map((c) => ({ value: c, label: c }));
+  const cityOptions = (safeCities || []).map((c) => ({ value: c, label: c }));
 
   console.log("[CITIES-CREATE DEBUG] options:", cityOptions?.length, cityOptions);
 
-  return (
+  try {
+    return (
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
       <div>
@@ -236,8 +263,8 @@ export default function CreatePage() {
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Город</label>
         <div className="mt-2">
           <Select
-            value={cityOptions.find(option => option.value === city)}
-            onChange={(selectedOption) => setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])}
+            value={(cityOptions || []).find((option) => option?.value === selectedCity) ?? null}
+            onChange={(selectedOption) => setCity(selectedOption?.value || safeCities[0] || ALLOWED_LISTING_CITIES[0])}
             options={cityOptions}
             placeholder="Выберите город"
             isSearchable={false}
@@ -249,7 +276,7 @@ export default function CreatePage() {
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Категория</label>
         <select value={category} onChange={(e) => setCategory(e.target.value)} className={`mt-2 ${inputClass}`}>
-          {CATEGORIES.map((c) => (
+          {(safeCategories || []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.label}
             </option>
@@ -274,5 +301,13 @@ export default function CreatePage() {
         {busy ? (publishStage === "uploading" ? "Загрузка фото..." : "Создание объявления...") : "Опубликовать"}
       </button>
     </main>
-  );
+    );
+  } catch (renderError) {
+    console.error("CREATE PAGE CRASH", renderError);
+    return (
+      <main className="safe-pt px-5 pb-10 pt-8">
+        <div className="rounded-card border border-line bg-elevated p-4 text-sm text-fg">Ошибка загрузки</div>
+      </main>
+    );
+  }
 }
