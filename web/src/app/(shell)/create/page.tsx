@@ -89,7 +89,7 @@ export default function CreatePage() {
       return;
     }
     if (!isAllowedListingCity(city.trim())) {
-      setErr("Пока доступны только Москва и Сочи");
+      setErr("Пожалуйста, выберите город из списка (Москва/Сочи)");
       return;
     }
     if (!profile?.phone?.trim()) {

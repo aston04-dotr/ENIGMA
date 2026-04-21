@@ -526,7 +526,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
 
     const cityVal = normalizeAllowedListingCity(payload.city);
     if (!cityVal) {
-      return { error: "Пока доступны только Москва и Сочи" };
+      return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     const base = {
       user_id: effectiveUserId,

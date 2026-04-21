@@ -820,7 +820,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       .contact_phone;
     const normalizedCity = normalizeAllowedListingCity(payload.city);
     if (!normalizedCity) {
-      return { error: "Пока доступны только Москва и Сочи" };
+      return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     const insertPayload = {
       user_id: user.id,
@@ -848,7 +848,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     
     if (!isAllowedListingCity(insertPayload.city)) {
       console.error("VALIDATION ERROR: invalid city", insertPayload.city);
-      return { error: "Пока доступны только Москва и Сочи" };
+      return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     
     if (!insertPayload.category) {

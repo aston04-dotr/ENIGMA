@@ -54,10 +54,10 @@ export default function CreateListingScreen() {
       return "Укажите цену числом не ниже нуля";
     }
     if (!city.trim()) {
-      return "Выберите город из списка";
+      return "Пожалуйста, выберите город из списка (Москва/Сочи)";
     }
     if (!isAllowedListingCity(city.trim())) {
-      return "Пока доступны только Москва и Сочи";
+      return "Пожалуйста, выберите город из списка (Москва/Сочи)";
     }
     return null;
   }
