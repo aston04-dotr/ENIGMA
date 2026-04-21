@@ -29,7 +29,8 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
 }
 
 export default function ListingDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id?: string | string[] }>();
+  const id = Array.isArray(params?.id) ? params?.id?.[0] : params?.id;
   const { session } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,11 @@ export default function ListingDetailPage() {
   const [isChatLoading, setIsChatLoading] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setErr("Не найдено");
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -67,8 +72,11 @@ export default function ListingDetailPage() {
   }, [id]);
 
   const viewerId = session?.user?.id ?? null;
-  const isOwnListing = Boolean(row && viewerId && row.user_id === viewerId);
-  const partnerListing = row?.is_partner_ad === true;
+  const safeItem = (row || {}) as Partial<import("@/lib/types").ListingRow>;
+  const rowId = typeof safeItem.id === "string" ? safeItem.id : "";
+  const ownerId = typeof safeItem.user_id === "string" ? safeItem.user_id : "";
+  const isOwnListing = Boolean(row && viewerId && ownerId && ownerId === viewerId);
+  const partnerListing = safeItem?.is_partner_ad === true;
 
   useEffect(() => {
     if (!isOwnListing || partnerListing || !row) return;
@@ -79,6 +87,10 @@ export default function ListingDetailPage() {
   }, [isOwnListing, partnerListing, row]);
 
   const openChat = useCallback(async (ownerId: string) => {
+    if (!ownerId) {
+      setToast({ message: "Объявление без владельца", type: "error" });
+      return;
+    }
     const uid = session?.user?.id;
     if (!uid) {
       router.push("/login");
@@ -120,36 +132,33 @@ export default function ListingDetailPage() {
     );
   }
 
-  const listingSafe = (row || {}) as Partial<import("@/lib/types").ListingRow>;
-  console.log("SAFE LISTING:", listingSafe);
-  const images = Array.isArray(listingSafe.images) ? listingSafe.images : [];
+  console.log("SAFE LISTING:", safeItem);
+  const images = Array.isArray(safeItem.images) ? safeItem.images : [];
   const imgs = normalizeListingImages(images).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const image = imgs?.[0] || null;
   const uri = image?.url || null;
-  const title = typeof listingSafe.title === "string" && listingSafe.title.trim() ? listingSafe.title : "Без названия";
+  const title = typeof safeItem.title === "string" && safeItem.title.trim() ? safeItem.title : "Без названия";
   const description =
-    typeof listingSafe.description === "string" && listingSafe.description.trim()
-      ? listingSafe.description
+    typeof safeItem.description === "string" && safeItem.description.trim()
+      ? safeItem.description
       : "Без описания";
-  const city = listingSafe.city || "-";
-  const category = typeof listingSafe.category === "string" ? listingSafe.category : "";
-  const viewCount = Number.isFinite(Number(listingSafe.view_count)) ? Number(listingSafe.view_count) : 0;
+  const city = typeof safeItem.city === "string" && safeItem.city.trim() ? safeItem.city : "-";
+  const category = typeof safeItem.category === "string" ? safeItem.category : "";
+  const viewCount = Number.isFinite(Number(safeItem.view_count)) ? Number(safeItem.view_count) : 0;
   const price = new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency: "RUB",
     maximumFractionDigits: 0,
-  }).format(Number.isFinite(Number(row.price)) ? Number(row.price) : 0);
+  }).format(Number.isFinite(Number(safeItem.price)) ? Number(safeItem.price) : 0);
 
-  const rowId = typeof listingSafe.id === "string" ? listingSafe.id : "";
-  const ownerId = typeof listingSafe.user_id === "string" ? listingSafe.user_id : "";
   const boostHref =
     viewerId && rowId ? `/payment?${webBoostPaymentQuery(String(rowId), viewerId)}` : "/login";
   const ownerPhone =
-    typeof listingSafe.contact_phone === "string" && listingSafe.contact_phone.trim()
-      ? listingSafe.contact_phone.trim()
+    typeof safeItem.contact_phone === "string" && safeItem.contact_phone.trim()
+      ? safeItem.contact_phone.trim()
       : null;
 
-  const copyPhone = useCallback(async () => {
+  async function copyPhone() {
     if (!ownerPhone) {
       setToast({ message: "Продавец не указал номер", type: "info" });
       return;
@@ -165,9 +174,10 @@ export default function ListingDetailPage() {
       console.error("COPY PHONE ERROR", copyError);
       setToast({ message: "Не удалось скопировать номер", type: "error" });
     }
-  }, [ownerPhone]);
+  }
 
-  return (
+  try {
+    return (
     <main className={`safe-pt ${isOwnListing && !partnerListing ? "pb-28" : "pb-8"}`}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="relative aspect-[4/3] w-full bg-elev-2">
@@ -269,7 +279,7 @@ export default function ListingDetailPage() {
           {/* CTA Button */}
           <Link
             href={boostHref}
-            onClick={() => trackBoostEvent("boost_click", { listingId: row.id, own: true, surface: "listing_sticky" })}
+            onClick={() => trackBoostEvent("boost_click", { listingId: rowId, own: true, surface: "listing_sticky" })}
             className="mt-5 flex min-h-[54px] w-full items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
           >
             Поднять объявление - 149 ₽
@@ -282,5 +292,13 @@ export default function ListingDetailPage() {
         </div>
       ) : null}
     </main>
-  );
+    );
+  } catch (e) {
+    console.error("LISTING CRASH:", e);
+    return (
+      <main className="p-5">
+        <div className="rounded-card border border-line bg-elevated p-4 text-sm text-fg">Ошибка загрузки объявления</div>
+      </main>
+    );
+  }
 }
