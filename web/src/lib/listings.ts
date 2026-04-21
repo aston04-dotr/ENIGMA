@@ -3,7 +3,11 @@ import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
 import { getListingsPageSize } from "./runtimeConfig";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { RUSSIAN_CITIES } from "./russianCities";
+import {
+  ALLOWED_LISTING_CITIES,
+  isAllowedListingCity,
+  normalizeAllowedListingCity,
+} from "./russianCities";
 import type { ListingInsertPayload, ListingRow } from "./types";
 
 const LISTING_DETAIL_FETCH_MS = 5000;
@@ -40,6 +44,7 @@ function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
 }
 
 function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
+  const normalizedCity = normalizeAllowedListingCity(data.city ?? data.location);
   const row: ListingRow = {
     id: String(data.id),
     user_id: String(data.user_id ?? ""),
@@ -47,7 +52,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     description: "",
     price: Number(data.price ?? 0),
     category: String(data.category ?? ""),
-    city: String(data.city ?? data.location ?? ""),
+    city: normalizedCity,
     view_count: 0,
     created_at: String(data.created_at ?? ""),
     is_partner_ad: data.is_partner_ad === true,
@@ -130,6 +135,7 @@ function listingsFeedSelectBase() {
   return supabase
     .from("listings")
     .select(FEED_SELECT)
+    .in("city", [...ALLOWED_LISTING_CITIES])
     .order("sort_order", { ascending: true, foreignTable: "images" })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -146,7 +152,7 @@ function applySafeFilters(
 ): ListingsFeedQuery {
   try {
     let q = query;
-    const city = filters.city?.trim();
+    const city = normalizeAllowedListingCity(filters.city);
     if (city) {
       q = q.eq("city", city);
     }
@@ -401,34 +407,7 @@ let favoriteSingleCache = new Map<string, SingleFavoriteCacheEntry>();
 const FAVORITE_SINGLE_CACHE_LIMIT = 500;
 
 export async function getCitiesFromDb(): Promise<string[]> {
-  try {
-    const { data, error } = await supabase
-      .from("cities")
-      .select("name")
-      .order("name");
-
-    console.log("[CITIES DEBUG] raw DB:", data);
-    console.log("[CITIES DEBUG] count:", data?.length);
-
-    if (error) {
-      console.error("[CITIES ERROR]", error);
-      console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-      return RUSSIAN_CITIES; // fallback to full static list
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-      console.warn("[CITIES] DB returned empty array, using fallback:", RUSSIAN_CITIES.length, "cities");
-      return RUSSIAN_CITIES; // fallback to full static list
-    }
-
-    const cities = data.map((row) => row.name);
-    console.log("[CITIES] Loaded from DB:", cities.length, "cities");
-    return cities;
-  } catch (e) {
-    console.error("[CITIES] Network error:", e);
-    console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-    return RUSSIAN_CITIES; // fallback
-  }
+  return [...ALLOWED_LISTING_CITIES];
 }
 let favoriteSingleRpcUnavailableUntil = 0;
 
@@ -688,6 +667,7 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
 
 /** Приводим строку из Postgres numeric/json к числу для UI. */
 export function parseListingRow(data: Record<string, unknown>): ListingRow {
+  const normalizedCity = normalizeAllowedListingCity(data.city ?? data.location);
   const fc = data.favorite_count;
   const price = Number(data.price);
   const viewCount = Number(data.view_count ?? 0);
@@ -698,7 +678,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     description: normalizeListingText(data.description, ""),
     price: Number.isFinite(price) ? price : 0,
     category: normalizeListingText(data.category, ""),
-    city: normalizeNullableListingText(data.city ?? data.location),
+    city: normalizedCity,
     view_count: Number.isFinite(viewCount) ? viewCount : 0,
     created_at: String(data.created_at ?? ""),
     updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
@@ -838,12 +818,16 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     const priceNum = Number(payload.price);
     const payloadContactPhone = (payload as ListingInsertPayload & { contact_phone?: string | null })
       .contact_phone;
+    const normalizedCity = normalizeAllowedListingCity(payload.city);
+    if (!normalizedCity) {
+      return { error: "Пока доступны только Москва и Сочи" };
+    }
     const insertPayload = {
       user_id: user.id,
       title: payload.title?.trim() || "",
       description: payload.description?.trim() || "",
       price: priceNum,
-      city: payload.city?.trim() || "Не указан",
+      city: normalizedCity,
       category: payload.category || "other",
       contact_phone: payloadContactPhone || null,
     };
@@ -862,9 +846,9 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       return { error: "Укажите корректную цену" };
     }
     
-    if (!insertPayload.city) {
-      console.error("VALIDATION ERROR: empty city");
-      return { error: "Укажите город" };
+    if (!isAllowedListingCity(insertPayload.city)) {
+      console.error("VALIDATION ERROR: invalid city", insertPayload.city);
+      return { error: "Пока доступны только Москва и Сочи" };
     }
     
     if (!insertPayload.category) {

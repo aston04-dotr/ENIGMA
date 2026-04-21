@@ -30,9 +30,8 @@ import { getListingPublishBlockMessage } from "../../lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "../../lib/trustLevels";
 import { supabase } from "../../lib/supabase";
 import { colors, radius, shadow } from "../../lib/theme";
-import { filterCitiesByQuery } from "../../lib/russianCities";
+import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "../../lib/russianCities";
 import { parseNonNegativePrice } from "../../lib/validate";
-import { getCitiesFromDb } from "../../lib/listings";
 
 export default function CreateListingScreen() {
   const router = useRouter();
@@ -41,33 +40,11 @@ export default function CreateListingScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [city, setCity] = useState("Москва");
+  const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
   const [cityModalOpen, setCityModalOpen] = useState(false);
-  const [cityQuery, setCityQuery] = useState("");
-  const [cities, setCities] = useState<string[]>([]);
   const [category, setCategory] = useState<string>("other");
   const [uris, setUris] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      void (async () => {
-        const dbCities = await getCitiesFromDb();
-        console.log("[CITIES-CREATE] Loaded:", dbCities.length, "cities");
-        setCities(dbCities);
-      })();
-    }, [])
-  );
-
-  console.log("[CITIES DEBUG] state:", cities?.length, cities);
-
-  const filteredCities = useMemo(() => {
-    if (!cityQuery.trim()) return cities;
-    const q = cityQuery.toLowerCase();
-    return cities.filter(c => c.toLowerCase().includes(q));
-  }, [cityQuery, cities]);
-
-  console.log("[CITIES DEBUG] filtered:", filteredCities?.length, filteredCities);
 
   function validateForm(): string | null {
     if (!title.trim() || title.trim().length < 2) {
@@ -78,6 +55,9 @@ export default function CreateListingScreen() {
     }
     if (!city.trim()) {
       return "Выберите город из списка";
+    }
+    if (!isAllowedListingCity(city.trim())) {
+      return "Пока доступны только Москва и Сочи";
     }
     return null;
   }
@@ -102,7 +82,7 @@ export default function CreateListingScreen() {
       description: description.trim(),
       price: priceNum,
       category,
-      city: city.trim() || "Не указан",
+      city: city.trim(),
       contact_phone: profile?.phone ?? null,
     });
     console.log("CREATE LISTING RESULT", res);
@@ -144,7 +124,7 @@ export default function CreateListingScreen() {
     setTitle("");
     setDescription("");
     setPrice("");
-    setCity("");
+    setCity(ALLOWED_LISTING_CITIES[0]);
     setUris([]);
   }, [uid, profile, title, description, price, city, category, uris]);
 
@@ -322,13 +302,12 @@ export default function CreateListingScreen() {
         <Text style={styles.label}>Город</Text>
         <Pressable
           onPress={() => {
-            setCityQuery("");
             setCityModalOpen(true);
           }}
           style={styles.cityPick}
         >
           <Text style={styles.cityPickTx}>{city.trim() || "Выберите город"}</Text>
-          <Text style={styles.cityPickHint}>Список городов РФ</Text>
+          <Text style={styles.cityPickHint}>Доступно: Москва и Сочи</Text>
         </Pressable>
         <UiButton title="Опубликовать" loading={busy} onPress={publish} />
       </ScrollView>
@@ -338,16 +317,9 @@ export default function CreateListingScreen() {
           <Pressable style={styles.cityModalBackdrop} onPress={() => setCityModalOpen(false)} />
           <View style={styles.cityModalSheet}>
             <Text style={styles.cityModalTitle}>Город</Text>
-            <TextInput
-              style={styles.cityModalSearch}
-              placeholder="Поиск: Сочи, Москва…"
-              placeholderTextColor={colors.muted}
-              value={cityQuery}
-              onChangeText={setCityQuery}
-            />
             <View style={styles.cityModalListWrap}>
               <FlatList
-                data={filteredCities}
+                data={[...ALLOWED_LISTING_CITIES]}
                 keyExtractor={(item) => item}
                 keyboardShouldPersistTaps="handled"
                 style={styles.cityModalList}
@@ -445,15 +417,6 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   cityModalTitle: { fontSize: 20, fontWeight: "700", color: colors.ink, marginBottom: 12 },
-  cityModalSearch: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    padding: 12,
-    fontSize: 16,
-    color: colors.ink,
-    marginBottom: 8,
-  },
   cityModalListWrap: { flex: 1, minHeight: 120 },
   cityModalList: { flex: 1 },
   cityModalRow: {

@@ -1,6 +1,10 @@
 import { isValidListingUuid } from "./listingParams";
 import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
-import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "./russianCities";
+import {
+  ALLOWED_LISTING_CITIES,
+  isAllowedListingCity,
+  normalizeAllowedListingCity,
+} from "./russianCities";
 import { decreaseTrust } from "./trust";
 import { supabase } from "./supabase";
 import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
@@ -75,33 +79,25 @@ export type FetchListingsResult = {
 /** PostgREST по умолчанию отдаёт ~1000 строк; при тысячах партнёрок «верх» ленты может быть только обычными — партнёрок не будет в ответе. */
 const FEED_LISTINGS_PER_KIND = 4000;
 
-/** Города РФ + федеральные объявления; для фильтра ленты «только Россия». */
-const RUSSIA_CITY_SET = new Set(RUSSIAN_CITIES);
+const ALLOWED_CITY_SET = new Set<string>(ALLOWED_LISTING_CITIES);
 
 let warned = new Set<string>();
 
 function rowIsRussiaListing(row: Record<string, unknown>): boolean {
   const id = String(row.id ?? "");
-  const country = typeof row.country === "string" ? row.country.trim() : "";
-  const city = typeof row.city === "string" ? row.city.trim() : "";
-  const location = typeof row.location === "string" ? row.location.trim() : "";
+  const cityLine =
+    (typeof row.city === "string" ? row.city.trim() : "") ||
+    (typeof row.location === "string" ? row.location.trim() : "");
 
-  if (country) {
-    const c = country.toLowerCase();
-    if (c === "россия" || c === "russia" || c === "ru") return true;
+  if (!cityLine) {
+    if (!warned.has(id)) {
+      console.warn("EMPTY CITY DROPPED:", id || "(no id)");
+      warned.add(id);
+    }
     return false;
   }
 
-  if (!country && !city && !location) {
-    if (!warned.has(id)) {
-      console.warn("UNKNOWN GEO:", id || "(no id)");
-      warned.add(id);
-    }
-    return true;
-  }
-
-  const cityLine = city || location;
-  return RUSSIA_CITY_SET.has(cityLine);
+  return ALLOWED_CITY_SET.has(cityLine);
 }
 
 function filterListingsRussiaOnly(rows: unknown[]): unknown[] {
@@ -132,7 +128,7 @@ function listingsQuery(
     minPrice?: number;
     maxPrice?: number;
     search?: string;
-    /** Город из списка РФ; «Вся Россия» — только федеральные; иначе город + федеральные. */
+    /** Город из whitelist. */
     city?: string;
   },
   select: string
@@ -141,14 +137,11 @@ function listingsQuery(
   if (filters.category) q = q.eq("category", filters.category);
   if (filters.minPrice != null) q = q.gte("price", filters.minPrice);
   if (filters.maxPrice != null) q = q.lte("price", filters.maxPrice);
-  const city = filters.city?.trim();
+  const city = normalizeAllowedListingCity(filters.city);
   if (city) {
-    if (city === CITY_ALL_RUSSIA) {
-      q = q.eq("city", CITY_ALL_RUSSIA);
-    } else {
-      const esc = city.replace(/"/g, "");
-      q = q.or(`city.eq."${esc}",city.eq."${CITY_ALL_RUSSIA}"`);
-    }
+    q = q.eq("city", city);
+  } else {
+    q = q.or('city.eq."Москва",city.eq."Сочи"');
   }
   const s = filters.search?.trim();
   if (s) {
@@ -379,6 +372,7 @@ export function normalizeListingImages(raw: unknown): { url: string; sort_order?
 
 /** Приводим строку из Postgres numeric/json к числу для UI. */
 export function parseListingRow(data: Record<string, unknown>): ListingRow {
+  const normalizedCity = normalizeAllowedListingCity(data.city ?? data.location);
   const fc = data.favorite_count;
   const price = Number(data.price);
   const viewCount = Number(data.view_count ?? 0);
@@ -389,7 +383,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     description: normalizeListingText(data.description, ""),
     price: Number.isFinite(price) ? price : 0,
     category: normalizeListingText(data.category, ""),
-    city: normalizeNullableListingText(data.city ?? data.location),
+    city: normalizedCity,
     view_count: Number.isFinite(viewCount) ? viewCount : 0,
     created_at: String(data.created_at ?? ""),
     updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
@@ -530,7 +524,10 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       return { error: msg };
     }
 
-    const cityVal = payload.city.trim() || "Не указан";
+    const cityVal = normalizeAllowedListingCity(payload.city);
+    if (!cityVal) {
+      return { error: "Пока доступны только Москва и Сочи" };
+    }
     const base = {
       user_id: effectiveUserId,
       title: payload.title.trim(),
@@ -608,32 +605,5 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
 }
 
 export async function getCitiesFromDb(): Promise<string[]> {
-  try {
-    const { data, error } = await supabase
-      .from("cities")
-      .select("name")
-      .order("name");
-
-    console.log("[CITIES DEBUG] raw DB:", data);
-    console.log("[CITIES DEBUG] count:", data?.length);
-
-    if (error) {
-      console.error("[CITIES ERROR]", error);
-      console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-      return [...RUSSIAN_CITIES]; // fallback to static
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-      console.warn("[CITIES] DB returned empty array, using fallback:", RUSSIAN_CITIES.length, "cities");
-      return [...RUSSIAN_CITIES]; // fallback to full static list
-    }
-
-    const cities = data.map((row) => row.name);
-    console.log("[CITIES] Loaded from DB:", cities.length, "cities");
-    return cities;
-  } catch (e) {
-    console.error("[CITIES] Network error:", e);
-    console.log("[CITIES] Using fallback RUSSIAN_CITIES:", RUSSIAN_CITIES.length, "cities");
-    return [...RUSSIAN_CITIES]; // fallback
-  }
+  return [...ALLOWED_LISTING_CITIES];
 }

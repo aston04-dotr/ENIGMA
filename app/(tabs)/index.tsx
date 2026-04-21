@@ -20,7 +20,7 @@ import { useAuth } from "../../context/auth-context";
 import { CATEGORIES } from "../../lib/categories";
 import { listingIsRussiaForFeed } from "../../lib/feedGeo";
 import { fetchListings, getCitiesFromDb } from "../../lib/listings";
-import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "../../lib/russianCities";
+import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "../../lib/russianCities";
 import {
   subscribeListingCreated,
   subscribeListingPromotionApplied,
@@ -45,10 +45,9 @@ export default function FeedScreen() {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [category, setCategory] = useState<string | undefined>();
-  const [selectedCity, setSelectedCity] = useState<string>(CITY_ALL_RUSSIA);
+  const [selectedCity, setSelectedCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
-  const [cityQuery, setCityQuery] = useState("");
-  const [cities, setCities] = useState<string[]>([CITY_ALL_RUSSIA, ...RUSSIAN_CITIES.slice(1)]);
+  const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [minP, setMinP] = useState("");
   const [maxP, setMaxP] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -70,7 +69,7 @@ export default function FeedScreen() {
         } else {
           saved = await AsyncStorage.getItem("selectedCity");
         }
-        if (saved && cities.includes(saved)) setSelectedCity(saved);
+        if (saved && isAllowedListingCity(saved)) setSelectedCity(saved);
       } catch {
         /* ignore */
       }
@@ -87,15 +86,8 @@ export default function FeedScreen() {
 
   console.log("[CITIES DEBUG] state:", cities?.length, cities);
 
-  const filteredCities = useMemo(() => {
-    if (!cityQuery.trim()) return cities;
-    const q = cityQuery.toLowerCase();
-    return cities.filter(c => c.toLowerCase().includes(q));
-  }, [cityQuery, cities]);
-
-  console.log("[CITIES DEBUG] filtered:", filteredCities?.length, filteredCities);
-
   const persistSelectedCity = useCallback(async (city: string) => {
+    if (!isAllowedListingCity(city)) return;
     setSelectedCity(city);
     try {
       if (typeof localStorage !== "undefined") {
@@ -127,6 +119,7 @@ export default function FeedScreen() {
         minPrice: minP ? Number(minP) : undefined,
         maxPrice: maxP ? Number(maxP) : undefined,
         search: debounced,
+        city: selectedCity,
       });
       if (res.error) {
         console.error("LISTINGS FETCH ERROR", res.error);
@@ -145,7 +138,7 @@ export default function FeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category, minP, maxP, debounced]);
+  }, [category, minP, maxP, debounced, selectedCity]);
 
   useEffect(() => {
     setLoading(true);
@@ -159,11 +152,8 @@ export default function FeedScreen() {
   const itemsForFeed = useMemo(() => {
     return items.filter((x) => {
       if (!listingIsRussiaForFeed(x)) return false;
-      if (selectedCity === CITY_ALL_RUSSIA) return true;
       if (!x.city) return false;
-      return (
-        x.city.toLowerCase().trim() === selectedCity.toLowerCase().trim()
-      );
+      return x.city.toLowerCase().trim() === selectedCity.toLowerCase().trim();
     });
   }, [items, selectedCity]);
 
@@ -411,22 +401,13 @@ export default function FeedScreen() {
           <Pressable style={styles.modalBackdrop} onPress={() => setCityPickerOpen(false)} />
           <View style={styles.cityPickerSheet}>
             <Text style={styles.sheetTitle}>Город</Text>
-            <TextInput
-              style={styles.citySearchInput}
-              placeholder="Поиск города..."
-              value={cityQuery}
-              onChangeText={setCityQuery}
-              autoCapitalize="words"
-              autoCorrect={false}
-            />
             <ScrollView style={styles.cityScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-              {filteredCities.map((c) => (
+              {cities.map((c) => (
                 <Pressable
                   key={c}
                   onPress={() => {
                     void persistSelectedCity(c);
                     setCityPickerOpen(false);
-                    setCityQuery("");
                   }}
                   style={[styles.cityRow, selectedCity === c && styles.cityRowOn]}
                 >
@@ -516,16 +497,6 @@ const styles = StyleSheet.create({
     maxHeight: "78%",
   },
   sheetTitle: { fontSize: 22, fontWeight: "700", color: colors.ink, marginBottom: 16 },
-  citySearchInput: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    padding: 12,
-    fontSize: 16,
-    color: colors.ink,
-    backgroundColor: colors.surface2,
-    marginBottom: 8,
-  },
   sheetLabel: { fontSize: 14, fontWeight: "600", color: colors.muted, marginBottom: 10, marginTop: 8 },
   catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catChip: {

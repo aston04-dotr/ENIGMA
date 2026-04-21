@@ -11,7 +11,7 @@ import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import { supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
-import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "@/lib/russianCities";
+import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -47,8 +47,8 @@ export default function CreatePage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cities, setCities] = useState<string[]>(RUSSIAN_CITIES);
+  const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
+  const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [category, setCategory] = useState("other");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -88,6 +88,10 @@ export default function CreatePage() {
       setErr("Укажите цену");
       return;
     }
+    if (!isAllowedListingCity(city.trim())) {
+      setErr("Пока доступны только Москва и Сочи");
+      return;
+    }
     if (!profile?.phone?.trim()) {
       setErr(PHONE_REQUIRED_PROMPT);
       if (typeof window !== "undefined") {
@@ -120,7 +124,7 @@ export default function CreatePage() {
         description: description.trim(),
         price: priceNum,
         category,
-        city: city.trim() || "Не указан",
+        city: city.trim(),
         contact_phone: profile?.phone || null,
       });
       console.log("CREATE LISTING RESULT", res);
@@ -233,10 +237,10 @@ export default function CreatePage() {
         <div className="mt-2">
           <Select
             value={cityOptions.find(option => option.value === city)}
-            onChange={(selectedOption) => setCity(selectedOption?.value || CITY_ALL_RUSSIA)}
+            onChange={(selectedOption) => setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])}
             options={cityOptions}
             placeholder="Выберите город"
-            isSearchable
+            isSearchable={false}
             className="react-select-container"
             classNamePrefix="react-select"
           />

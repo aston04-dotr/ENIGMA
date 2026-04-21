@@ -1,15 +1,25 @@
-import raw from "./russianCities.json";
+export const ALLOWED_LISTING_CITIES = ["Москва", "Сочи"] as const;
 
-/** Первый пункт — объявление по всей стране; далее Сочи и крупные города РФ. */
-export const RUSSIAN_CITIES: readonly string[] = raw as string[];
+export type AllowedListingCity = (typeof ALLOWED_LISTING_CITIES)[number];
 
-export const CITY_ALL_RUSSIA = "Вся Россия";
+export const RUSSIAN_CITIES: readonly string[] = ALLOWED_LISTING_CITIES;
 
-/** Города для сидов (без дублирования «Вся Россия» в каждой строке — её добавляет скрипт отдельно). */
-export const RUSSIAN_CITIES_GEO: readonly string[] = RUSSIAN_CITIES.filter((c) => c !== CITY_ALL_RUSSIA);
+export const RUSSIAN_CITIES_GEO: readonly string[] = ALLOWED_LISTING_CITIES;
+
+const ALLOWED_CITY_SET = new Set<string>(ALLOWED_LISTING_CITIES);
+
+export function isAllowedListingCity(city: string): city is AllowedListingCity {
+  return ALLOWED_CITY_SET.has(city);
+}
+
+export function normalizeAllowedListingCity(raw: unknown): AllowedListingCity | null {
+  if (typeof raw !== "string") return null;
+  const city = raw.trim();
+  return isAllowedListingCity(city) ? city : null;
+}
 
 export function filterCitiesByQuery(query: string): string[] {
   const q = query.trim().toLowerCase();
-  if (!q) return [...RUSSIAN_CITIES];
-  return RUSSIAN_CITIES.filter((c) => c.toLowerCase().includes(q));
+  if (!q) return [...ALLOWED_LISTING_CITIES];
+  return ALLOWED_LISTING_CITIES.filter((c) => c.toLowerCase().includes(q));
 }

@@ -6,7 +6,7 @@ import { ErrorUi, FETCH_ERROR_MESSAGE, LISTINGS_FEED_ERROR_MESSAGE } from "@/com
 import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
-import { CITY_ALL_RUSSIA, RUSSIAN_CITIES } from "@/lib/russianCities";
+import { ALLOWED_LISTING_CITIES } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import { fetchListings, getCitiesFromDb, type FeedListingsCursor } from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
@@ -95,8 +95,8 @@ function FeedPage({ session }: { session: Session }) {
   const [nextCursor, setNextCursor] = useState<FeedListingsCursor | null>(() => feedSeed.nextCursor);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
-  const [city, setCity] = useState(CITY_ALL_RUSSIA);
-  const [cities, setCities] = useState<string[]>(RUSSIAN_CITIES);
+  const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
+  const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
 
   useEffect(() => {
@@ -116,16 +116,14 @@ function FeedPage({ session }: { session: Session }) {
   const lastPrefetchAtRef = useRef(0);
   const lastLoadMoreAtRef = useRef(0);
   const feedFilters = useMemo(() => {
-    const f: Parameters<typeof fetchListings>[0] = {};
-    if (city.trim() && city !== CITY_ALL_RUSSIA) f.city = city.trim();
+    const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
     return f;
   }, [city]);
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
     return items.filter((x) => {
-      if (city === CITY_ALL_RUSSIA) return true;
-      if (listingIsRussiaForFeed(x)) return true;
+      if (!listingIsRussiaForFeed(x)) return false;
       return x.city?.toLowerCase().trim() === city.toLowerCase().trim();
     });
   }, [items, city]);
@@ -310,10 +308,10 @@ function FeedPage({ session }: { session: Session }) {
           <div className="mt-2">
             <Select
               value={cityOptions.find(option => option.value === city)}
-              onChange={(selectedOption) => setCity(selectedOption?.value || CITY_ALL_RUSSIA)}
+              onChange={(selectedOption) => setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])}
               options={cityOptions}
               placeholder="Выберите город"
-              isSearchable
+              isSearchable={false}
               className="react-select-container"
               classNamePrefix="react-select"
             />

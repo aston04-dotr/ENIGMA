@@ -4,10 +4,5 @@ export const cities = (rawCities as string[]).map((name) => ({ name }));
 
 export const TOP_CITIES = [
   "Москва",
-  "Санкт-Петербург",
-  "Казань",
   "Сочи",
-  "Краснодар",
-  "Екатеринбург",
-  "Новосибирск",
 ];
