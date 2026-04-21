@@ -146,6 +146,7 @@ function PaymentInner() {
         message: ticketMessage,
         type: "payment",
         status: "open",
+        notifyByEmail: false,
       });
 
       notifyAdmin({

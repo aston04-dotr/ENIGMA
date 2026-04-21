@@ -1,5 +1,28 @@
 import { supabase } from "@/lib/supabase";
 
+async function sendSupportEmail(params: { subject: string; text: string }): Promise<void> {
+  try {
+    const resp = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject: params.subject,
+        text: params.text,
+      }),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      console.error("SUPPORT EMAIL ERROR", { status: resp.status, body });
+      return;
+    }
+
+    console.log("SUPPORT EMAIL SENT");
+  } catch (error) {
+    console.error("SUPPORT EMAIL EXCEPTION", error);
+  }
+}
+
 export type SupportTicketStatus = "open" | "closed";
 export type SupportTicketType = "payment" | "listing" | "login" | "error" | "other";
 
@@ -12,6 +35,7 @@ export type SupportTicketPayload = {
   message: string;
   type: SupportTicketType;
   status?: SupportTicketStatus;
+  notifyByEmail?: boolean;
 };
 
 export type CreatePendingPaymentPayload = {
@@ -76,6 +100,17 @@ export async function createSupportTicket(payload: SupportTicketPayload): Promis
   if (!userId) return { ok: false, error: "missing_user_id" };
   if (!message) return { ok: false, error: "empty_message" };
 
+  const sendNotification = payload.notifyByEmail !== false;
+
+  const maybeNotify = () => {
+    if (!sendNotification) return;
+    notifyAdmin({
+      type: "support_ticket",
+      user_id: userId,
+      message,
+    });
+  };
+
   try {
     const { data, error } = await ((supabase.schema("public").from as unknown as (
       relation: string
@@ -98,15 +133,18 @@ export async function createSupportTicket(payload: SupportTicketPayload): Promis
     if (error) {
       const parsed = parseSupabaseError(error);
       console.error("SUPPORT TICKET ERROR", parsed);
+      maybeNotify();
       return { ok: false, error: parsed };
     }
 
     const id = String(data?.id ?? "");
     console.log("NEW TICKET:", { id, user_id: userId, type: payload.type });
+    maybeNotify();
     return { ok: true, id };
   } catch (error) {
     const parsed = parseSupabaseError(error);
     console.error("SUPPORT TICKET EXCEPTION", parsed);
+    maybeNotify();
     return { ok: false, error: parsed };
   }
 }
@@ -120,8 +158,27 @@ export function notifyAdmin(event: {
   promoKind?: string | null;
   amount?: number;
 }) {
+  const subject = "[ENIGMA SUPPORT] Новое обращение";
+
+  const createdAt = new Date().toISOString();
+
+  const text = [
+    `тип: ${event.type}`,
+    `user_id: ${event.user_id}`,
+    `текст обращения: ${event.message}`,
+    `дата: ${createdAt}`,
+    event.payment_id ? `payment_id: ${event.payment_id}` : null,
+    event.listing_id ? `listing_id: ${event.listing_id}` : null,
+    event.promoKind ? `promoKind: ${event.promoKind}` : null,
+    typeof event.amount === "number" ? `amount: ${event.amount}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   console.log("ADMIN_NOTIFY", {
     ts: new Date().toISOString(),
     ...event,
   });
+
+  void sendSupportEmail({ subject, text });
 }
