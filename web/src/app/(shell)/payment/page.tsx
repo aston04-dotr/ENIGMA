@@ -2,16 +2,17 @@
 
 import { useAuth } from "@/context/auth-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
-import {
-  defaultBoostCtaPriceRub,
-} from "@/lib/boostPay";
-import {
-  parsePromotionTariffKind,
-} from "@/lib/monetization";
+import { defaultBoostCtaPriceRub } from "@/lib/boostPay";
+import { parsePromotionTariffKind } from "@/lib/monetization";
 import { logPaymentEvent } from "@/lib/paymentLogs";
 import { validatePromotionPaymentAmount } from "@/lib/paymentValidation";
 import { createPaymentIntent, type PaymentRail } from "@/lib/payments";
-import { createPendingPayment, createSupportTicket, notifyAdmin, type ManualPaymentType } from "@/lib/support";
+import {
+  createPendingPayment,
+  createSupportTicket,
+  notifyAdmin,
+  type ManualPaymentType,
+} from "@/lib/support";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, Suspense } from "react";
@@ -24,7 +25,11 @@ const RAILS: { id: PaymentRail; title: string }[] = [
 ];
 
 function formatRub(n: number) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
 function isBoostTariff(k: string | null): boolean {
@@ -56,10 +61,12 @@ function PaymentInner() {
 
   useEffect(() => {
     if (showBoostPreview && listingId) {
-      trackBoostEvent("boost_payment_open", { listingId, promoKind: promoKindRaw });
+      trackBoostEvent("boost_payment_open", {
+        listingId,
+        promoKind: promoKindRaw,
+      });
     }
   }, [showBoostPreview, listingId, promoKindRaw]);
-
 
   async function pay() {
     if (!session?.user?.id) {
@@ -100,11 +107,16 @@ function PaymentInner() {
     });
 
     try {
-      const intent = await createPaymentIntent(rail, secureAmount, description, {
-        user_id: uid,
-        listing_id: lid ?? "",
-        promoKind: promoKindRaw ?? "",
-      });
+      const intent = await createPaymentIntent(
+        rail,
+        secureAmount,
+        description,
+        {
+          user_id: uid,
+          listing_id: lid ?? "",
+          promoKind: promoKindRaw ?? "",
+        },
+      );
 
       setPaymentState("pending");
       logPaymentEvent({
@@ -159,7 +171,9 @@ function PaymentInner() {
         amount: secureAmount,
       });
 
-      setSuccessHeadline("Платёж создан и ожидает подтверждения оператора (обычно 5-10 минут).");
+      setSuccessHeadline(
+        "Платёж создан и ожидает подтверждения оператора (обычно 5-10 минут).",
+      );
       return;
     } catch {
       setPaymentState("failed");
@@ -190,7 +204,11 @@ function PaymentInner() {
   return (
     <main className="safe-pt boost-fade-in px-5 pb-28 pt-4">
       <div className="mb-4 flex items-center justify-between">
-        <button type="button" onClick={() => router.back()} className="text-sm font-semibold text-[#7dd3fc]">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-sm font-semibold text-[#7dd3fc]"
+        >
           ← Назад
         </button>
       </div>
@@ -198,25 +216,37 @@ function PaymentInner() {
 
       {showBoostPreview ? (
         <div className="mt-5 rounded-card border border-line bg-elevated p-4">
-          <p className="text-[16px] font-semibold text-fg">Увеличьте отклик на объявление</p>
-          <p className="mt-1 text-sm text-muted">Поднимите объявление, чтобы его увидело больше людей</p>
+          <p className="text-[16px] font-semibold text-fg">
+            Увеличьте отклик на объявление
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Поднимите объявление, чтобы его увидело больше людей
+          </p>
         </div>
       ) : null}
 
       <div className="mt-6 rounded-card border border-line bg-elevated p-5 shadow-soft">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">К оплате</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+          К оплате
+        </p>
         {hasAmount ? (
-          <p className="mt-2 text-3xl font-extrabold text-fg">{formatRub(amountNum)}</p>
+          <p className="mt-2 text-3xl font-extrabold text-fg">
+            {formatRub(amountNum)}
+          </p>
         ) : (
           <p className="mt-2 text-xl text-muted">-</p>
         )}
         <p className="mt-3 text-sm font-medium text-fg">{orderTitle}</p>
         {!hasAmount ? (
-          <p className="mt-3 text-sm text-muted">Откройте оплату с карточки объявления или из раздела продвижения.</p>
+          <p className="mt-3 text-sm text-muted">
+            Откройте оплату с карточки объявления или из раздела продвижения.
+          </p>
         ) : null}
       </div>
 
-      <p className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted">Способ оплаты</p>
+      <p className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted">
+        Способ оплаты
+      </p>
       <div className="mt-3 space-y-2">
         {RAILS.map((r) => {
           const on = rail === r.id;
@@ -226,7 +256,9 @@ function PaymentInner() {
               type="button"
               onClick={() => setRail(r.id)}
               className={`flex w-full min-h-[48px] items-center rounded-card border px-4 text-left text-sm font-semibold transition-colors ${
-                on ? "border-[#7B4FE8] bg-[rgba(123,79,232,0.12)] text-fg" : "border-line bg-elevated text-fg"
+                on
+                  ? "border-[#7B4FE8] bg-[rgba(123,79,232,0.12)] text-fg"
+                  : "border-line bg-elevated text-fg"
               }`}
             >
               {r.title}
@@ -235,7 +267,7 @@ function PaymentInner() {
         })}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-line bg-main/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-md md:left-1/2 md:max-w-md md:-translate-x-1/2">
+      <div className="fixed bottom-0 left-1/2 z-40 w-full -translate-x-1/2 border-t border-line bg-main/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-md view-mode-nav">
         {hasAmount ? (
           <>
             <button
@@ -255,7 +287,10 @@ function PaymentInner() {
             </p>
           </>
         ) : (
-          <Link href="/" className="flex h-12 w-full items-center justify-center rounded-card border border-line text-sm font-semibold">
+          <Link
+            href="/"
+            className="flex h-12 w-full items-center justify-center rounded-card border border-line text-sm font-semibold"
+          >
             На ленту
           </Link>
         )}

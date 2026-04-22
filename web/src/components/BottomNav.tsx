@@ -21,14 +21,15 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex h-[64px] items-stretch justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb md:left-1/2 md:max-w-md md:-translate-x-1/2"
+      className="fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full -translate-x-1/2 items-stretch justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb view-mode-nav"
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 10px)" }}
     >
       {tabs.map((t) => {
         const active =
           t.href === "/chat"
             ? pathname === "/chat" || pathname.startsWith("/chat/")
-            : pathname === t.href || (t.href !== "/" && pathname.startsWith(t.href));
+            : pathname === t.href ||
+              (t.href !== "/" && pathname.startsWith(t.href));
         const { Icon } = t;
         return (
           <Link

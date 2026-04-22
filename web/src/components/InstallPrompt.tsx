@@ -10,7 +10,9 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 export function InstallPrompt() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
+    null,
+  );
   const [visible, setVisible] = useState(false);
   const [ios, setIos] = useState(false);
 
@@ -21,9 +23,14 @@ export function InstallPrompt() {
     const standalone =
       typeof window !== "undefined" &&
       (window.matchMedia("(display-mode: standalone)").matches ||
-        (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
+        (window.navigator as Navigator & { standalone?: boolean })
+          .standalone === true);
     if (standalone) return;
-    if (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) return;
+    if (
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem(STORAGE_KEY)
+    )
+      return;
 
     const onBip = (e: Event) => {
       e.preventDefault();
@@ -56,15 +63,23 @@ export function InstallPrompt() {
 
   return (
     <div
-      className="fixed bottom-[calc(64px+env(safe-area-inset-bottom)+8px)] left-3 right-3 z-[60] rounded-card border border-line bg-elevated p-4 shadow-soft safe-pb md:max-w-md md:left-1/2 md:-translate-x-1/2"
+      className="fixed bottom-[calc(64px+env(safe-area-inset-bottom)+8px)] left-1/2 z-[60] w-full -translate-x-1/2 view-mode-nav rounded-card border border-line bg-elevated p-4 shadow-soft safe-pb"
       role="dialog"
       aria-label="Установка веб-приложения"
     >
-      <p className="text-sm font-semibold leading-snug text-fg">Веб-версия Enigma — можно открывать в браузере или добавить на экран, как приложение.</p>
+      <p className="text-sm font-semibold leading-snug text-fg">
+        Веб-версия Enigma — можно открывать в браузере или добавить на экран,
+        как приложение.
+      </p>
       {ios ? (
-        <p className="mt-2 text-xs leading-relaxed text-muted">Safari: Поделиться → «На экран «Домой»»</p>
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          Safari: Поделиться → «На экран «Домой»»
+        </p>
       ) : deferred ? (
-        <p className="mt-2 text-xs leading-relaxed text-muted">Chrome / Edge: кнопка «Установить» — ярлык на рабочий стол или в меню «Пуск».</p>
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          Chrome / Edge: кнопка «Установить» — ярлык на рабочий стол или в меню
+          «Пуск».
+        </p>
       ) : null}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         {deferred ? (

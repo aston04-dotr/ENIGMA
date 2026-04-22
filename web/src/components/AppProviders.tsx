@@ -2,6 +2,8 @@
 
 import { AuthProvider } from "@/context/auth-context";
 import { ThemeProvider } from "@/context/theme-context";
+import { ViewModeProvider } from "@/context/view-mode-context";
+import { ViewModeLayout } from "@/components/ViewModeLayout";
 import { AuthDebugTracker } from "@/components/AuthDebugTracker";
 import { UnregisterServiceWorkers } from "@/components/UnregisterServiceWorkers";
 import { DevCacheClear } from "@/components/DevCacheClear";
@@ -18,10 +20,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <ServiceWorkerRegister />
       <ThemeProvider>
         <AuthProvider>
-          <OfflineGate>
-            {children}
-            <InstallPrompt />
-          </OfflineGate>
+          <ViewModeProvider>
+            <OfflineGate>
+              <ViewModeLayout>{children}</ViewModeLayout>
+              <InstallPrompt />
+            </OfflineGate>
+          </ViewModeProvider>
         </AuthProvider>
       </ThemeProvider>
     </>
