@@ -317,25 +317,6 @@ body {
     0 24px 80px rgba(0, 0, 0, 0.06);
 }
 
-.view-mode-switcher-wrap {
-  max-width: min(100%, 1100px);
-  padding-right: max(8px, env(safe-area-inset-right, 0px));
-}
-
-@media (min-width: 641px) {
-  .view-mode-mobile .view-mode-switcher-wrap {
-    max-width: min(100%, 420px);
-  }
-
-  .view-mode-tablet .view-mode-switcher-wrap {
-    max-width: calc(768px + 112px);
-  }
-
-  .view-mode-desktop .view-mode-switcher-wrap {
-    max-width: calc(1100px + 112px);
-  }
-}
-
 .view-mode-nav {
   max-width: calc(
     100% -
