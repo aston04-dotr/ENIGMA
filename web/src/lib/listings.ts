@@ -365,6 +365,20 @@ export async function fetchListingsForUser(userId: string): Promise<ListingRow[]
   return [];
 }
 
+export async function getMyListings(userId: string): Promise<ListingRow[]> {
+  const uid = String(userId ?? "").trim();
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from("listings")
+    .select("*")
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data as ListingRow[] | null) ?? [];
+}
+
 /** Одно объявление: число избранных (RPC, SECURITY DEFINER). */
 export async function fetchListingFavoriteCount(listingId: string): Promise<number> {
   if (!listingId?.trim()) return 0;

@@ -1,14 +1,17 @@
 "use client";
 
 import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
+import { ListingCard } from "@/components/ListingCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
+import { getMyListings } from "@/lib/listings";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { ListingRow } from "@/lib/types";
 
 type PackageSize = "small" | "base" | "pro";
 
@@ -119,6 +122,9 @@ export default function ProfilePage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [phoneMessage, setPhoneMessage] = useState<string | null>(null);
+  const [myListings, setMyListings] = useState<ListingRow[]>([]);
+  const [myListingsLoading, setMyListingsLoading] = useState(true);
+  const [myListingsError, setMyListingsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authResolved || loading) return;
@@ -132,6 +138,64 @@ export default function ProfilePage() {
   useEffect(() => {
     setPhoneInput(profile?.phone ?? "");
   }, [profile?.phone]);
+
+  useEffect(() => {
+    if (!authResolved || loading) return;
+    const uid = session?.user?.id;
+    if (!uid) {
+      setMyListings([]);
+      setMyListingsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setMyListingsLoading(true);
+    setMyListingsError(null);
+
+    void (async () => {
+      try {
+        const rows = await getMyListings(uid);
+        if (cancelled) return;
+        setMyListings(Array.isArray(rows) ? rows : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("MY LISTINGS LOAD ERROR", error);
+        setMyListings([]);
+        setMyListingsError("Не удалось загрузить ваши объявления");
+      } finally {
+        if (!cancelled) setMyListingsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, authResolved, loading]);
+
+  async function handleDelete(id: string) {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    const listingId = String(id ?? "").trim();
+    if (!listingId) return;
+    if (typeof window !== "undefined" && !window.confirm("Удалить объявление?")) return;
+
+    const { error } = await supabase
+      .from("listings")
+      .delete()
+      .eq("id", listingId)
+      .eq("user_id", uid);
+
+    if (error) {
+      console.error("MY LISTING DELETE ERROR", error);
+      if (typeof window !== "undefined") {
+        window.alert("Ошибка удаления");
+      }
+      setMyListingsError("Не удалось удалить объявление");
+      return;
+    }
+
+    setMyListings((prev) => (prev || []).filter((x) => x?.id !== listingId));
+  }
 
   async function onConfirmDelete() {
     setDeleteErr(null);
@@ -343,6 +407,57 @@ export default function ProfilePage() {
           </p>
         ) : null}
       </div>
+
+      {/* Мои объявления */}
+      <section className="mt-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-[20px] font-bold tracking-tight text-fg">Мои объявления</h2>
+          <Link
+            href="/create"
+            className="inline-flex min-h-[40px] items-center rounded-card bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-accent-hover"
+          >
+            Создать объявление
+          </Link>
+        </div>
+
+        {myListingsLoading ? (
+          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка...</div>
+        ) : myListingsError ? (
+          <div className="rounded-card border border-danger/30 bg-danger/5 p-4 text-sm text-danger">{myListingsError}</div>
+        ) : (myListings || []).length === 0 ? (
+          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
+        ) : (
+          <div className="space-y-3">
+            {(myListings || []).map((listing) => {
+              const safeListing = listing ?? null;
+              if (!safeListing || !safeListing.id) return null;
+              const isOwner = safeListing.user_id === session?.user?.id;
+              return (
+                <div key={safeListing.id} className="rounded-card border border-line/40 transition-all duration-200 hover:border-line hover:shadow-soft">
+                  <ListingCard item={safeListing} />
+                  {isOwner ? (
+                    <div className="flex gap-2 p-3 pt-0">
+                      <Link
+                        href={`/listing/edit/${safeListing.id}`}
+                        className="flex min-h-[42px] flex-1 items-center justify-center rounded-card border border-line bg-elevated px-3 text-sm font-medium text-fg transition-colors duration-200 hover:bg-elev-2"
+                      >
+                        Редактировать
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(safeListing.id)}
+                        className="min-h-[42px] rounded-card border border-danger/40 bg-danger/5 px-4 text-sm font-semibold text-danger transition-colors duration-200 hover:bg-danger/10"
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* МОЙ СТАТУС */}
       <div className={`mt-6 rounded-[20px] p-[18px] border card-animate ${

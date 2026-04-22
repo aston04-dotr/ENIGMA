@@ -9,7 +9,7 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
+    "expo:web": "expo start --web",
     "web:preview": "expo start --web --port 8090",
     "seed:partner": "node scripts/seed-partner-listings.mjs",
     "seed:listings": "node scripts/seed-listings.mjs"
