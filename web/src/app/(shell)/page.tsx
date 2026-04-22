@@ -2,18 +2,26 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { EmptyState } from "@/components/EmptyState";
-import { ErrorUi, FETCH_ERROR_MESSAGE, LISTINGS_FEED_ERROR_MESSAGE } from "@/components/ErrorUi";
+import {
+  ErrorUi,
+  FETCH_ERROR_MESSAGE,
+  LISTINGS_FEED_ERROR_MESSAGE,
+} from "@/components/ErrorUi";
 import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
 import { ALLOWED_LISTING_CITIES } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
-import { fetchListings, getCitiesFromDb, type FeedListingsCursor } from "@/lib/listings";
+import {
+  fetchListings,
+  getCitiesFromDb,
+  type FeedListingsCursor,
+} from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import type { ListingRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Select from 'react-select';
+import Select from "react-select";
 
 const CACHE_KEY = "cached_listings";
 
@@ -33,7 +41,10 @@ function readFeedCache(): FeedCache {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return { items: [], nextCursor: null };
-    const j = JSON.parse(raw) as FeedCache | ListingRow[] | { items?: unknown; nextCursor?: unknown };
+    const j = JSON.parse(raw) as
+      | FeedCache
+      | ListingRow[]
+      | { items?: unknown; nextCursor?: unknown };
     if (Array.isArray(j)) return { items: j, nextCursor: null };
     const items = Array.isArray(j.items) ? (j.items as ListingRow[]) : [];
     const nc = parseStoredCursor(j.nextCursor);
@@ -43,7 +54,10 @@ function readFeedCache(): FeedCache {
   }
 }
 
-function persistFeed(items: ListingRow[], nextCursor: FeedListingsCursor | null) {
+function persistFeed(
+  items: ListingRow[],
+  nextCursor: FeedListingsCursor | null,
+) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ items, nextCursor }));
   } catch {
@@ -92,7 +106,9 @@ export default function HomePage() {
 function FeedPage({ session }: { session: Session }) {
   const feedSeed = useMemo(() => readFeedCache(), []);
   const [items, setItems] = useState<ListingRow[]>(() => feedSeed.items);
-  const [nextCursor, setNextCursor] = useState<FeedListingsCursor | null>(() => feedSeed.nextCursor);
+  const [nextCursor, setNextCursor] = useState<FeedListingsCursor | null>(
+    () => feedSeed.nextCursor,
+  );
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
@@ -129,7 +145,10 @@ function FeedPage({ session }: { session: Session }) {
   }, [items, city]);
 
   const applyRes = useCallback(
-    (res: Awaited<ReturnType<typeof fetchListings>>, mode: "replace" | "append") => {
+    (
+      res: Awaited<ReturnType<typeof fetchListings>>,
+      mode: "replace" | "append",
+    ) => {
       const raw = Array.isArray(res.listings) ? res.listings : [];
       setFeedNotice(res.notice ?? null);
       if (res.error) {
@@ -162,7 +181,7 @@ function FeedPage({ session }: { session: Session }) {
         setNextCursor(serverNext);
       }
     },
-    [session?.user?.id]
+    [session?.user?.id],
   );
 
   useEffect(() => {
@@ -220,7 +239,10 @@ function FeedPage({ session }: { session: Session }) {
       const c = res.nextCursor ?? null;
       prefetchedRef.current = { items: mix, nextCursor: c };
       prefetchKeyRef.current = key;
-      console.log("LISTINGS PREFETCH STORED", { count: mix.length, nextCursor: c });
+      console.log("LISTINGS PREFETCH STORED", {
+        count: mix.length,
+        nextCursor: c,
+      });
     } catch (e) {
       console.error("LISTINGS PREFETCH ERROR", e);
     } finally {
@@ -299,16 +321,24 @@ function FeedPage({ session }: { session: Session }) {
       <header className="border-b border-line bg-main px-5 py-5">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-[28px] font-bold leading-none tracking-tight text-fg">Enigma</h1>
-            <p className="mt-1.5 text-xs font-medium uppercase tracking-[0.12em] text-muted">Объявления</p>
+            <h1 className="bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
+              Enigma
+            </h1>
+            <p className="mt-1.5 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+              Объявления
+            </p>
           </div>
         </div>
         <div className="mt-6">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Город</label>
+          <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Город
+          </label>
           <div className="mt-2">
             <Select
-              value={cityOptions.find(option => option.value === city)}
-              onChange={(selectedOption) => setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])}
+              value={cityOptions.find((option) => option.value === city)}
+              onChange={(selectedOption) =>
+                setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])
+              }
               options={cityOptions}
               placeholder="Выберите город"
               isSearchable={false}
@@ -344,7 +374,9 @@ function FeedPage({ session }: { session: Session }) {
         aria-label="Наверх"
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         className={`fixed bottom-[calc(64px+env(safe-area-inset-bottom)+16px)] right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-elevated text-lg font-bold text-fg shadow-soft transition-all duration-[250ms] ease-out ${
-          showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+          showScrollTop
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0"
         }`}
       >
         ↑
