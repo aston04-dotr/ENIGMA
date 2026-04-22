@@ -321,7 +321,7 @@ function FeedPage({ session }: { session: Session }) {
       <header className="border-b border-line bg-main px-5 py-5">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="relative -top-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
+            <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
               Enigma
             </h1>
           </div>
