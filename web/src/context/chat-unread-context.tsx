@@ -25,7 +25,10 @@ type ChatUnreadContextValue = {
   error: string | null;
   activeChatId: string | null;
   refreshChats: (opts?: { silent?: boolean }) => Promise<void>;
-  markChatRead: (chatId: string, upToMessageId?: string | null) => Promise<void>;
+  markChatRead: (
+    chatId: string,
+    upToMessageId?: string | null,
+  ) => Promise<void>;
   setActiveChatId: (chatId: string | null) => void;
   getChatRow: (chatId: string) => ChatListRow | null;
 };
@@ -54,7 +57,9 @@ function normalizeChatRow(raw: Record<string, unknown>): ChatListRow {
     other_avatar: raw.other_avatar ? String(raw.other_avatar) : null,
     other_public_id: raw.other_public_id ? String(raw.other_public_id) : null,
     last_message_id: raw.last_message_id ? String(raw.last_message_id) : null,
-    last_message_text: raw.last_message_text ? String(raw.last_message_text) : null,
+    last_message_text: raw.last_message_text
+      ? String(raw.last_message_text)
+      : null,
     last_message_sender_id: raw.last_message_sender_id
       ? String(raw.last_message_sender_id)
       : null,
@@ -79,7 +84,10 @@ function normalizeChatRow(raw: Record<string, unknown>): ChatListRow {
 }
 
 function computeTotalUnread(rows: ChatListRow[]): number {
-  return rows.reduce((sum, row) => sum + Math.max(0, Number(row.unread_count || 0)), 0);
+  return rows.reduce(
+    (sum, row) => sum + Math.max(0, Number(row.unread_count || 0)),
+    0,
+  );
 }
 
 function createCrossTabBus() {
@@ -138,7 +146,11 @@ function createCrossTabBus() {
   };
 }
 
-export function ChatUnreadProvider({ children }: { children: React.ReactNode }) {
+export function ChatUnreadProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { session, loading } = useAuth();
   const userId = session?.user?.id ?? null;
 
@@ -182,7 +194,9 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
       setError(null);
 
       try {
-        const res = await supabase.rpc("list_my_chats", { p_limit: 200 });
+        const res = await supabase.rpc("list_my_chats", {
+          p_user: userId,
+        });
 
         if (res.error) {
           console.error("list_my_chats", res.error);
@@ -235,7 +249,8 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
 
     presenceInFlightRef.current = true;
     try {
-      const visibilityState = document.visibilityState === "visible" ? "visible" : "hidden";
+      const visibilityState =
+        document.visibilityState === "visible" ? "visible" : "hidden";
       const active = statusRef.current.activeChatId;
 
       const { error: upsertError } = await supabase.from("online_users").upsert(
@@ -287,12 +302,15 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
       try {
         const res = await supabase.rpc("mark_chat_read", {
           p_chat_id: chatId,
-          p_up_to_message_id: upToMessageId && isUuid(upToMessageId) ? upToMessageId : null,
+          p_up_to_message_id:
+            upToMessageId && isUuid(upToMessageId) ? upToMessageId : null,
         });
 
         if (res.error) {
           console.error("mark_chat_read", res.error);
-          setError(res.error.message || "Не удалось отметить чат как прочитанный");
+          setError(
+            res.error.message || "Не удалось отметить чат как прочитанный",
+          );
           return;
         }
 
@@ -432,9 +450,12 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
 
           clearReconnect();
           if (typeof window !== "undefined") {
-            statusRef.current.reconnectTimer = window.setTimeout(() => {
-              if (!cancelled) connect();
-            }, 500 * 2 ** (attempt - 1));
+            statusRef.current.reconnectTimer = window.setTimeout(
+              () => {
+                if (!cancelled) connect();
+              },
+              500 * 2 ** (attempt - 1),
+            );
           }
         }
       });
@@ -453,7 +474,12 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
   }, [scheduleRefresh, userId]);
 
   useEffect(() => {
-    if (!userId || typeof window === "undefined" || typeof document === "undefined") return;
+    if (
+      !userId ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    )
+      return;
 
     const ping = () => {
       void upsertPresence();
@@ -484,10 +510,7 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
 
     presenceIntervalRef.current = window.setInterval(() => {
       const stale =
-        Date.now() -
-          new Date(
-            new Date().toISOString(),
-          ).getTime() <
+        Date.now() - new Date(new Date().toISOString()).getTime() <
         PRESENCE_STALE_MS;
       void stale;
       ping();

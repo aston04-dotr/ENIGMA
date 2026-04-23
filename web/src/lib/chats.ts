@@ -1,4 +1,3 @@
-import { logSupabaseResult } from "./postgrestErrors";
 import { supabase } from "./supabase";
 import { canStartNewChat } from "./trustLevels";
 
@@ -6,59 +5,60 @@ export type GetOrCreateChatResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
-type RpcResultRow = {
-  chat_id?: string | null;
-};
-
 function isValidUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
 }
 
+type RpcChatRow = {
+  id?: string | null;
+};
+
 export async function getOrCreateChat(
-  otherUserId: string,
-  listingId?: string | null,
+  sellerId: string,
 ): Promise<GetOrCreateChatResult> {
   try {
-    const normalizedOtherUserId = String(otherUserId ?? "").trim();
-    const normalizedListingId = String(listingId ?? "").trim() || null;
+    const normalizedSellerId = String(sellerId ?? "").trim();
 
-    if (!normalizedOtherUserId || !isValidUuid(normalizedOtherUserId)) {
-      return { ok: false, error: "Некорректный получатель" };
+    console.log("SELLER ID:", normalizedSellerId);
+
+    if (!normalizedSellerId || !isValidUuid(normalizedSellerId)) {
+      console.error("CHAT ERROR:", "Invalid sellerId");
+      return { ok: false, error: "Некорректный продавец" };
     }
 
-    if (normalizedListingId && !isValidUuid(normalizedListingId)) {
-      return { ok: false, error: "Некорректное объявление" };
+    const { data: userData, error: authError } = await supabase.auth.getUser();
+    const userId = userData?.user?.id ?? null;
+
+    console.log("USER:", userId);
+
+    if (authError) {
+      console.error("ERROR:", authError);
+      return { ok: false, error: authError.message || "Ошибка авторизации" };
     }
 
-    const {
-      data: { session },
-      error: authErr,
-    } = await supabase.auth.getSession();
-
-    const user = session?.user;
-    if (authErr || !user) {
-      console.error("getOrCreateChat getSession", authErr);
-      return { ok: false, error: "Нет сессии" };
+    if (!userId) {
+      console.error("ERROR:", "User is not authenticated");
+      return { ok: false, error: "Не авторизован" };
     }
 
-    const myId = user.id;
-    if (normalizedOtherUserId === myId) {
-      return { ok: false, error: "Нельзя открыть чат с собой" };
+    if (userId === normalizedSellerId) {
+      console.error("ERROR:", "Cannot open chat with self");
+      return { ok: false, error: "Нельзя написать самому себе" };
     }
 
-    const { data: prof, error: profileErr } = await supabase
+    const { data: profileData, error: profileError } = await supabase
       .from("profiles")
       .select("trust_score")
-      .eq("id", myId)
+      .eq("id", userId)
       .maybeSingle();
 
-    if (profileErr) {
-      console.warn("getOrCreateChat profiles select", profileErr);
+    if (profileError) {
+      console.error("ERROR:", profileError);
     }
 
-    if (!canStartNewChat(prof?.trust_score)) {
+    if (!canStartNewChat(profileData?.trust_score)) {
       return {
         ok: false,
         error:
@@ -66,25 +66,23 @@ export async function getOrCreateChat(
       };
     }
 
-    const rpc = await supabase.rpc("get_or_create_direct_chat", {
-      p_other_user_id: normalizedOtherUserId,
-      p_listing_id: normalizedListingId,
+    const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
+      p_buyer: userId,
+      p_seller: normalizedSellerId,
     });
 
-    logSupabaseResult("get_or_create_direct_chat", {
-      data: rpc.data,
-      error: rpc.error,
-    });
+    console.log("CHAT RESULT:", data);
+    console.log("ERROR:", error);
 
-    if (rpc.error) {
-      console.error("get_or_create_direct_chat", rpc.error);
+    if (error || !data) {
+      console.error("CHAT ERROR:", error);
       return {
         ok: false,
-        error: rpc.error.message || "Не удалось открыть чат",
+        error: error?.message || "Не удалось открыть чат",
       };
     }
 
-    const raw = rpc.data as string | RpcResultRow | RpcResultRow[] | null;
+    const raw = data as string | RpcChatRow | RpcChatRow[] | null;
 
     if (typeof raw === "string" && raw.trim()) {
       return { ok: true, id: raw.trim() };
@@ -92,23 +90,23 @@ export async function getOrCreateChat(
 
     if (Array.isArray(raw)) {
       const row = raw[0];
-      const chatId = String(row?.chat_id ?? "").trim();
+      const chatId = String(row?.id ?? "").trim();
       if (chatId) {
         return { ok: true, id: chatId };
       }
     }
 
     if (raw && typeof raw === "object") {
-      const chatId = String((raw as RpcResultRow).chat_id ?? "").trim();
+      const chatId = String((raw as RpcChatRow).id ?? "").trim();
       if (chatId) {
         return { ok: true, id: chatId };
       }
     }
 
     return { ok: false, error: "RPC не вернул id чата" };
-  } catch (e) {
-    console.error("getOrCreateChat", e);
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg || "Ошибка сети" };
+  } catch (error) {
+    console.error("CHAT ERROR:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message || "Ошибка сети" };
   }
 }

@@ -112,29 +112,41 @@ export default function ListingDetailPage() {
 
   const openChat = useCallback(
     async (ownerId: string) => {
+      console.log("SELLER ID:", ownerId);
+
       if (!ownerId) {
         setToast({ message: "Объявление без владельца", type: "error" });
         return;
       }
+
       const uid = session?.user?.id;
+      console.log("USER:", uid);
+
       if (!uid) {
         router.push("/login");
         return;
       }
+
       if (uid === ownerId) {
         setToast({ message: "Нельзя написать самому себе", type: "error" });
         return;
       }
+
       setIsChatLoading(true);
-      const chatRes = await getOrCreateChat(ownerId, rowId || null);
+      const chatRes = await getOrCreateChat(ownerId);
       setIsChatLoading(false);
+
+      console.log("CHAT RESULT:", chatRes);
+      console.log("ERROR:", chatRes.ok ? null : chatRes.error);
+
       if (!chatRes.ok) {
         setToast({ message: "Не удалось открыть чат", type: "error" });
         return;
       }
+
       router.push(`/chat/${chatRes.id}`);
     },
-    [session?.user?.id, router],
+    [session?.user?.id, router, rowId],
   );
 
   if (loading) {
