@@ -31,6 +31,7 @@ type ChatUnreadContextValue = {
   ) => Promise<void>;
   setActiveChatId: (chatId: string | null) => void;
   getChatRow: (chatId: string) => ChatListRow | null;
+  setChats: React.Dispatch<React.SetStateAction<ChatListRow[]>>;
 };
 
 const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
@@ -38,7 +39,8 @@ const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
 const CHANNEL_NAME = "enigma-chat-sync";
 const STORAGE_KEY = "enigma:chat-sync";
 const PRESENCE_HEARTBEAT_MS = 25_000;
-const PRESENCE_STALE_MS = 60_000;
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_MAX_ATTEMPTS = 6;
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -102,7 +104,7 @@ function createCrossTabBus() {
       try {
         bc?.postMessage(event);
       } catch {
-        /* noop */
+        // noop
       }
       try {
         window.localStorage.setItem(
@@ -110,7 +112,7 @@ function createCrossTabBus() {
           JSON.stringify({ ...event, nonce: Date.now() + Math.random() }),
         );
       } catch {
-        /* noop */
+        // noop
       }
     },
     subscribe(listener: (event: CrossTabEvent) => void) {
@@ -128,7 +130,7 @@ function createCrossTabBus() {
           const parsed = JSON.parse(evt.newValue) as CrossTabEvent;
           listener(parsed);
         } catch {
-          /* noop */
+          // noop
         }
       };
 
@@ -144,6 +146,62 @@ function createCrossTabBus() {
       bc?.close();
     },
   };
+}
+
+function sortByLastMessageDesc(rows: ChatListRow[]): ChatListRow[] {
+  return [...rows].sort((a, b) => {
+    const tb = new Date(b.last_message_at ?? 0).getTime();
+    const ta = new Date(a.last_message_at ?? 0).getTime();
+    if (tb !== ta) return tb - ta;
+    return b.chat_id.localeCompare(a.chat_id);
+  });
+}
+
+function patchChatFromRealtime(
+  prev: ChatListRow[],
+  message: {
+    chat_id: string;
+    text: string;
+    created_at: string;
+  },
+): ChatListRow[] {
+  const existing = prev.find((c) => c.chat_id === message.chat_id);
+
+  if (!existing) {
+    const inserted: ChatListRow = {
+      chat_id: message.chat_id,
+      listing_id: null,
+      is_group: false,
+      title: null,
+      other_user_id: null,
+      other_name: null,
+      other_avatar: null,
+      other_public_id: null,
+      last_message_id: null,
+      last_message_text: message.text || "",
+      last_message_sender_id: null,
+      last_message_created_at: message.created_at,
+      last_message_image_url: null,
+      last_message_voice_url: null,
+      last_message_deleted: false,
+      last_message_at: message.created_at,
+      unread_count: 1,
+    };
+    return sortByLastMessageDesc([inserted, ...prev]);
+  }
+
+  const updated = prev.map((c) => {
+    if (c.chat_id !== message.chat_id) return c;
+    return {
+      ...c,
+      last_message_text: message.text || "",
+      last_message_created_at: message.created_at,
+      last_message_at: message.created_at,
+      unread_count: Math.max(0, Number(c.unread_count || 0)) + 1,
+    };
+  });
+
+  return sortByLastMessageDesc(updated);
 }
 
 export function ChatUnreadProvider({
@@ -163,16 +221,14 @@ export function ChatUnreadProvider({
     refreshTimer: number | null;
     reconnectTimer: number | null;
     reconnectAttempt: number;
-    unreadChannel: ReturnType<typeof supabase.channel> | null;
+    listChannel: ReturnType<typeof supabase.channel> | null;
     activeChatId: string | null;
-    destroyed: boolean;
   }>({
     refreshTimer: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
-    unreadChannel: null,
+    listChannel: null,
     activeChatId: null,
-    destroyed: false,
   });
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
@@ -188,16 +244,11 @@ export function ChatUnreadProvider({
         return;
       }
 
-      if (!opts?.silent) {
-        setLoadingState(true);
-      }
+      if (!opts?.silent) setLoadingState(true);
       setError(null);
 
       try {
-        const res = await supabase.rpc("list_my_chats", {
-          p_user: userId,
-        });
-
+        const res = await supabase.rpc("list_my_chats", { p_user: userId });
         if (res.error) {
           console.error("list_my_chats", res.error);
           setError(res.error.message || "Не удалось загрузить чаты");
@@ -210,14 +261,12 @@ export function ChatUnreadProvider({
               .filter((row) => isUuid(row.chat_id))
           : [];
 
-        setRows(nextRows);
+        setRows(sortByLastMessageDesc(nextRows));
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
       } finally {
-        if (!opts?.silent) {
-          setLoadingState(false);
-        }
+        if (!opts?.silent) setLoadingState(false);
       }
     },
     [userId],
@@ -316,23 +365,17 @@ export function ChatUnreadProvider({
 
         setRows((prev) =>
           prev.map((row) =>
-            row.chat_id === chatId
-              ? {
-                  ...row,
-                  unread_count: 0,
-                }
-              : row,
+            row.chat_id === chatId ? { ...row, unread_count: 0 } : row,
           ),
         );
 
         broadcast({ type: "chat-read", chatId });
-        scheduleRefresh(120, { silent: true });
       } catch (e) {
         console.error("mark_chat_read unexpected", e);
         setError("Не удалось отметить чат как прочитанный");
       }
     },
-    [broadcast, scheduleRefresh, userId],
+    [broadcast, userId],
   );
 
   const getChatRow = useCallback(
@@ -355,7 +398,6 @@ export function ChatUnreadProvider({
             row.chat_id === event.chatId ? { ...row, unread_count: 0 } : row,
           ),
         );
-        scheduleRefresh(120, { silent: true });
         return;
       }
       if (event.type === "chat-active") {
@@ -402,81 +444,71 @@ export function ChatUnreadProvider({
       if (cancelled) return;
       clearReconnect();
 
-      if (statusRef.current.unreadChannel) {
-        void supabase.removeChannel(statusRef.current.unreadChannel);
-        statusRef.current.unreadChannel = null;
+      if (statusRef.current.listChannel) {
+        void supabase.removeChannel(statusRef.current.listChannel);
+        statusRef.current.listChannel = null;
       }
 
       console.log("CHAT LIST SUBSCRIBE USER:", userId);
 
-      const channel = supabase
-        .channel(`chat-list-${userId}`)
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "messages" },
-          (payload) => {
-            console.log("CHAT LIST NEW MESSAGE:", payload);
+      const channel = supabase.channel("chat-list-" + userId).on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          console.log("CHAT LIST NEW MESSAGE:", payload);
 
-            const msg = payload.new as Record<string, unknown>;
-            const messageChatId = String(msg.chat_id ?? "").trim();
-            const messageText = String(msg.text ?? "").trim();
-            const messageCreatedAt = String(
-              msg.created_at ?? new Date().toISOString(),
-            );
+          const msg = payload.new as Record<string, unknown>;
+          const messageChatId = String(msg.chat_id ?? "").trim();
+          if (!messageChatId) return;
 
-            if (!messageChatId) {
-              scheduleRefresh(100, { silent: true });
-              return;
+          const messageText = String(msg.text ?? "");
+          const messageCreatedAt = String(
+            msg.created_at ?? new Date().toISOString(),
+          );
+
+          setRows((prev) => {
+            const exists = prev.find((c) => c.chat_id === messageChatId);
+
+            if (!exists) {
+              console.log("CHAT NOT FOUND → REFRESH");
+              void refreshChats({ silent: true });
+              return prev;
             }
 
-            setRows((prev) => {
-              const existing = prev.find(
-                (chat) => chat.chat_id === messageChatId,
-              );
-
-              if (!existing) {
-                return prev;
-              }
-
-              return prev.map((chat) => {
-                if (chat.chat_id !== messageChatId) return chat;
-
-                return {
-                  ...chat,
-                  last_message_text: messageText || chat.last_message_text,
-                  last_message_created_at: messageCreatedAt,
-                  last_message_at: messageCreatedAt,
-                  unread_count: Math.max(0, Number(chat.unread_count || 0)) + 1,
-                };
+            return prev
+              .map((chat) =>
+                chat.chat_id === messageChatId
+                  ? {
+                      ...chat,
+                      last_message_text: messageText || "",
+                      last_message_at: messageCreatedAt,
+                      last_message_created_at: messageCreatedAt,
+                      unread_count:
+                        Math.max(0, Number(chat.unread_count || 0)) + 1,
+                    }
+                  : chat,
+              )
+              .sort((a, b) => {
+                const tb = new Date(b.last_message_at ?? 0).getTime();
+                const ta = new Date(a.last_message_at ?? 0).getTime();
+                if (tb !== ta) return tb - ta;
+                return b.chat_id.localeCompare(a.chat_id);
               });
-            });
+          });
+        },
+      );
 
-            scheduleRefresh(100, { silent: true });
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "chat_members" },
-          () => {
-            scheduleRefresh(100, { silent: true });
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "chats" },
-          () => {
-            scheduleRefresh(100, { silent: true });
-          },
-        );
-
-      statusRef.current.unreadChannel = channel;
+      statusRef.current.listChannel = channel;
 
       channel.subscribe((status) => {
         console.log("CHAT LIST STATUS:", status);
 
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
-          scheduleRefresh(60, { silent: true });
           return;
         }
 
@@ -485,7 +517,10 @@ export function ChatUnreadProvider({
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
-          const attempt = Math.min(statusRef.current.reconnectAttempt + 1, 6);
+          const attempt = Math.min(
+            statusRef.current.reconnectAttempt + 1,
+            RECONNECT_MAX_ATTEMPTS,
+          );
           statusRef.current.reconnectAttempt = attempt;
 
           clearReconnect();
@@ -494,7 +529,7 @@ export function ChatUnreadProvider({
               () => {
                 if (!cancelled) connect();
               },
-              500 * 2 ** (attempt - 1),
+              RECONNECT_BASE_MS * 2 ** (attempt - 1),
             );
           }
         }
@@ -506,12 +541,12 @@ export function ChatUnreadProvider({
     return () => {
       cancelled = true;
       clearReconnect();
-      if (statusRef.current.unreadChannel) {
-        void supabase.removeChannel(statusRef.current.unreadChannel);
-        statusRef.current.unreadChannel = null;
+      if (statusRef.current.listChannel) {
+        void supabase.removeChannel(statusRef.current.listChannel);
+        statusRef.current.listChannel = null;
       }
     };
-  }, [scheduleRefresh, userId]);
+  }, [userId]);
 
   useEffect(() => {
     if (
@@ -549,10 +584,6 @@ export function ChatUnreadProvider({
     window.addEventListener("online", onOnline);
 
     presenceIntervalRef.current = window.setInterval(() => {
-      const stale =
-        Date.now() - new Date(new Date().toISOString()).getTime() <
-        PRESENCE_STALE_MS;
-      void stale;
       ping();
     }, PRESENCE_HEARTBEAT_MS);
 
@@ -568,9 +599,7 @@ export function ChatUnreadProvider({
   }, [scheduleRefresh, upsertPresence, userId]);
 
   useEffect(() => {
-    statusRef.current.destroyed = false;
     return () => {
-      statusRef.current.destroyed = true;
       if (typeof window !== "undefined") {
         if (statusRef.current.refreshTimer) {
           window.clearTimeout(statusRef.current.refreshTimer);
@@ -580,6 +609,10 @@ export function ChatUnreadProvider({
           window.clearTimeout(statusRef.current.reconnectTimer);
           statusRef.current.reconnectTimer = null;
         }
+      }
+      if (statusRef.current.listChannel) {
+        void supabase.removeChannel(statusRef.current.listChannel);
+        statusRef.current.listChannel = null;
       }
     };
   }, []);
@@ -597,6 +630,7 @@ export function ChatUnreadProvider({
       markChatRead,
       setActiveChatId,
       getChatRow,
+      setChats: setRows,
     }),
     [
       rows,

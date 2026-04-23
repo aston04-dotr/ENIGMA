@@ -88,7 +88,7 @@ export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { session } = useAuth();
-  const { markChatRead, setActiveChatId, getChatRow, refreshChats } =
+  const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats } =
     useChatUnread();
 
   const me = session?.user?.id ?? null;
@@ -232,10 +232,32 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!chatId || !isUuid(chatId)) return;
     setActiveChatId(chatId);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.chat_id === chatId
+          ? {
+              ...m,
+              status: m.sender_id === me ? m.status : "seen",
+            }
+          : m,
+      ),
+    );
     return () => {
       setActiveChatId(null);
     };
-  }, [chatId, setActiveChatId]);
+  }, [chatId, me, setActiveChatId]);
+
+  useEffect(() => {
+    if (!chatId) return;
+
+    setChats((prev) =>
+      prev.map((chat) => {
+        const anyChat = chat as unknown as { id?: string; chat_id?: string };
+        const chatKey = String(anyChat.chat_id ?? anyChat.id ?? "").trim();
+        return chatKey === chatId ? { ...chat, unread_count: 0 } : chat;
+      }),
+    );
+  }, [chatId, setChats]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -355,7 +377,15 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!latestMessageId) return;
     void markVisibleRoomRead(latestMessageId);
-  }, [latestMessageId, markVisibleRoomRead]);
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.chat_id === chatId && m.sender_id !== me
+          ? { ...m, status: "seen" }
+          : m,
+      ),
+    );
+  }, [chatId, latestMessageId, markVisibleRoomRead, me]);
 
   useEffect(() => {
     if (!chatId || !me) return;
