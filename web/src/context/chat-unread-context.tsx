@@ -157,51 +157,10 @@ function sortByLastMessageDesc(rows: ChatListRow[]): ChatListRow[] {
   });
 }
 
-function patchChatFromRealtime(
-  prev: ChatListRow[],
-  message: {
-    chat_id: string;
-    text: string;
-    created_at: string;
-  },
-): ChatListRow[] {
-  const existing = prev.find((c) => c.chat_id === message.chat_id);
-
-  if (!existing) {
-    const inserted: ChatListRow = {
-      chat_id: message.chat_id,
-      listing_id: null,
-      is_group: false,
-      title: null,
-      other_user_id: null,
-      other_name: null,
-      other_avatar: null,
-      other_public_id: null,
-      last_message_id: null,
-      last_message_text: message.text || "",
-      last_message_sender_id: null,
-      last_message_created_at: message.created_at,
-      last_message_image_url: null,
-      last_message_voice_url: null,
-      last_message_deleted: false,
-      last_message_at: message.created_at,
-      unread_count: 1,
-    };
-    return sortByLastMessageDesc([inserted, ...prev]);
-  }
-
-  const updated = prev.map((c) => {
-    if (c.chat_id !== message.chat_id) return c;
-    return {
-      ...c,
-      last_message_text: message.text || "",
-      last_message_created_at: message.created_at,
-      last_message_at: message.created_at,
-      unread_count: Math.max(0, Number(c.unread_count || 0)) + 1,
-    };
-  });
-
-  return sortByLastMessageDesc(updated);
+function rowMatchesChatId(row: ChatListRow, messageChatId: string): boolean {
+  if (row.chat_id === messageChatId) return true;
+  const withId = row as ChatListRow & { id?: string };
+  return String(withId.id ?? "").trim() === messageChatId;
 }
 
 export function ChatUnreadProvider({
@@ -469,26 +428,47 @@ export function ChatUnreadProvider({
           const messageCreatedAt = String(
             msg.created_at ?? new Date().toISOString(),
           );
+          const messageSenderId = msg.sender_id
+            ? String(msg.sender_id)
+            : null;
+          const messageImageUrl = msg.image_url
+            ? String(msg.image_url)
+            : null;
+          const messageVoiceUrl = msg.voice_url
+            ? String(msg.voice_url)
+            : null;
+
+          const fromMe =
+            Boolean(userId) && String(msg.sender_id ?? "") === String(userId);
+
+          const currentChatId = statusRef.current.activeChatId;
+          const isOpenChat =
+            Boolean(currentChatId) && messageChatId === currentChatId;
 
           setRows((prev) => {
-            const exists = prev.find((c) => c.chat_id === messageChatId);
+            const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
 
             if (!exists) {
-              console.log("CHAT NOT FOUND → REFRESH");
               void refreshChats({ silent: true });
               return prev;
             }
 
             return prev
               .map((chat) =>
-                chat.chat_id === messageChatId
+                rowMatchesChatId(chat, messageChatId)
                   ? {
                       ...chat,
-                      last_message_text: messageText || "",
+                      last_message_text: messageText,
                       last_message_at: messageCreatedAt,
                       last_message_created_at: messageCreatedAt,
-                      unread_count:
-                        Math.max(0, Number(chat.unread_count || 0)) + 1,
+                      last_message_sender_id: messageSenderId,
+                      last_message_image_url: messageImageUrl,
+                      last_message_voice_url: messageVoiceUrl,
+                      unread_count: isOpenChat
+                        ? 0
+                        : fromMe
+                          ? Math.max(0, Number(chat.unread_count || 0))
+                          : Math.max(0, Number(chat.unread_count || 0)) + 1,
                     }
                   : chat,
               )
@@ -546,7 +526,7 @@ export function ChatUnreadProvider({
         statusRef.current.listChannel = null;
       }
     };
-  }, [userId]);
+  }, [userId, refreshChats]);
 
   useEffect(() => {
     if (

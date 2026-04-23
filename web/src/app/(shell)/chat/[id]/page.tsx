@@ -251,10 +251,11 @@ export default function ChatRoomPage() {
     if (!chatId) return;
 
     setChats((prev) =>
-      prev.map((chat) => {
-        const anyChat = chat as unknown as { id?: string; chat_id?: string };
-        const chatKey = String(anyChat.chat_id ?? anyChat.id ?? "").trim();
-        return chatKey === chatId ? { ...chat, unread_count: 0 } : chat;
+      prev.map((c) => {
+        const withId = c as typeof c & { id?: string };
+        return withId.id === chatId || c.chat_id === chatId
+          ? { ...c, unread_count: 0 }
+          : c;
       }),
     );
   }, [chatId, setChats]);
