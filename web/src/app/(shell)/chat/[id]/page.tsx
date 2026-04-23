@@ -138,13 +138,16 @@ export default function ChatRoomPage() {
     setLoadErr(null);
 
     try {
+      console.log("LOAD MESSAGES CHAT:", chatId);
+
       const { data, error } = await supabase
         .from("messages")
-        .select(
-          "id,chat_id,sender_id,text,created_at,image_url,voice_url,reply_to,edited_at,deleted,hidden_for_user_ids,status",
-        )
+        .select("*")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true });
+
+      console.log("MESSAGES RESULT:", data);
+      console.log("MESSAGES ERROR:", error);
 
       if (error) {
         console.error("chat room load messages", error);
