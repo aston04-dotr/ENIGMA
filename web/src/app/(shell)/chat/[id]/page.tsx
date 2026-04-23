@@ -4,6 +4,7 @@ import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { supabase } from "@/lib/supabase";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -105,7 +106,7 @@ export default function ChatRoomPage() {
   const stickBottomRef = useRef(true);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const lastLoadedMessageIdRef = useRef<string | null>(null);
   const lastReadMarkedMessageIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -237,7 +238,8 @@ export default function ChatRoomPage() {
   }, [chatId, setActiveChatId]);
 
   useEffect(() => {
-    if (!chatId || !isUuid(chatId)) return;
+    if (!chatId) return;
+    if (!isUuid(chatId)) return;
 
     let cancelled = false;
 
@@ -252,50 +254,46 @@ export default function ChatRoomPage() {
       if (cancelled) return;
       clearReconnect();
 
+      console.log("SUBSCRIBE CHAT:", chatId);
+
       if (channelRef.current) {
         void supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
 
-      const channel = supabase.channel(`chat-room:${chatId}`).on(
+      const channel = supabase.channel(`chat-${chatId}`).on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: "messages",
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          if (payload.eventType === "INSERT") {
-            const row = normalizeMessage(
-              payload.new as Record<string, unknown>,
-            );
-            setMessages((prev) => mergeIncomingInsert(prev, row));
-            lastLoadedMessageIdRef.current = row.id;
+          console.log("REALTIME MESSAGE:", payload);
 
-            if (stickBottomRef.current) {
-              requestAnimationFrame(() => scrollToBottom("smooth"));
-            }
+          const newMessage = normalizeMessage(
+            payload.new as Record<string, unknown>,
+          );
 
-            if (
-              row.sender_id !== me &&
-              typeof document !== "undefined" &&
-              document.visibilityState === "visible"
-            ) {
-              void markVisibleRoomRead(row.id);
-            }
-            return;
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === newMessage.id);
+            if (exists) return prev;
+            return [...prev, newMessage];
+          });
+
+          lastLoadedMessageIdRef.current = newMessage.id;
+
+          if (stickBottomRef.current) {
+            requestAnimationFrame(() => scrollToBottom("smooth"));
           }
 
-          if (payload.eventType === "UPDATE") {
-            const row = normalizeMessage(
-              payload.new as Record<string, unknown>,
-            );
-            setMessages((prev) =>
-              sortMessages(
-                prev.map((m) => (m.id === row.id ? { ...m, ...row } : m)),
-              ),
-            );
+          if (
+            newMessage.sender_id !== me &&
+            typeof document !== "undefined" &&
+            document.visibilityState === "visible"
+          ) {
+            void markVisibleRoomRead(newMessage.id);
           }
         },
       );
@@ -303,6 +301,7 @@ export default function ChatRoomPage() {
       channelRef.current = channel;
 
       channel.subscribe((status) => {
+        console.log("REALTIME STATUS:", status);
         if (!mountedRef.current || cancelled) return;
 
         if (status === "SUBSCRIBED") {
@@ -344,7 +343,7 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
     };
-  }, [backfillAfterReconnect, chatId, markVisibleRoomRead, me, scrollToBottom]);
+  }, [chatId, supabase]);
 
   useEffect(() => {
     if (!messages.length) return;
