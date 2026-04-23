@@ -407,12 +407,50 @@ export function ChatUnreadProvider({
         statusRef.current.unreadChannel = null;
       }
 
+      console.log("CHAT LIST SUBSCRIBE USER:", userId);
+
       const channel = supabase
-        .channel(`chat-unread:${userId}`)
+        .channel(`chat-list-${userId}`)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "messages" },
-          () => {
+          { event: "INSERT", schema: "public", table: "messages" },
+          (payload) => {
+            console.log("CHAT LIST NEW MESSAGE:", payload);
+
+            const msg = payload.new as Record<string, unknown>;
+            const messageChatId = String(msg.chat_id ?? "").trim();
+            const messageText = String(msg.text ?? "").trim();
+            const messageCreatedAt = String(
+              msg.created_at ?? new Date().toISOString(),
+            );
+
+            if (!messageChatId) {
+              scheduleRefresh(100, { silent: true });
+              return;
+            }
+
+            setRows((prev) => {
+              const existing = prev.find(
+                (chat) => chat.chat_id === messageChatId,
+              );
+
+              if (!existing) {
+                return prev;
+              }
+
+              return prev.map((chat) => {
+                if (chat.chat_id !== messageChatId) return chat;
+
+                return {
+                  ...chat,
+                  last_message_text: messageText || chat.last_message_text,
+                  last_message_created_at: messageCreatedAt,
+                  last_message_at: messageCreatedAt,
+                  unread_count: Math.max(0, Number(chat.unread_count || 0)) + 1,
+                };
+              });
+            });
+
             scheduleRefresh(100, { silent: true });
           },
         )
@@ -434,6 +472,8 @@ export function ChatUnreadProvider({
       statusRef.current.unreadChannel = channel;
 
       channel.subscribe((status) => {
+        console.log("CHAT LIST STATUS:", status);
+
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
           scheduleRefresh(60, { silent: true });
