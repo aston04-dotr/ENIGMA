@@ -1,129 +1,209 @@
 "use client";
 
 import { EmptyState } from "@/components/EmptyState";
-import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
+import { ErrorUi } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
-import { logSupabaseResult } from "@/lib/postgrestErrors";
-import { supabase } from "@/lib/supabase";
+import { useChatUnread } from "@/context/chat-unread-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 
-type Row = { id: string; displayName: string; preview: string };
+function formatTimeLabel(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (sameDay) {
+    return new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
+}
+
+function buildPreview(row: {
+  last_message_deleted?: boolean | null;
+  last_message_image_url?: string | null;
+  last_message_voice_url?: string | null;
+  last_message_text?: string | null;
+}): string {
+  if (row.last_message_deleted) return "Сообщение удалено";
+  if (row.last_message_image_url) return "📷 Фото";
+  if (row.last_message_voice_url) return "🎤 Голосовое";
+  if (row.last_message_text?.trim()) return row.last_message_text.trim();
+  return "Напишите первым";
+}
+
+function buildDisplayName(row: {
+  is_group: boolean;
+  title: string | null;
+  other_name: string | null;
+  other_public_id?: string | null;
+}): string {
+  if (row.is_group) {
+    return row.title?.trim() || "Группа";
+  }
+  return (
+    row.other_name?.trim() || row.other_public_id?.trim() || "Пользователь"
+  );
+}
+
+function formatUnreadCount(value: number): string {
+  if (value > 99) return "99+";
+  return String(value);
+}
 
 export default function ChatsPage() {
-  const { session } = useAuth();
-  const me = session?.user?.id;
   const router = useRouter();
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!me) return;
-    setLoadErr(null);
-    try {
-      const sentRes = await supabase
-        .from("messages")
-        .select("chat_id,created_at")
-        .eq("sender_id", me)
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      logSupabaseResult("messages_sent", { data: sentRes.data, error: sentRes.error });
-
-      const chatIds = [
-        ...new Set(
-          (sentRes.data ?? [])
-            .map((r) => r.chat_id)
-            .filter((chatId): chatId is string => typeof chatId === "string" && chatId.length > 0)
-        ),
-      ];
-      if (!chatIds.length) {
-        setRows([]);
-        return;
-      }
-
-      const chatsRes = await supabase
-        .from("chats")
-        .select("id,created_at")
-        .in("id", chatIds)
-        .order("created_at", { ascending: false });
-
-      const chats = chatsRes.data;
-      if (chatsRes.error || !chats?.length) {
-        setRows([]);
-        return;
-      }
-
-      const enriched: Row[] = [];
-      for (const c of chats) {
-        const lastRes = await supabase
-          .from("messages")
-          .select("text")
-          .eq("chat_id", c.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        let preview = "Напишите первым";
-        const last = lastRes.data;
-        if (last?.text) preview = String(last.text).slice(0, 80);
-
-        const displayName = `Чат ${String(c.id).slice(0, 8)}`;
-        enriched.push({ id: c.id, displayName, preview });
-      }
-      setRows(Array.isArray(enriched) ? enriched : []);
-    } catch (e) {
-      console.error("FETCH ERROR", e);
-      setLoadErr(FETCH_ERROR_MESSAGE);
-      setRows([]);
-    }
-  }, [me]);
+  const { session } = useAuth();
+  const { rows, loading, error, refreshChats } = useChatUnread();
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!session?.user) return;
+    void refreshChats();
+  }, [refreshChats, session?.user]);
 
-  if (!session) {
+  if (!session?.user) {
     return (
       <main className="safe-pt px-5 pb-8 pt-10">
         <p className="text-sm text-muted">Войдите, чтобы видеть чаты.</p>
-        <Link href="/login" className="mt-6 inline-block text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover">
+        <Link
+          href="/login"
+          className="mt-6 inline-block text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover"
+        >
           Войти
         </Link>
       </main>
     );
   }
 
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const tb = new Date(b.last_message_at ?? 0).getTime();
+        const ta = new Date(a.last_message_at ?? 0).getTime();
+        return tb - ta;
+      }),
+    [rows],
+  );
+
   return (
     <main className="safe-pt min-h-screen bg-main px-5 pb-6 pt-8">
-      <h1 className="text-[26px] font-bold tracking-tight text-fg">Чаты</h1>
-      {loadErr ? (
+      <div className="flex items-end justify-between gap-4">
+        <h1 className="text-[26px] font-bold tracking-tight text-fg">Чаты</h1>
+        <button
+          type="button"
+          onClick={() => void refreshChats()}
+          className="pressable min-h-[40px] rounded-full border border-line px-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted transition-colors duration-ui hover:text-fg"
+        >
+          Обновить
+        </button>
+      </div>
+
+      {error ? (
         <div className="mt-4">
-          <ErrorUi />
+          <ErrorUi text={error} />
         </div>
       ) : null}
-      <ul className="mt-6 space-y-3">
-        {rows.map((r) => (
-          <li key={r.id}>
-            <button
-              type="button"
-              onClick={() => router.push(`/chat/${r.id}`)}
-              className="pressable flex w-full min-h-[56px] items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
+
+      {loading && sortedRows.length === 0 ? (
+        <ul className="mt-6 space-y-3">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <li
+              key={idx}
+              className="animate-skeleton rounded-card border border-line bg-elevated p-4"
             >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-elev-2 text-sm font-semibold text-fg">
-                {r.displayName.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-fg">{r.displayName}</span>
-                <span className="mt-0.5 block truncate text-xs text-muted">{r.preview}</span>
-              </span>
-            </button>
-          </li>
-        ))}
+              <div className="flex items-center gap-4">
+                <div className="h-11 w-11 shrink-0 rounded-full bg-elev-2" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-4 w-32 rounded bg-elev-2" />
+                  <div className="mt-2 h-3 w-48 rounded bg-elev-2" />
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <ul className="mt-6 space-y-3">
+        {sortedRows.map((row) => {
+          const displayName = buildDisplayName(row);
+          const preview = buildPreview(row);
+          const timeLabel = formatTimeLabel(
+            row.last_message_created_at ?? row.last_message_at,
+          );
+          const unread = Math.max(0, Number(row.unread_count || 0));
+
+          return (
+            <li key={row.chat_id}>
+              <button
+                type="button"
+                onClick={() => router.push(`/chat/${row.chat_id}`)}
+                className="pressable flex w-full items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-elev-2 text-sm font-semibold text-fg">
+                  {displayName.slice(0, 1).toUpperCase()}
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="truncate text-[15px] font-semibold text-fg">
+                      {displayName}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-medium text-muted">
+                      {timeLabel}
+                    </span>
+                  </span>
+
+                  <span className="mt-1 flex items-center justify-between gap-3">
+                    <span
+                      className={`block min-w-0 truncate text-xs ${
+                        unread > 0 ? "text-fg" : "text-muted"
+                      }`}
+                    >
+                      {preview}
+                    </span>
+
+                    {unread > 0 ? (
+                      <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[#ff4d67] px-1.5 text-[10px] font-bold text-white">
+                        {formatUnreadCount(unread)}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
-      {rows.length === 0 && !loadErr ? (
-        <EmptyState title="Нет переписок" subtitle="Нет чатов. Пока ничего нет." />
+
+      {!loading && sortedRows.length === 0 && !error ? (
+        <EmptyState
+          title="Нет переписок"
+          subtitle="Откройте объявление и нажмите «Написать»."
+        />
+      ) : null}
+
+      {!loading && !rows.length ? (
+        <div className="mt-6">
+          <Link
+            href="/"
+            className="inline-block text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover"
+          >
+            На ленту
+          </Link>
+        </div>
       ) : null}
     </main>
   );

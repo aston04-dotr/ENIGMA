@@ -14,13 +14,12 @@ export type UserRow = {
   real_estate_package_count?: number | null;
   auto_package_count?: number | null;
   other_package_count?: number | null;
-  /** Уведомления о сообщениях в чате на email (Edge Function + webhook). */
+  /** Уведомления о сообщениях в чате на email / push. */
   email_notifications?: boolean | null;
   /** Антискам: 100 по умолчанию, при 0 — авто-бан (см. миграцию 018). */
   trust_score?: number | null;
 };
 
-/** INSERT в `public.listings`: без `id` (default gen_random_uuid). В БД колонка `city`, не `location`; поля `status` нет. */
 export type ListingInsertPayload = {
   title: string;
   description: string;
@@ -66,7 +65,21 @@ export type ChatRow = {
   id: string;
   listing_id: string | null;
   created_at: string;
+  last_message_at?: string | null;
+  title?: string | null;
+  is_group?: boolean | null;
 };
+
+export type ChatMemberRow = {
+  chat_id: string;
+  user_id: string;
+  role?: string | null;
+  joined_at?: string | null;
+  last_read_at?: string | null;
+  last_read_message_id?: string | null;
+};
+
+export type MessageStatus = "sent" | "delivered" | "seen";
 
 export type MessageRow = {
   id: string;
@@ -74,4 +87,46 @@ export type MessageRow = {
   sender_id: string;
   text: string;
   created_at: string;
+  image_url?: string | null;
+  voice_url?: string | null;
+  reply_to?: string | null;
+  edited_at?: string | null;
+  deleted?: boolean;
+  hidden_for_user_ids?: string[];
+  status?: MessageStatus | string | null;
+};
+
+export type ChatListRow = {
+  chat_id: string;
+  listing_id: string | null;
+  is_group: boolean;
+  title: string | null;
+  other_user_id: string | null;
+  other_name: string | null;
+  other_avatar: string | null;
+  other_public_id: string | null;
+  last_message_id: string | null;
+  last_message_text: string | null;
+  last_message_sender_id: string | null;
+  last_message_created_at: string | null;
+  last_message_image_url?: string | null;
+  last_message_voice_url?: string | null;
+  last_message_deleted?: boolean | null;
+  last_message_at: string | null;
+  unread_count: number;
+};
+
+export type ChatUnreadSnapshot = {
+  rows: ChatListRow[];
+  totalUnread: number;
+};
+
+export type PushTokenRow = {
+  user_id: string;
+  token: string;
+  provider?: "expo" | "webpush" | string;
+  subscription?: Record<string, unknown> | null;
+  user_agent?: string | null;
+  last_seen_at?: string | null;
+  created_at?: string | null;
 };

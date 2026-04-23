@@ -2,29 +2,62 @@ import { logSupabaseResult } from "./postgrestErrors";
 import { supabase } from "./supabase";
 import { canStartNewChat } from "./trustLevels";
 
-export type GetOrCreateChatResult = { ok: true; id: string } | { ok: false; error: string };
+export type GetOrCreateChatResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string };
 
-/**
- * Chat open/create with current production schema.
- * Tries to find an existing chat by last messages between two users; otherwise creates a new chat row.
- */
-export async function getOrCreateChat(otherUserId: string): Promise<GetOrCreateChatResult> {
+type RpcResultRow = {
+  chat_id?: string | null;
+};
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+export async function getOrCreateChat(
+  otherUserId: string,
+  listingId?: string | null,
+): Promise<GetOrCreateChatResult> {
   try {
+    const normalizedOtherUserId = String(otherUserId ?? "").trim();
+    const normalizedListingId = String(listingId ?? "").trim() || null;
+
+    if (!normalizedOtherUserId || !isValidUuid(normalizedOtherUserId)) {
+      return { ok: false, error: "Некорректный получатель" };
+    }
+
+    if (normalizedListingId && !isValidUuid(normalizedListingId)) {
+      return { ok: false, error: "Некорректное объявление" };
+    }
+
     const {
       data: { session },
       error: authErr,
     } = await supabase.auth.getSession();
+
     const user = session?.user;
     if (authErr || !user) {
-      console.error("getOrCreateChat getUser", authErr);
+      console.error("getOrCreateChat getSession", authErr);
       return { ok: false, error: "Нет сессии" };
     }
+
     const myId = user.id;
-    if (otherUserId === myId) {
+    if (normalizedOtherUserId === myId) {
       return { ok: false, error: "Нельзя открыть чат с собой" };
     }
 
-    const { data: prof } = await supabase.from("profiles").select("phone, trust_score, updated_at").eq("id", myId).maybeSingle();
+    const { data: prof, error: profileErr } = await supabase
+      .from("profiles")
+      .select("trust_score")
+      .eq("id", myId)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.warn("getOrCreateChat profiles select", profileErr);
+    }
+
     if (!canStartNewChat(prof?.trust_score)) {
       return {
         ok: false,
@@ -33,45 +66,46 @@ export async function getOrCreateChat(otherUserId: string): Promise<GetOrCreateC
       };
     }
 
-    const recentMessages = await supabase
-      .from("messages")
-      .select("chat_id,sender_id,created_at")
-      .in("sender_id", [myId, otherUserId])
-      .order("created_at", { ascending: false })
-      .limit(500);
+    const rpc = await supabase.rpc("get_or_create_direct_chat", {
+      p_other_user_id: normalizedOtherUserId,
+      p_listing_id: normalizedListingId,
+    });
 
-    logSupabaseResult("messages_select_pair", { data: recentMessages.data, error: recentMessages.error });
+    logSupabaseResult("get_or_create_direct_chat", {
+      data: rpc.data,
+      error: rpc.error,
+    });
 
-    if (recentMessages.error) {
-      console.error("messages select", recentMessages.error);
-      return { ok: false, error: recentMessages.error.message || "Ошибка чата" };
+    if (rpc.error) {
+      console.error("get_or_create_direct_chat", rpc.error);
+      return {
+        ok: false,
+        error: rpc.error.message || "Не удалось открыть чат",
+      };
     }
 
-    const byChat = new Map<string, Set<string>>();
-    for (const row of recentMessages.data ?? []) {
-      const chatId = String(row.chat_id ?? "").trim();
-      const senderId = String(row.sender_id ?? "").trim();
-      if (!chatId || !senderId) continue;
-      const set = byChat.get(chatId) ?? new Set<string>();
-      set.add(senderId);
-      byChat.set(chatId, set);
+    const raw = rpc.data as string | RpcResultRow | RpcResultRow[] | null;
+
+    if (typeof raw === "string" && raw.trim()) {
+      return { ok: true, id: raw.trim() };
     }
 
-    for (const [chatId, senders] of byChat) {
-      if (senders.has(myId) && senders.has(otherUserId)) {
+    if (Array.isArray(raw)) {
+      const row = raw[0];
+      const chatId = String(row?.chat_id ?? "").trim();
+      if (chatId) {
         return { ok: true, id: chatId };
       }
     }
 
-    const ins = await supabase.from("chats").insert({ listing_id: null }).select("id").single();
-    logSupabaseResult("chats_insert", { data: ins.data, error: ins.error });
-    if (ins.error) {
-      return { ok: false, error: ins.error.message || "Не удалось создать чат" };
+    if (raw && typeof raw === "object") {
+      const chatId = String((raw as RpcResultRow).chat_id ?? "").trim();
+      if (chatId) {
+        return { ok: true, id: chatId };
+      }
     }
-    if (!ins.data?.id) {
-      return { ok: false, error: "Нет id чата" };
-    }
-    return { ok: true, id: ins.data.id };
+
+    return { ok: false, error: "RPC не вернул id чата" };
   } catch (e) {
     console.error("getOrCreateChat", e);
     const msg = e instanceof Error ? e.message : String(e);

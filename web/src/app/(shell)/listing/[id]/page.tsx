@@ -126,7 +126,7 @@ export default function ListingDetailPage() {
         return;
       }
       setIsChatLoading(true);
-      const chatRes = await getOrCreateChat(ownerId);
+      const chatRes = await getOrCreateChat(ownerId, rowId || null);
       setIsChatLoading(false);
       if (!chatRes.ok) {
         setToast({ message: "Не удалось открыть чат", type: "error" });
