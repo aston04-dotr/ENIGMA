@@ -81,13 +81,25 @@ export type ChatMemberRow = {
 
 export type MessageStatus = "sent" | "delivered" | "seen";
 
+export type MessageType = "text" | "image";
+
 export type MessageRow = {
   id: string;
   chat_id: string;
   sender_id: string;
   text: string;
   created_at: string;
+  /** Тип с сервера: text | image. */
+  type?: MessageType;
   image_url?: string | null;
+  /** Клиент: оптимистичная отправка картинки, пока идёт upload. */
+  pendingUpload?: boolean;
+  /** Клиент: upload/insert не удался — показать retry. */
+  imageUploadFailed?: boolean;
+  /** Клиент: 0–100 при upload (сеть). */
+  imageUploadProgress?: number;
+  /** Клиент: w/h, чтобы удержать aspect-ratio бокса до onLoad. */
+  imageAspectRatio?: number;
   voice_url?: string | null;
   reply_to?: string | null;
   edited_at?: string | null;
