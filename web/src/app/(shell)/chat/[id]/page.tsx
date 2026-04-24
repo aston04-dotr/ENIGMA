@@ -139,16 +139,11 @@ export default function ChatRoomPage() {
     setLoadErr(null);
 
     try {
-      console.log("LOAD MESSAGES CHAT:", chatId);
-
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true });
-
-      console.log("MESSAGES RESULT:", data);
-      console.log("MESSAGES ERROR:", error);
 
       if (error) {
         console.error("chat room load messages", error);
@@ -277,8 +272,6 @@ export default function ChatRoomPage() {
       if (cancelled) return;
       clearReconnect();
 
-      console.log("SUBSCRIBE CHAT:", chatId);
-
       if (channelRef.current) {
         void supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -293,8 +286,6 @@ export default function ChatRoomPage() {
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          console.log("REALTIME MESSAGE:", payload);
-
           const newMessage = normalizeMessage(
             payload.new as Record<string, unknown>,
           );
@@ -324,7 +315,6 @@ export default function ChatRoomPage() {
       channelRef.current = channel;
 
       channel.subscribe((status) => {
-        console.log("REALTIME STATUS:", status);
         if (!mountedRef.current || cancelled) return;
 
         if (status === "SUBSCRIBED") {
@@ -366,7 +356,7 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
     };
-  }, [chatId, supabase]);
+  }, [chatId, supabase, me]);
 
   useEffect(() => {
     if (!messages.length) return;

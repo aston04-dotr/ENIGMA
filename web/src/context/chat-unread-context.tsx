@@ -48,13 +48,29 @@ function isUuid(value: string): boolean {
   );
 }
 
-function normalizeChatRow(raw: Record<string, unknown>): ChatListRow {
+function normalizeChatRow(
+  raw: Record<string, unknown>,
+  viewerId: string | null,
+): ChatListRow {
+  const buyerId = raw.buyer_id ? String(raw.buyer_id) : null;
+  const sellerId = raw.seller_id ? String(raw.seller_id) : null;
+  let otherUserId = raw.other_user_id ? String(raw.other_user_id) : null;
+  if (!otherUserId && viewerId && buyerId && sellerId) {
+    if (viewerId === buyerId) otherUserId = sellerId;
+    else if (viewerId === sellerId) otherUserId = buyerId;
+  }
+
+  const lastMessageAt = raw.last_message_at ? String(raw.last_message_at) : null;
+  const lastMessageCreatedAt = raw.last_message_created_at
+    ? String(raw.last_message_created_at)
+    : lastMessageAt;
+
   return {
     chat_id: String(raw.chat_id ?? ""),
     listing_id: raw.listing_id ? String(raw.listing_id) : null,
     is_group: Boolean(raw.is_group),
     title: raw.title ? String(raw.title) : null,
-    other_user_id: raw.other_user_id ? String(raw.other_user_id) : null,
+    other_user_id: otherUserId,
     other_name: raw.other_name ? String(raw.other_name) : null,
     other_avatar: raw.other_avatar ? String(raw.other_avatar) : null,
     other_public_id: raw.other_public_id ? String(raw.other_public_id) : null,
@@ -65,9 +81,7 @@ function normalizeChatRow(raw: Record<string, unknown>): ChatListRow {
     last_message_sender_id: raw.last_message_sender_id
       ? String(raw.last_message_sender_id)
       : null,
-    last_message_created_at: raw.last_message_created_at
-      ? String(raw.last_message_created_at)
-      : null,
+    last_message_created_at: lastMessageCreatedAt,
     last_message_image_url: raw.last_message_image_url
       ? String(raw.last_message_image_url)
       : null,
@@ -78,7 +92,7 @@ function normalizeChatRow(raw: Record<string, unknown>): ChatListRow {
       typeof raw.last_message_deleted === "boolean"
         ? raw.last_message_deleted
         : null,
-    last_message_at: raw.last_message_at ? String(raw.last_message_at) : null,
+    last_message_at: lastMessageAt,
     unread_count: Number.isFinite(Number(raw.unread_count))
       ? Math.max(0, Number(raw.unread_count))
       : 0,
@@ -207,7 +221,7 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
-        const res = await supabase.rpc("list_my_chats", { p_user: userId });
+        const res = await supabase.rpc("list_my_chats", { p_limit: 100 });
         if (res.error) {
           console.error("list_my_chats", res.error);
           setError(res.error.message || "Не удалось загрузить чаты");
@@ -216,7 +230,9 @@ export function ChatUnreadProvider({
 
         const nextRows = Array.isArray(res.data)
           ? res.data
-              .map((row) => normalizeChatRow(row as Record<string, unknown>))
+              .map((row) =>
+                normalizeChatRow(row as Record<string, unknown>, userId),
+              )
               .filter((row) => isUuid(row.chat_id))
           : [];
 
@@ -260,25 +276,28 @@ export function ChatUnreadProvider({
       const visibilityState =
         document.visibilityState === "visible" ? "visible" : "hidden";
       const active = statusRef.current.activeChatId;
+      const lastSeen = new Date().toISOString();
 
-      const { error: upsertError } = await supabase.from("online_users").upsert(
-        {
-          user_id: userId,
-          last_seen: new Date().toISOString(),
-          visibility_state: visibilityState,
-          active_chat_id: active,
-        },
-        { onConflict: "user_id" },
-      );
+      const { error: upsertError } = await supabase
+        .from("online_users")
+        .upsert(
+          {
+            user_id: userId,
+            last_seen: lastSeen,
+            visibility_state: visibilityState,
+            active_chat_id: active,
+            updated_at: lastSeen,
+          },
+          { onConflict: "user_id" },
+        );
 
       if (upsertError) {
         console.error("online_users upsert", upsertError);
       }
 
-      const nowIso = new Date().toISOString();
       const { error: touchPushError } = await supabase
         .from("push_tokens")
-        .update({ last_seen_at: nowIso })
+        .update({ last_seen_at: lastSeen })
         .eq("user_id", userId)
         .eq("provider", "webpush");
 
@@ -304,15 +323,12 @@ export function ChatUnreadProvider({
   );
 
   const markChatRead = useCallback(
-    async (chatId: string, upToMessageId?: string | null) => {
+    async (chatId: string, _upToMessageId?: string | null) => {
       if (!userId || !isUuid(chatId)) return;
 
       try {
-        const res = await supabase.rpc("mark_chat_read", {
-          p_chat_id: chatId,
-          p_up_to_message_id:
-            upToMessageId && isUuid(upToMessageId) ? upToMessageId : null,
-        });
+        // Прод-схема: `mark_chat_read(p_chat_id uuid)`. Порог по сообщению — на стороне БД (последнее сообщение).
+        const res = await supabase.rpc("mark_chat_read", { p_chat_id: chatId });
 
         if (res.error) {
           console.error("mark_chat_read", res.error);
@@ -408,8 +424,6 @@ export function ChatUnreadProvider({
         statusRef.current.listChannel = null;
       }
 
-      console.log("CHAT LIST SUBSCRIBE USER:", userId);
-
       const channel = supabase.channel("chat-list-" + userId).on(
         "postgres_changes",
         {
@@ -418,8 +432,6 @@ export function ChatUnreadProvider({
           table: "messages",
         },
         (payload) => {
-          console.log("CHAT LIST NEW MESSAGE:", payload);
-
           const msg = payload.new as Record<string, unknown>;
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
@@ -485,8 +497,6 @@ export function ChatUnreadProvider({
       statusRef.current.listChannel = channel;
 
       channel.subscribe((status) => {
-        console.log("CHAT LIST STATUS:", status);
-
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
           return;
