@@ -141,6 +141,13 @@ function formatLastSeen(iso: string): string {
 const TYPING_SEND_MIN_MS = 1000;
 /** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
 const PRESENCE_OFFLINE_DELAY_MS = 3000;
+/** Ниже этой дистанции от низа — «внизу», включаем автоскролл. */
+const NEAR_BOTTOM_PX = 120;
+/** Скролл вниз: слияние быстрых вызовов. */
+const SCROLL_BOTTOM_DEBOUNCE_MS = 70;
+/** Send: auto-scroll если уже близко к низу. */
+const SEND_SCROLL_INSTANT_IF_WITHIN_PX = 80;
+const MAX_MESSAGE_ENTER_ANIM = 5;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -254,7 +261,7 @@ function MessageStatusTicks({
   return (
     <span
       key={tier}
-      className="inline-flex origin-center animate-receiptPop transition-opacity duration-150 ease-out"
+      className="inline-flex origin-center animate-receiptPop will-change-[transform,opacity]"
     >
       {icon}
     </span>
@@ -280,6 +287,11 @@ export default function ChatRoomPage() {
   const [peerTyping, setPeerTyping] = useState(false);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [headerElevated, setHeaderElevated] = useState(false);
+  const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -301,6 +313,12 @@ export default function ChatRoomPage() {
   const peerOfflineTimerRef = useRef<number | null>(null);
   /** Скролл вниз (auto) один раз при открытии чата, после загрузки сообщений. */
   const initialScrollForChatIdRef = useRef<string | null>(null);
+  const messageAnimHydratedChatIdRef = useRef<string | null>(null);
+  const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
+  const scrollBottomDebounceRef = useRef<number | null>(null);
+  const scrollBottomInFlightRef = useRef(false);
+  const scrollBottomPendingRef = useRef<ScrollBehavior | null>(null);
+  const lastScrollBehaviorRef = useRef<ScrollBehavior>("smooth");
 
   messagesRef.current = messages;
 
@@ -308,6 +326,11 @@ export default function ChatRoomPage() {
     setPeerTyping(false);
     setPeerOnline(false);
     setPeerLastSeenAt(null);
+    setAtBottom(true);
+    setHeaderElevated(false);
+    setAppearingMessageIds(new Set());
+    messageAnimHydratedChatIdRef.current = null;
+    messageAnimKnownIdsRef.current = new Set();
     peerWasOnlineRef.current = false;
     if (typeof window !== "undefined") {
       if (typingEmitTimerRef.current) {
@@ -325,6 +348,12 @@ export default function ChatRoomPage() {
     }
     lastTypingSentAtRef.current = 0;
     initialScrollForChatIdRef.current = null;
+    if (typeof window !== "undefined" && scrollBottomDebounceRef.current) {
+      window.clearTimeout(scrollBottomDebounceRef.current);
+      scrollBottomDebounceRef.current = null;
+    }
+    scrollBottomPendingRef.current = null;
+    scrollBottomInFlightRef.current = false;
   }, [chatId]);
 
   const markIncomingDelivered = useCallback(
@@ -472,9 +501,73 @@ export default function ChatRoomPage() {
     [messages],
   );
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    bottomRef.current?.scrollIntoView({ behavior });
+  const updateListScrollUi = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = dist < NEAR_BOTTOM_PX;
+    stickBottomRef.current = nearBottom;
+    setAtBottom(nearBottom);
+    setHeaderElevated(el.scrollTop > 2);
   }, []);
+
+  const runScrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    if (typeof window === "undefined") return;
+    if (scrollBottomInFlightRef.current) {
+      scrollBottomPendingRef.current = behavior;
+      return;
+    }
+    scrollBottomInFlightRef.current = true;
+    bottomRef.current?.scrollIntoView({ behavior });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        updateListScrollUi();
+        window.setTimeout(() => {
+          scrollBottomInFlightRef.current = false;
+          const next = scrollBottomPendingRef.current;
+          scrollBottomPendingRef.current = null;
+          if (next !== null) {
+            runScrollToBottom(next);
+          }
+        }, 100);
+      });
+    });
+  }, [updateListScrollUi]);
+
+  const scheduleScrollToBottom = useCallback(
+    (behavior: ScrollBehavior) => {
+      lastScrollBehaviorRef.current = behavior;
+      if (typeof window === "undefined") return;
+      if (scrollBottomDebounceRef.current) {
+        window.clearTimeout(scrollBottomDebounceRef.current);
+      }
+      scrollBottomDebounceRef.current = window.setTimeout(() => {
+        scrollBottomDebounceRef.current = null;
+        runScrollToBottom(lastScrollBehaviorRef.current);
+      }, SCROLL_BOTTOM_DEBOUNCE_MS);
+    },
+    [runScrollToBottom],
+  );
+
+  /** Без дебаунса (первичный просмотр). Не кладёт в очередь. */
+  const scrollToBottomImmediate = useCallback(
+    (behavior: ScrollBehavior) => {
+      if (typeof window === "undefined") return;
+      if (scrollBottomDebounceRef.current) {
+        window.clearTimeout(scrollBottomDebounceRef.current);
+        scrollBottomDebounceRef.current = null;
+      }
+      scrollBottomPendingRef.current = null;
+      scrollBottomInFlightRef.current = false;
+      bottomRef.current?.scrollIntoView({ behavior });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          updateListScrollUi();
+        });
+      });
+    },
+    [updateListScrollUi],
+  );
 
   useEffect(() => {
     if (!chatId || !messages.length) return;
@@ -482,12 +575,46 @@ export default function ChatRoomPage() {
     if (initialScrollForChatIdRef.current === chatId) return;
     initialScrollForChatIdRef.current = chatId;
     stickBottomRef.current = true;
+    setAtBottom(true);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+        scrollToBottomImmediate("auto");
       });
     });
-  }, [chatId, messages, scrollToBottom]);
+  }, [chatId, messages, scrollToBottomImmediate]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (!messages.length) return;
+    if (!messages.every((m) => m.chat_id === chatId)) return;
+    if (messageAnimHydratedChatIdRef.current !== chatId) {
+      messageAnimHydratedChatIdRef.current = chatId;
+      messageAnimKnownIdsRef.current = new Set(messages.map((m) => m.id));
+      return;
+    }
+    const newIds: string[] = [];
+    for (const m of messages) {
+      if (!messageAnimKnownIdsRef.current.has(m.id)) {
+        newIds.push(m.id);
+        messageAnimKnownIdsRef.current.add(m.id);
+      }
+    }
+    if (newIds.length === 0) return;
+    const toAnimate = newIds.slice(0, MAX_MESSAGE_ENTER_ANIM);
+    setAppearingMessageIds((prev) => {
+      const next = new Set(prev);
+      for (const id of toAnimate) next.add(id);
+      return next;
+    });
+    const t = window.setTimeout(() => {
+      setAppearingMessageIds((prev) => {
+        const next = new Set(prev);
+        for (const id of toAnimate) next.delete(id);
+        return next;
+      });
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [chatId, messages]);
 
   const loadMessages = useCallback(async () => {
     if (!chatId || !isUuid(chatId)) return;
@@ -747,7 +874,7 @@ export default function ChatRoomPage() {
             lastLoadedMessageIdRef.current = newMessage.id;
 
             if (stickBottomRef.current) {
-              requestAnimationFrame(() => scrollToBottom("smooth"));
+              scheduleScrollToBottom("smooth");
             }
 
             if (me && newMessage.sender_id !== me) {
@@ -857,15 +984,27 @@ export default function ChatRoomPage() {
     markIncomingDelivered,
     markVisibleRoomRead,
     backfillAfterReconnect,
-    scrollToBottom,
+    scheduleScrollToBottom,
+    updateListScrollUi,
   ]);
 
   useEffect(() => {
     if (!messages.length) return;
     if (stickBottomRef.current) {
-      scrollToBottom(messages.length === 1 ? "auto" : "smooth");
+      const behavior: ScrollBehavior =
+        messages.length === 1 ? "auto" : "smooth";
+      scheduleScrollToBottom(behavior);
     }
-  }, [messages.length, scrollToBottom]);
+  }, [messages.length, scheduleScrollToBottom]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && scrollBottomDebounceRef.current) {
+        window.clearTimeout(scrollBottomDebounceRef.current);
+        scrollBottomDebounceRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!latestMessageId) return;
@@ -977,10 +1116,20 @@ export default function ChatRoomPage() {
       read_at: null,
     };
 
+    const listEl = listRef.current;
+    let scrollBehavior: ScrollBehavior = "smooth";
+    if (listEl) {
+      const d =
+        listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
+      scrollBehavior =
+        d < SEND_SCROLL_INSTANT_IF_WITHIN_PX ? "auto" : "smooth";
+    }
+
     setSending(true);
     setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
     setText("");
-    requestAnimationFrame(() => scrollToBottom("smooth"));
+    stickBottomRef.current = true;
+    scheduleScrollToBottom(scrollBehavior);
 
     try {
       const { error } = await supabase.from("messages").insert({
@@ -1020,7 +1169,13 @@ export default function ChatRoomPage() {
 
   return (
     <main className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col overflow-hidden bg-main">
-      <header className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-line bg-elevated/95 px-3 py-3 backdrop-blur-md safe-pt">
+      <header
+        className={`sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-line bg-elevated/95 px-3 py-3 backdrop-blur-md safe-pt transition-[box-shadow] duration-200 ease-out ${
+          headerElevated
+            ? "shadow-[0_2px_8px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.22)]"
+            : "shadow-none"
+        }`}
+      >
         <button
           type="button"
           onClick={() => router.back()}
@@ -1060,24 +1215,21 @@ export default function ChatRoomPage() {
         </div>
       ) : null}
 
-      <div
-        ref={listRef}
-        onScroll={() => {
-          const el = listRef.current;
-          if (!el) return;
-          const nearBottom =
-            el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-          stickBottomRef.current = nearBottom;
-        }}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 scroll-smooth"
-      >
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={listRef}
+          onScroll={updateListScrollUi}
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 [scroll-behavior:smooth] scroll-smooth"
+        >
         {messages.map((m) => {
           const mine = m.sender_id === me;
           return (
             <div
               key={m.id}
               data-message-id={m.id}
-              className={`flex min-w-0 w-full ${mine ? "justify-end" : "justify-start"}`}
+              className={`flex min-w-0 w-full ${
+                appearingMessageIds.has(m.id) ? "animate-messageAppear" : ""
+              } ${mine ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`flex min-w-0 max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
@@ -1112,6 +1264,24 @@ export default function ChatRoomPage() {
         ) : null}
 
         <div ref={bottomRef} />
+        </div>
+
+        <button
+          type="button"
+          aria-label="Прокрутить вниз"
+          tabIndex={atBottom ? -1 : 0}
+          className={`pressable absolute bottom-3 right-4 z-20 flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-line/80 bg-elevated/95 text-lg text-fg shadow-lg backdrop-blur-sm transition-[transform,opacity] duration-200 ease-out dark:bg-elev-2/95 ${
+            atBottom
+              ? "pointer-events-none translate-y-2 opacity-0"
+              : "translate-y-0 opacity-100"
+          }`}
+          onClick={() => {
+            stickBottomRef.current = true;
+            scheduleScrollToBottom("smooth");
+          }}
+        >
+          ↓
+        </button>
       </div>
 
       <div className="shrink-0 border-t border-line bg-elevated p-3 safe-pb">
