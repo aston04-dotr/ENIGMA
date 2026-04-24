@@ -67,6 +67,16 @@ async function upsertWebPushSubscription(
   userId: string,
   subscription: PushSubscription,
 ): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData?.session?.user?.id) {
+    console.warn("no user, skip push_tokens upsert");
+    return;
+  }
+  if (sessionData.session.user.id !== userId) {
+    console.warn("push_tokens upsert: session user mismatch");
+    return;
+  }
+
   const endpoint = subscription.endpoint?.trim();
   if (!endpoint) {
     throw new Error("Push subscription endpoint is empty");
@@ -95,6 +105,14 @@ async function removeWebPushSubscription(
   userId: string,
   endpoint: string,
 ): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData?.session?.user?.id) {
+    console.warn("no user, skip push_tokens delete");
+    return;
+  }
+  if (sessionData.session.user.id !== userId) {
+    return;
+  }
   const { error } = await supabase
     .from("push_tokens")
     .delete()

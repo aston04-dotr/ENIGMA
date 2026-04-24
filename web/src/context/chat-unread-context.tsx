@@ -182,8 +182,8 @@ export function ChatUnreadProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { session, loading } = useAuth();
-  const userId = session?.user?.id ?? null;
+  const { user, loading } = useAuth();
+  const userId = user?.id ?? null;
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
   const [loadingState, setLoadingState] = useState(false);
@@ -221,20 +221,41 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
+        const { data: authSnap } = await supabase.auth.getSession();
+        if (!authSnap?.session?.user) {
+          console.warn("no user, skip rpc list_my_chats");
+          if (!opts?.silent) setLoadingState(false);
+          return;
+        }
         const res = await supabase.rpc("list_my_chats", { p_limit: 100 });
         if (res.error) {
-          console.error("list_my_chats", res.error);
+          console.error("list_my_chats RPC error", {
+            message: res.error.message,
+            code: res.error.code,
+            details: res.error.details,
+            hint: res.error.hint,
+          });
           setError(res.error.message || "Не удалось загрузить чаты");
           return;
         }
 
-        const nextRows = Array.isArray(res.data)
-          ? res.data
-              .map((row) =>
-                normalizeChatRow(row as Record<string, unknown>, userId),
-              )
-              .filter((row) => isUuid(row.chat_id))
-          : [];
+        if (res.data == null) {
+          console.warn(
+            "list_my_chats: data is null, keeping previous rows (no RLS/empty result edge case)",
+          );
+          return;
+        }
+
+        if (!Array.isArray(res.data)) {
+          console.warn("list_my_chats: unexpected data type", typeof res.data);
+          return;
+        }
+
+        const nextRows = res.data
+          .map((row) =>
+            normalizeChatRow(row as Record<string, unknown>, userId),
+          )
+          .filter((row) => isUuid(row.chat_id));
 
         setRows(sortByLastMessageDesc(nextRows));
       } catch (e) {
@@ -295,14 +316,19 @@ export function ChatUnreadProvider({
         console.error("online_users upsert", upsertError);
       }
 
-      const { error: touchPushError } = await supabase
-        .from("push_tokens")
-        .update({ last_seen_at: lastSeen })
-        .eq("user_id", userId)
-        .eq("provider", "webpush");
+      const { data: sPush } = await supabase.auth.getSession();
+      if (!sPush?.session?.user?.id) {
+        console.warn("no session user, skip push_tokens touch");
+      } else {
+        const { error: touchPushError } = await supabase
+          .from("push_tokens")
+          .update({ last_seen_at: lastSeen })
+          .eq("user_id", userId)
+          .eq("provider", "webpush");
 
-      if (touchPushError) {
-        console.warn("push_tokens touch", touchPushError);
+        if (touchPushError) {
+          console.warn("push_tokens touch", touchPushError);
+        }
       }
     } catch (e) {
       console.error("presence heartbeat", e);
@@ -327,6 +353,11 @@ export function ChatUnreadProvider({
       if (!userId || !isUuid(chatId)) return;
 
       try {
+        const { data: authSnap } = await supabase.auth.getSession();
+        if (!authSnap?.session?.user) {
+          console.warn("no user, skip rpc mark_chat_read");
+          return;
+        }
         const rpcArgs: { p_chat_id: string; p_up_to_message_id?: string } = {
           p_chat_id: chatId,
         };
@@ -337,7 +368,12 @@ export function ChatUnreadProvider({
         const res = await supabase.rpc("mark_chat_read", rpcArgs);
 
         if (res.error) {
-          console.error("mark_chat_read", res.error);
+          console.error("mark_chat_read RPC error", {
+            message: res.error.message,
+            code: res.error.code,
+            details: res.error.details,
+            hint: res.error.hint,
+          });
           setError(
             res.error.message || "Не удалось отметить чат как прочитанный",
           );

@@ -1222,6 +1222,13 @@ export default function ChatRoomPage() {
     }
     if (uploadInFlightRef.current) return;
     if (sending) return;
+
+    const { data: authData } = await supabase.auth.getSession();
+    if (!authData?.session) {
+      setToast({ type: "error", message: "Сессия истекла. Войдите снова." });
+      return;
+    }
+
     uploadInFlightRef.current = true;
     setSending(true);
 
@@ -1371,6 +1378,12 @@ export default function ChatRoomPage() {
     const row = messagesRef.current.find((m) => m.id === messageId);
     const previewObjectUrl = row?.image_url ?? "";
     if (!row || !previewObjectUrl) return;
+
+    const { data: authRetry } = await supabase.auth.getSession();
+    if (!authRetry?.session) {
+      setToast({ type: "error", message: "Сессия истекла. Войдите снова." });
+      return;
+    }
 
     setImageRetryingId(messageId);
     uploadInFlightRef.current = true;

@@ -4,11 +4,11 @@ import { useAuth } from "@/context/auth-context";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export function PushNotificationsBootstrap() {
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   usePushNotifications({
-    enabled: Boolean(session?.user?.id),
-    userId: session?.user?.id ?? null,
+    enabled: Boolean(user?.id),
+    userId: user?.id ?? null,
   });
 
   return null;
