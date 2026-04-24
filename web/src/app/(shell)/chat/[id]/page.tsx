@@ -39,6 +39,8 @@ function normalizeMessage(raw: Record<string, unknown>): MessageRow {
       ? raw.hidden_for_user_ids.map((item) => String(item))
       : [],
     status: raw.status ? String(raw.status) : null,
+    delivered_at: raw.delivered_at ? String(raw.delivered_at) : null,
+    read_at: raw.read_at ? String(raw.read_at) : null,
   };
 }
 
@@ -84,6 +86,45 @@ function buildMessagePreview(m: MessageRow): string {
   return m.text || "";
 }
 
+function MessageStatusTicks({
+  mine,
+  delivered_at,
+  read_at,
+}: {
+  mine: boolean;
+  delivered_at?: string | null;
+  read_at?: string | null;
+}) {
+  if (!mine) return null;
+  const hasRead = Boolean(read_at);
+  const hasDel = Boolean(delivered_at);
+  if (!hasDel) {
+    return (
+      <span className="text-[13px] leading-none text-white/75" aria-hidden>
+        ✓
+      </span>
+    );
+  }
+  if (!hasRead) {
+    return (
+      <span
+        className="text-[13px] leading-none tracking-[-0.15em] text-white/65"
+        aria-hidden
+      >
+        ✓✓
+      </span>
+    );
+  }
+  return (
+    <span
+      className="text-[13px] leading-none tracking-[-0.15em] text-violet-200"
+      aria-hidden
+    >
+      ✓✓
+    </span>
+  );
+}
+
 export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -110,6 +151,51 @@ export default function ChatRoomPage() {
   const lastLoadedMessageIdRef = useRef<string | null>(null);
   const lastReadMarkedMessageIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const messagesRef = useRef<MessageRow[]>([]);
+  const lastVisibleMessageIdRef = useRef<string | null>(null);
+  const markReadDebounceRef = useRef<number | null>(null);
+
+  messagesRef.current = messages;
+
+  const markIncomingDelivered = useCallback(
+    async (messageId: string) => {
+      if (!me || !isUuid(messageId)) return;
+      const nowIso = new Date().toISOString();
+      const { error } = await supabase
+        .from("messages")
+        .update({ delivered_at: nowIso })
+        .eq("id", messageId)
+        .is("delivered_at", null);
+      if (error) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, delivered_at: nowIso } : m,
+        ),
+      );
+    },
+    [me],
+  );
+
+  const markIncomingDeliveredBatch = useCallback(async () => {
+    if (!me || !chatId || !isUuid(chatId)) return;
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("messages")
+      .update({ delivered_at: nowIso })
+      .eq("chat_id", chatId)
+      .neq("sender_id", me)
+      .is("delivered_at", null)
+      .select("id");
+    if (error || !data?.length) return;
+    const ids = new Set(
+      data.map((r: { id: string }) => String(r.id)),
+    );
+    setMessages((prev) =>
+      prev.map((m) =>
+        ids.has(m.id) ? { ...m, delivered_at: nowIso } : m,
+      ),
+    );
+  }, [chatId, me]);
 
   const currentChat = useMemo(
     () => (chatId ? getChatRow(chatId) : null),
@@ -161,13 +247,14 @@ export default function ChatRoomPage() {
       setMessages(sortMessages(safe));
       lastLoadedMessageIdRef.current =
         safe.length > 0 ? safe[safe.length - 1].id : null;
+      void markIncomingDeliveredBatch();
     } catch (error) {
       console.error("chat room load unexpected", error);
       if (!mountedRef.current) return;
       setLoadErr(FETCH_ERROR_MESSAGE);
       setMessages([]);
     }
-  }, [chatId]);
+  }, [chatId, markIncomingDeliveredBatch]);
 
   const markVisibleRoomRead = useCallback(
     async (explicitMessageId?: string | null) => {
@@ -179,9 +266,13 @@ export default function ChatRoomPage() {
         return;
       }
 
-      const targetMessageId = explicitMessageId ?? latestMessageId;
+      const targetMessageId =
+        explicitMessageId ??
+        lastVisibleMessageIdRef.current ??
+        latestMessageId;
       if (
         !targetMessageId ||
+        !isUuid(targetMessageId) ||
         targetMessageId === lastReadMarkedMessageIdRef.current
       ) {
         return;
@@ -195,6 +286,20 @@ export default function ChatRoomPage() {
       }
     },
     [chatId, latestMessageId, markChatRead, me],
+  );
+
+  const scheduleMarkReadFromVisibility = useCallback(
+    (bestId: string | null) => {
+      if (!bestId || !isUuid(bestId)) return;
+      if (markReadDebounceRef.current) {
+        window.clearTimeout(markReadDebounceRef.current);
+      }
+      markReadDebounceRef.current = window.setTimeout(() => {
+        markReadDebounceRef.current = null;
+        void markVisibleRoomRead(bestId);
+      }, 380);
+    },
+    [markVisibleRoomRead],
   );
 
   const backfillAfterReconnect = useCallback(async () => {
@@ -277,40 +382,61 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
 
-      const channel = supabase.channel(`chat-${chatId}`).on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `chat_id=eq.${chatId}`,
-        },
-        (payload) => {
-          const newMessage = normalizeMessage(
-            payload.new as Record<string, unknown>,
-          );
+      const channel = supabase
+        .channel(`chat-${chatId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `chat_id=eq.${chatId}`,
+          },
+          (payload) => {
+            const newMessage = normalizeMessage(
+              payload.new as Record<string, unknown>,
+            );
 
-          setMessages((prev) => {
-            const exists = prev.some((m) => m.id === newMessage.id);
-            if (exists) return prev;
-            return [...prev, newMessage];
-          });
+            setMessages((prev) => {
+              const exists = prev.some((m) => m.id === newMessage.id);
+              if (exists) return prev;
+              return [...prev, newMessage];
+            });
 
-          lastLoadedMessageIdRef.current = newMessage.id;
+            lastLoadedMessageIdRef.current = newMessage.id;
 
-          if (stickBottomRef.current) {
-            requestAnimationFrame(() => scrollToBottom("smooth"));
-          }
+            if (stickBottomRef.current) {
+              requestAnimationFrame(() => scrollToBottom("smooth"));
+            }
 
-          if (
-            newMessage.sender_id !== me &&
-            typeof document !== "undefined" &&
-            document.visibilityState === "visible"
-          ) {
-            void markVisibleRoomRead(newMessage.id);
-          }
-        },
-      );
+            if (
+              newMessage.sender_id !== me &&
+              typeof document !== "undefined" &&
+              document.visibilityState === "visible"
+            ) {
+              void markIncomingDelivered(newMessage.id);
+              void markVisibleRoomRead(newMessage.id);
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter: `chat_id=eq.${chatId}`,
+          },
+          (payload) => {
+            const row = payload.new as Record<string, unknown>;
+            const id = String(row.id ?? "");
+            if (!id) return;
+            const patch = normalizeMessage(row);
+            setMessages((prev) =>
+              prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+            );
+          },
+        );
 
       channelRef.current = channel;
 
@@ -356,7 +482,7 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
     };
-  }, [chatId, supabase, me]);
+  }, [chatId, supabase, me, markIncomingDelivered, markVisibleRoomRead]);
 
   useEffect(() => {
     if (!messages.length) return;
@@ -367,7 +493,6 @@ export default function ChatRoomPage() {
 
   useEffect(() => {
     if (!latestMessageId) return;
-    void markVisibleRoomRead(latestMessageId);
 
     setMessages((prev) =>
       prev.map((m) =>
@@ -376,7 +501,65 @@ export default function ChatRoomPage() {
           : m,
       ),
     );
-  }, [chatId, latestMessageId, markVisibleRoomRead, me]);
+  }, [chatId, latestMessageId, me]);
+
+  useEffect(() => {
+    const root = listRef.current;
+    if (!root || loadErr || !messages.length) return;
+
+    const visible = new Set<string>();
+
+    const pickBest = () => {
+      let best: string | null = null;
+      const list = messagesRef.current;
+      for (const id of visible) {
+        if (!isUuid(id)) continue;
+        const msg = list.find((m) => m.id === id);
+        if (!msg) continue;
+        if (!best) {
+          best = id;
+          continue;
+        }
+        const other = list.find((m) => m.id === best);
+        if (!other) {
+          best = id;
+          continue;
+        }
+        const t = new Date(msg.created_at).getTime();
+        const to = new Date(other.created_at).getTime();
+        if (t > to || (t === to && msg.id.localeCompare(best) > 0)) {
+          best = id;
+        }
+      }
+      lastVisibleMessageIdRef.current = best;
+      scheduleMarkReadFromVisibility(best);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.messageId;
+          if (!id) continue;
+          if (e.isIntersecting) visible.add(id);
+          else visible.delete(id);
+        }
+        pickBest();
+      },
+      { root, threshold: 0.35, rootMargin: "0px" },
+    );
+
+    root.querySelectorAll<HTMLElement>("[data-message-id]").forEach((el) => {
+      observer.observe(el);
+    });
+
+    return () => {
+      observer.disconnect();
+      if (markReadDebounceRef.current) {
+        window.clearTimeout(markReadDebounceRef.current);
+        markReadDebounceRef.current = null;
+      }
+    };
+  }, [messages, loadErr, scheduleMarkReadFromVisibility]);
 
   useEffect(() => {
     if (!chatId || !me) return;
@@ -414,6 +597,8 @@ export default function ChatRoomPage() {
       deleted: false,
       hidden_for_user_ids: [],
       status: "sent",
+      delivered_at: null,
+      read_at: null,
     };
 
     setSending(true);
@@ -506,16 +691,26 @@ export default function ChatRoomPage() {
           return (
             <div
               key={m.id}
+              data-message-id={m.id}
               className={`flex ${mine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[min(85%,20rem)] rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui ${
+                className={`flex max-w-[min(85%,20rem)] flex-col gap-1 rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui ${
                   mine
                     ? "bg-accent text-white shadow-soft"
                     : "border border-line bg-elevated text-fg shadow-soft"
                 }`}
               >
-                {buildMessagePreview(m)}
+                <span>{buildMessagePreview(m)}</span>
+                {mine ? (
+                  <div className="flex min-h-[14px] items-end justify-end">
+                    <MessageStatusTicks
+                      mine
+                      delivered_at={m.delivered_at}
+                      read_at={m.read_at}
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
           );

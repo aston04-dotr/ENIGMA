@@ -94,6 +94,10 @@ export type MessageRow = {
   deleted?: boolean;
   hidden_for_user_ids?: string[];
   status?: MessageStatus | string | null;
+  /** Получатель отметил доставку (✓✓ серые). */
+  delivered_at?: string | null;
+  /** Собеседник прочитал (✓✓ фиолетовые). */
+  read_at?: string | null;
 };
 
 export type ChatListRow = {

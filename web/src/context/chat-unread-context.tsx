@@ -323,12 +323,18 @@ export function ChatUnreadProvider({
   );
 
   const markChatRead = useCallback(
-    async (chatId: string, _upToMessageId?: string | null) => {
+    async (chatId: string, upToMessageId?: string | null) => {
       if (!userId || !isUuid(chatId)) return;
 
       try {
-        // Прод-схема: `mark_chat_read(p_chat_id uuid)`. Порог по сообщению — на стороне БД (последнее сообщение).
-        const res = await supabase.rpc("mark_chat_read", { p_chat_id: chatId });
+        const rpcArgs: { p_chat_id: string; p_up_to_message_id?: string } = {
+          p_chat_id: chatId,
+        };
+        if (upToMessageId && isUuid(upToMessageId)) {
+          rpcArgs.p_up_to_message_id = upToMessageId;
+        }
+
+        const res = await supabase.rpc("mark_chat_read", rpcArgs);
 
         if (res.error) {
           console.error("mark_chat_read", res.error);
@@ -338,19 +344,14 @@ export function ChatUnreadProvider({
           return;
         }
 
-        setRows((prev) =>
-          prev.map((row) =>
-            row.chat_id === chatId ? { ...row, unread_count: 0 } : row,
-          ),
-        );
-
+        await refreshChats({ silent: true });
         broadcast({ type: "chat-read", chatId });
       } catch (e) {
         console.error("mark_chat_read unexpected", e);
         setError("Не удалось отметить чат как прочитанный");
       }
     },
-    [broadcast, userId],
+    [broadcast, refreshChats, userId],
   );
 
   const getChatRow = useCallback(
@@ -368,11 +369,7 @@ export function ChatUnreadProvider({
         return;
       }
       if (event.type === "chat-read") {
-        setRows((prev) =>
-          prev.map((row) =>
-            row.chat_id === event.chatId ? { ...row, unread_count: 0 } : row,
-          ),
-        );
+        scheduleRefresh(80, { silent: true });
         return;
       }
       if (event.type === "chat-active") {
