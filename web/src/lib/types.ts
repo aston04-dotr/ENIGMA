@@ -112,21 +112,6 @@ export type MessageRow = {
   read_at?: string | null;
 };
 
-export type MessageReactionRow = {
-  id: string;
-  message_id: string;
-  chat_id: string;
-  user_id: string;
-  emoji: string;
-  created_at: string;
-};
-
-export type MessageReactionListItem = {
-  id: string;
-  emoji: string;
-  user_id: string;
-};
-
 export type ChatListRow = {
   chat_id: string;
   listing_id: string | null;

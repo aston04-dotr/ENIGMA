@@ -2,14 +2,13 @@
 
 import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
-import { MessageReactions } from "@/components/chat/MessageReactions";
 import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { MessageReactionListItem, MessageRow } from "@/lib/types";
+import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
 import { ChatPendingBlobRegistry } from "@/lib/chatBlobs";
 import {
@@ -161,8 +160,6 @@ const SCROLL_BOTTOM_DEBOUNCE_MS = 70;
 /** Send: auto-scroll если уже близко к низу. */
 const SEND_SCROLL_INSTANT_IF_WITHIN_PX = 80;
 const MAX_MESSAGE_ENTER_ANIM = 5;
-
-const EMPTY_REACTIONS: MessageReactionListItem[] = [];
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -334,9 +331,6 @@ export default function ChatRoomPage() {
   const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [messageReactionsMap, setMessageReactionsMap] = useState<
-    Record<string, MessageReactionListItem[]>
-  >({});
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -360,9 +354,6 @@ export default function ChatRoomPage() {
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
-  const messageReactionsMapRef = useRef<Record<string, MessageReactionListItem[]>>(
-    {},
-  );
   const scrollBottomDebounceRef = useRef<number | null>(null);
   const scrollBottomInFlightRef = useRef(false);
   const scrollBottomPendingRef = useRef<ScrollBehavior | null>(null);
@@ -383,18 +374,12 @@ export default function ChatRoomPage() {
   }, []);
 
   useEffect(() => {
-    messageReactionsMapRef.current = messageReactionsMap;
-  }, [messageReactionsMap]);
-
-  useEffect(() => {
     setPeerTyping(false);
     setPeerOnline(false);
     setPeerLastSeenAt(null);
     setAtBottom(true);
     setHeaderElevated(false);
     setAppearingMessageIds(new Set());
-    setMessageReactionsMap({});
-    messageReactionsMapRef.current = {};
     messageAnimHydratedChatIdRef.current = null;
     messageAnimKnownIdsRef.current = new Set();
     peerWasOnlineRef.current = false;
@@ -685,35 +670,6 @@ export default function ChatRoomPage() {
     return () => window.clearTimeout(t);
   }, [chatId, messages]);
 
-  const loadReactions = useCallback(async () => {
-    if (!chatId || !isUuid(chatId)) return;
-    const { data, error } = await supabase
-      .from("message_reactions")
-      .select("id, message_id, user_id, emoji, created_at")
-      .eq("chat_id", chatId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("message_reactions load", error);
-      return;
-    }
-
-    const map: Record<string, MessageReactionListItem[]> = {};
-    for (const row of data ?? []) {
-      const mid = String((row as { message_id?: string }).message_id ?? "");
-      if (!mid) continue;
-      if (!map[mid]) map[mid] = [];
-      map[mid].push({
-        id: String((row as { id?: string }).id ?? ""),
-        emoji: String((row as { emoji?: string }).emoji ?? ""),
-        user_id: String((row as { user_id?: string }).user_id ?? ""),
-      });
-    }
-    if (!mountedRef.current) return;
-    setMessageReactionsMap(map);
-    messageReactionsMapRef.current = map;
-  }, [chatId]);
-
   const loadMessages = useCallback(async () => {
     if (!chatId || !isUuid(chatId)) return;
 
@@ -730,8 +686,6 @@ export default function ChatRoomPage() {
         console.error("chat room load messages", error);
         setLoadErr(FETCH_ERROR_MESSAGE);
         setMessages([]);
-        setMessageReactionsMap({});
-        messageReactionsMapRef.current = {};
         return;
       }
 
@@ -745,74 +699,13 @@ export default function ChatRoomPage() {
       lastLoadedMessageIdRef.current =
         safe.length > 0 ? safe[safe.length - 1].id : null;
       void markIncomingDeliveredBatch();
-      await loadReactions();
     } catch (error) {
       console.error("chat room load unexpected", error);
       if (!mountedRef.current) return;
       setLoadErr(FETCH_ERROR_MESSAGE);
       setMessages([]);
-      setMessageReactionsMap({});
-      messageReactionsMapRef.current = {};
     }
-  }, [chatId, markIncomingDeliveredBatch, loadReactions]);
-
-  const toggleReaction = useCallback(
-    async (messageId: string, emoji: string) => {
-      if (!me || !isUuid(messageId)) return;
-      const list = messageReactionsMapRef.current[messageId] ?? [];
-      const existing = list.find(
-        (r) => r.user_id === me && r.emoji === emoji,
-      );
-      if (existing) {
-        const { error } = await supabase
-          .from("message_reactions")
-          .delete()
-          .eq("id", existing.id);
-        if (error) {
-          console.error("message_reactions delete", error);
-          return;
-        }
-        setMessageReactionsMap((prev) => {
-          const next = { ...prev };
-          const arr = (next[messageId] ?? []).filter(
-            (r) => r.id !== existing.id,
-          );
-          if (arr.length) next[messageId] = arr;
-          else delete next[messageId];
-          return next;
-        });
-        return;
-      }
-      const { data, error } = await supabase
-        .from("message_reactions")
-        .insert({ message_id: messageId, user_id: me, emoji })
-        .select("id, message_id, user_id, emoji")
-        .single();
-      if (error) {
-        console.error("message_reactions insert", error);
-        return;
-      }
-      if (!data) return;
-      const row = data as {
-        id: string;
-        message_id: string;
-        user_id: string;
-        emoji: string;
-      };
-      setMessageReactionsMap((prev) => {
-        const cur = prev[messageId] ?? [];
-        if (cur.some((x) => x.id === row.id)) return prev;
-        return {
-          ...prev,
-          [messageId]: [
-            ...cur,
-            { id: row.id, emoji: row.emoji, user_id: row.user_id },
-          ],
-        };
-      });
-    },
-    [me],
-  );
+  }, [chatId, markIncomingDeliveredBatch]);
 
   const markVisibleRoomRead = useCallback(
     async (explicitMessageId?: string | null) => {
@@ -1070,69 +963,6 @@ export default function ChatRoomPage() {
                 m.id === id ? patchMessageFromRealtime(m, row) : m,
               ),
             );
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "message_reactions",
-            filter: `chat_id=eq.${chatId}`,
-          },
-          (payload) => {
-            const row = payload.new as Record<string, unknown> | null;
-            if (!row) return;
-            const id = String(row.id ?? "");
-            const messageId = String(row.message_id ?? "");
-            const userId = String(row.user_id ?? "");
-            const emoji = String(row.emoji ?? "");
-            if (!id || !messageId) return;
-            setMessageReactionsMap((prev) => {
-              const cur = prev[messageId] ?? [];
-              if (cur.some((r) => r.id === id)) return prev;
-              return {
-                ...prev,
-                [messageId]: [...cur, { id, emoji, user_id: userId }],
-              };
-            });
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "message_reactions",
-            filter: `chat_id=eq.${chatId}`,
-          },
-          (payload) => {
-            const oldRow = payload.old as Record<string, unknown> | null;
-            if (!oldRow) return;
-            const rid = String(oldRow.id ?? "");
-            const messageId = String(oldRow.message_id ?? "");
-            if (!rid) return;
-            setMessageReactionsMap((prev) => {
-              if (messageId) {
-                const cur = prev[messageId] ?? [];
-                const nextArr = cur.filter((r) => r.id !== rid);
-                if (nextArr.length === cur.length) return prev;
-                const next = { ...prev };
-                if (nextArr.length) next[messageId] = nextArr;
-                else delete next[messageId];
-                return next;
-              }
-              for (const mid of Object.keys(prev)) {
-                const arr = prev[mid] ?? [];
-                if (!arr.some((r) => r.id === rid)) continue;
-                const nextArr = arr.filter((r) => r.id !== rid);
-                const next = { ...prev };
-                if (nextArr.length) next[mid] = nextArr;
-                else delete next[mid];
-                return next;
-              }
-              return prev;
-            });
           },
         );
 
@@ -1809,13 +1639,6 @@ export default function ChatRoomPage() {
                     </span>
                   )}
                 </div>
-                <MessageReactions
-                  messageId={m.id}
-                  me={me}
-                  alignEnd={mine}
-                  rows={messageReactionsMap[m.id] ?? EMPTY_REACTIONS}
-                  onToggle={toggleReaction}
-                />
                 {mine ? (
                   <div className="flex min-h-4 items-center justify-end pr-0.5 pt-0.5">
                     <MessageStatusTicks

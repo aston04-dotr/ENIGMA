@@ -8,7 +8,7 @@ import {
   isAllowedListingCity,
   normalizeAllowedListingCity,
 } from "./russianCities";
-import type { ListingInsertPayload, ListingRow } from "./types";
+import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
 
 const LISTING_DETAIL_FETCH_MS = 5000;
 
