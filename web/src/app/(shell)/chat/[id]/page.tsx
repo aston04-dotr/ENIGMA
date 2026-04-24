@@ -137,6 +137,11 @@ function formatLastSeen(iso: string): string {
   }
 }
 
+/** Минимум между broadcast typing; дебаунс ввода остаётся отдельно. */
+const TYPING_SEND_MIN_MS = 1000;
+/** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
+const PRESENCE_OFFLINE_DELAY_MS = 3000;
+
 function mergeIncomingInsert(
   prev: MessageRow[],
   row: MessageRow,
@@ -292,6 +297,8 @@ export default function ChatRoomPage() {
   const peerWasOnlineRef = useRef(false);
   const typingEmitTimerRef = useRef<number | null>(null);
   const typingHideTimerRef = useRef<number | null>(null);
+  const lastTypingSentAtRef = useRef(0);
+  const peerOfflineTimerRef = useRef<number | null>(null);
 
   messagesRef.current = messages;
 
@@ -309,7 +316,12 @@ export default function ChatRoomPage() {
         window.clearTimeout(typingHideTimerRef.current);
         typingHideTimerRef.current = null;
       }
+      if (peerOfflineTimerRef.current) {
+        window.clearTimeout(peerOfflineTimerRef.current);
+        peerOfflineTimerRef.current = null;
+      }
     }
+    lastTypingSentAtRef.current = 0;
   }, [chatId]);
 
   const markIncomingDelivered = useCallback(
@@ -409,6 +421,22 @@ export default function ChatRoomPage() {
     peerLastSeenAt,
   ]);
 
+  const sendTypingSafe = useCallback(() => {
+    if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
+      return;
+    }
+    const ch = channelRef.current;
+    if (!ch) return;
+    const now = Date.now();
+    if (now - lastTypingSentAtRef.current < TYPING_SEND_MIN_MS) return;
+    lastTypingSentAtRef.current = now;
+    void ch.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { chat_id: chatId, user_id: me },
+    });
+  }, [me, chatId]);
+
   const scheduleTypingBroadcast = useCallback(() => {
     if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
       return;
@@ -418,15 +446,9 @@ export default function ChatRoomPage() {
     }
     typingEmitTimerRef.current = window.setTimeout(() => {
       typingEmitTimerRef.current = null;
-      const ch = channelRef.current;
-      if (!ch) return;
-      void ch.send({
-        type: "broadcast",
-        event: "typing",
-        payload: { chat_id: chatId, user_id: me },
-      });
+      sendTypingSafe();
     }, 420);
-  }, [me, chatId]);
+  }, [me, chatId, sendTypingSafe]);
 
   const latestMessageId = useMemo(
     () => messages[messages.length - 1]?.id ?? null,
@@ -606,22 +628,45 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
 
+      const clearPeerOfflineTimer = () => {
+        if (typeof window === "undefined") return;
+        if (peerOfflineTimerRef.current) {
+          window.clearTimeout(peerOfflineTimerRef.current);
+          peerOfflineTimerRef.current = null;
+        }
+      };
+
       const applyPresenceFromChannel = (ch: RealtimeChannel) => {
         const peerId = peerUserIdRef.current;
         if (!peerId) {
+          clearPeerOfflineTimer();
           setPeerOnline(false);
           return;
         }
         const state = ch.presenceState() as Record<string, unknown[] | undefined>;
         const slice = state[peerId];
         const online = Array.isArray(slice) && slice.length > 0;
-        setPeerOnline(online);
+
         if (online) {
+          clearPeerOfflineTimer();
+          setPeerOnline(true);
           peerWasOnlineRef.current = true;
-        } else if (peerWasOnlineRef.current) {
-          setPeerLastSeenAt(new Date().toISOString());
-          peerWasOnlineRef.current = false;
+          return;
         }
+
+        clearPeerOfflineTimer();
+        if (!peerWasOnlineRef.current) {
+          setPeerOnline(false);
+          return;
+        }
+
+        peerOfflineTimerRef.current = window.setTimeout(() => {
+          peerOfflineTimerRef.current = null;
+          if (!mountedRef.current) return;
+          setPeerLastSeenAt(new Date().toISOString());
+          setPeerOnline(false);
+          peerWasOnlineRef.current = false;
+        }, PRESENCE_OFFLINE_DELAY_MS);
       };
 
       const channel = supabase
@@ -765,6 +810,10 @@ export default function ChatRoomPage() {
         if (typingEmitTimerRef.current) {
           window.clearTimeout(typingEmitTimerRef.current);
           typingEmitTimerRef.current = null;
+        }
+        if (peerOfflineTimerRef.current) {
+          window.clearTimeout(peerOfflineTimerRef.current);
+          peerOfflineTimerRef.current = null;
         }
       }
       if (channelRef.current) {
