@@ -1,6 +1,9 @@
 "use client";
 
+import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
+import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
 import { MessageReactions } from "@/components/chat/MessageReactions";
+import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
@@ -8,6 +11,14 @@ import { supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageReactionListItem, MessageRow } from "@/lib/types";
 import Link from "next/link";
+import { ChatPendingBlobRegistry } from "@/lib/chatBlobs";
+import {
+  compressImageForChat,
+  getAspectFromObjectUrl,
+  makeChatImageStoragePath,
+  validateChatImageFileDeep,
+  withUploadProgress,
+} from "@/lib/chatImage";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -32,6 +43,7 @@ function normalizeMessage(raw: Record<string, unknown>): MessageRow {
     sender_id: String(raw.sender_id ?? ""),
     text: String(raw.text ?? ""),
     created_at: String(raw.created_at ?? new Date().toISOString()),
+    type: String(raw.type ?? "text") === "image" ? "image" : "text",
     image_url: raw.image_url ? String(raw.image_url) : null,
     voice_url: raw.voice_url ? String(raw.voice_url) : null,
     reply_to: raw.reply_to ? String(raw.reply_to) : null,
@@ -160,10 +172,26 @@ function mergeIncomingInsert(
     return prev.map((m) => (m.id === row.id ? { ...m, ...row } : m));
   }
 
+  if (row.type === "image") {
+    for (let i = prev.length - 1; i >= 0; i--) {
+      const m = prev[i];
+      if (
+        m.id.startsWith("temp-") &&
+        m.sender_id === row.sender_id &&
+        (m.pendingUpload || m.imageUploadFailed)
+      ) {
+        const next = [...prev];
+        next[i] = row;
+        return sortMessages(next);
+      }
+    }
+  }
+
   const optimisticIdx = prev.findIndex(
     (m) =>
       m.id.startsWith("temp-") &&
       m.sender_id === row.sender_id &&
+      (m.type ?? "text") === (row.type ?? "text") &&
       (m.text ?? "") === (row.text ?? "") &&
       (m.image_url ?? null) === (row.image_url ?? null) &&
       (m.voice_url ?? null) === (row.voice_url ?? null),
@@ -286,6 +314,17 @@ export default function ChatRoomPage() {
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadInFlightRef = useRef(false);
+  const pendingImageFilesRef = useRef(new Map<string, File>());
+  const pendingBlobRegistryRef = useRef(new ChatPendingBlobRegistry());
+  const [imageRetryingId, setImageRetryingId] = useState<string | null>(null);
+  const [isChatDragOver, setIsChatDragOver] = useState(false);
   const [roomStatus, setRoomStatus] = useState<RoomStatus>("connecting");
   const [peerTyping, setPeerTyping] = useState(false);
   const [peerOnline, setPeerOnline] = useState(false);
@@ -330,6 +369,19 @@ export default function ChatRoomPage() {
   const lastScrollBehaviorRef = useRef<ScrollBehavior>("smooth");
 
   messagesRef.current = messages;
+  const revokeAllPendingBlobs = useCallback(() => {
+    pendingBlobRegistryRef.current.revokeAll();
+    pendingImageFilesRef.current.clear();
+    setImageRetryingId(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      pendingBlobRegistryRef.current.revokeAll();
+      pendingImageFilesRef.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     messageReactionsMapRef.current = messageReactionsMap;
   }, [messageReactionsMap]);
@@ -368,7 +420,10 @@ export default function ChatRoomPage() {
     }
     scrollBottomPendingRef.current = null;
     scrollBottomInFlightRef.current = false;
-  }, [chatId]);
+    uploadInFlightRef.current = false;
+    revokeAllPendingBlobs();
+    setToast(null);
+  }, [chatId, revokeAllPendingBlobs]);
 
   const markIncomingDelivered = useCallback(
     async (messageId: string, senderIdHint?: string) => {
@@ -1277,6 +1332,7 @@ export default function ChatRoomPage() {
       chat_id: chatId,
       sender_id: me,
       text: trimmed,
+      type: "text",
       created_at: new Date().toISOString(),
       deleted: false,
       hidden_for_user_ids: [],
@@ -1305,6 +1361,7 @@ export default function ChatRoomPage() {
         chat_id: chatId,
         sender_id: me,
         text: trimmed,
+        type: "text",
       });
 
       if (error) {
@@ -1322,6 +1379,283 @@ export default function ChatRoomPage() {
       );
       setText(trimmed);
     } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendImageFile(file: File) {
+    if (!me || !chatId || !isUuid(chatId)) return;
+    const invalid = await validateChatImageFileDeep(file);
+    if (invalid) {
+      setToast({ type: "error", message: invalid });
+      return;
+    }
+    if (uploadInFlightRef.current) return;
+    if (sending) return;
+    uploadInFlightRef.current = true;
+    setSending(true);
+
+    const objectUrl = URL.createObjectURL(file);
+    pendingBlobRegistryRef.current.add(objectUrl);
+    const tempId = `temp-${Date.now()}`;
+    pendingImageFilesRef.current.set(tempId, file);
+    const aspect = await getAspectFromObjectUrl(objectUrl);
+
+    const optimisticMessage: MessageRow = {
+      id: tempId,
+      chat_id: chatId,
+      sender_id: me,
+      text: "",
+      type: "image",
+      image_url: objectUrl,
+      imageAspectRatio: aspect,
+      imageUploadProgress: 0,
+      created_at: new Date().toISOString(),
+      deleted: false,
+      hidden_for_user_ids: [],
+      status: "sent",
+      delivered_at: null,
+      read_at: null,
+      pendingUpload: true,
+      imageUploadFailed: false,
+    };
+
+    const listEl = listRef.current;
+    let scrollBehavior: ScrollBehavior = "smooth";
+    if (listEl) {
+      const d =
+        listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
+      scrollBehavior =
+        d < SEND_SCROLL_INSTANT_IF_WITHIN_PX ? "auto" : "smooth";
+    }
+
+    setSendErr(null);
+    setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
+    stickBottomRef.current = true;
+    scheduleScrollToBottom(scrollBehavior);
+
+    const registry = pendingBlobRegistryRef.current;
+    const uploadPhase = { current: "upload" as "upload" | "insert" };
+
+    try {
+      const inserted = await withUploadProgress(
+        async () => {
+          const blob = await compressImageForChat(file);
+          const path = makeChatImageStoragePath(chatId, blob, file);
+          const { error: upErr } = await supabase.storage
+            .from("chat-media")
+            .upload(path, blob, {
+              contentType: blob.type || "image/jpeg",
+              upsert: false,
+            });
+          if (upErr) {
+            throw new Error("upload");
+          }
+          const { data: pub } = supabase.storage
+            .from("chat-media")
+            .getPublicUrl(path);
+          const publicUrl = pub.publicUrl;
+          uploadPhase.current = "insert";
+          const { data: ins, error: insErr } = await supabase
+            .from("messages")
+            .insert({
+              chat_id: chatId,
+              sender_id: me,
+              text: "",
+              type: "image",
+              image_url: publicUrl,
+            })
+            .select()
+            .single();
+          if (insErr) {
+            throw new Error("insert");
+          }
+          if (!ins) {
+            throw new Error("insert");
+          }
+          return ins;
+        },
+        (p) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, imageUploadProgress: p }
+                : m,
+            ),
+          );
+        },
+      );
+      if (inserted) {
+        registry.clearTimer(tempId);
+        registry.remove(objectUrl);
+        pendingImageFilesRef.current.delete(tempId);
+        const row = normalizeMessage(
+          inserted as Record<string, unknown>,
+        );
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((m) => m.id !== tempId);
+          return mergeIncomingInsert(withoutTemp, row);
+        });
+        await refreshChats({ silent: true });
+      }
+    } catch (error) {
+      console.error("chat room send image failed", error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                pendingUpload: false,
+                imageUploadFailed: true,
+                imageUploadProgress: undefined,
+              }
+            : m,
+        ),
+      );
+      setToast({
+        type: "error",
+        message:
+          uploadPhase.current === "insert"
+            ? "Ошибка отправки"
+            : "Ошибка загрузки",
+      });
+      registry.clearTimer(tempId);
+      registry.scheduleFailedBlobExpiry(tempId, objectUrl, () => {
+        pendingImageFilesRef.current.delete(tempId);
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      });
+    } finally {
+      uploadInFlightRef.current = false;
+      setSending(false);
+    }
+  }
+
+  async function retryImageUpload(messageId: string) {
+    if (!me || !chatId || !isUuid(chatId)) return;
+    if (uploadInFlightRef.current) return;
+    const file = pendingImageFilesRef.current.get(messageId);
+    if (!file) {
+      setToast({ type: "error", message: "Файл недоступен. Выберите снова." });
+      return;
+    }
+    const row = messagesRef.current.find((m) => m.id === messageId);
+    const previewObjectUrl = row?.image_url ?? "";
+    if (!row || !previewObjectUrl) return;
+
+    setImageRetryingId(messageId);
+    uploadInFlightRef.current = true;
+    setSending(true);
+    const registry = pendingBlobRegistryRef.current;
+    registry.clearTimer(messageId);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              pendingUpload: true,
+              imageUploadFailed: false,
+              imageUploadProgress: 0,
+            }
+          : m,
+      ),
+    );
+
+    const uploadPhase = { current: "upload" as "upload" | "insert" };
+
+    try {
+      const inserted = await withUploadProgress(
+        async () => {
+          const blob = await compressImageForChat(file);
+          const path = makeChatImageStoragePath(chatId, blob, file);
+          const { error: upErr } = await supabase.storage
+            .from("chat-media")
+            .upload(path, blob, {
+              contentType: blob.type || "image/jpeg",
+              upsert: false,
+            });
+          if (upErr) {
+            throw new Error("upload");
+          }
+          const { data: pub } = supabase.storage
+            .from("chat-media")
+            .getPublicUrl(path);
+          const publicUrl = pub.publicUrl;
+          uploadPhase.current = "insert";
+          const { data: ins, error: insErr } = await supabase
+            .from("messages")
+            .insert({
+              chat_id: chatId,
+              sender_id: me,
+              text: "",
+              type: "image",
+              image_url: publicUrl,
+            })
+            .select()
+            .single();
+          if (insErr) {
+            throw new Error("insert");
+          }
+          if (!ins) {
+            throw new Error("insert");
+          }
+          return ins;
+        },
+        (p) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, imageUploadProgress: p }
+                : m,
+            ),
+          );
+        },
+      );
+      if (inserted) {
+        registry.clearTimer(messageId);
+        if (previewObjectUrl.startsWith("blob:")) {
+          registry.remove(previewObjectUrl);
+        }
+        pendingImageFilesRef.current.delete(messageId);
+        const n = normalizeMessage(
+          inserted as Record<string, unknown>,
+        );
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((m) => m.id !== messageId);
+          return mergeIncomingInsert(withoutTemp, n);
+        });
+        await refreshChats({ silent: true });
+      }
+    } catch (error) {
+      console.error("chat image retry failed", error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                pendingUpload: false,
+                imageUploadFailed: true,
+                imageUploadProgress: undefined,
+              }
+            : m,
+        ),
+      );
+      setToast({
+        type: "error",
+        message:
+          uploadPhase.current === "insert"
+            ? "Ошибка отправки"
+            : "Ошибка загрузки",
+      });
+      if (previewObjectUrl.startsWith("blob:")) {
+        registry.clearTimer(messageId);
+        registry.scheduleFailedBlobExpiry(messageId, previewObjectUrl, () => {
+          pendingImageFilesRef.current.delete(messageId);
+          setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        });
+      }
+    } finally {
+      setImageRetryingId(null);
+      uploadInFlightRef.current = false;
       setSending(false);
     }
   }
@@ -1384,7 +1718,45 @@ export default function ChatRoomPage() {
         </div>
       ) : null}
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        className={`relative flex min-h-0 flex-1 flex-col transition-shadow duration-150 ${
+          isChatDragOver
+            ? "ring-2 ring-inset ring-accent/45 bg-accent/[0.04]"
+            : ""
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setIsChatDragOver(true);
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setIsChatDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) {
+            setIsChatDragOver(false);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsChatDragOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) {
+            void sendImageFile(f);
+          }
+        }}
+      >
+        {isChatDragOver ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/30"
+            aria-hidden
+          >
+            <p className="rounded-2xl bg-elevated/90 px-5 py-3 text-sm font-medium text-fg shadow-soft backdrop-blur-sm">
+              Отпустите, чтобы отправить
+            </p>
+          </div>
+        ) : null}
         <div
           ref={listRef}
           onScroll={updateListScrollUi}
@@ -1392,6 +1764,7 @@ export default function ChatRoomPage() {
         >
         {messages.map((m) => {
           const mine = m.sender_id === me;
+          const isImage = m.type === "image" && Boolean(m.image_url);
           return (
             <div
               key={m.id}
@@ -1404,13 +1777,37 @@ export default function ChatRoomPage() {
                 className={`flex min-w-0 max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
               >
                 <div
-                  className={`w-full min-w-0 max-w-full rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui break-words [overflow-wrap:anywhere] ${
+                  className={`w-full min-w-0 max-w-full rounded-[2rem] text-[15px] transition-colors duration-ui ${
+                    isImage
+                      ? "max-w-[280px] overflow-hidden p-0"
+                      : "px-4 py-2.5 break-words leading-relaxed [overflow-wrap:anywhere]"
+                  } ${
                     mine
                       ? "bg-accent text-white shadow-soft"
                       : "border border-line bg-elevated text-fg shadow-soft"
                   }`}
                 >
-                  {buildMessagePreview(m)}
+                  {m.deleted ? (
+                    <p className="px-4 py-2.5 text-[15px] leading-relaxed text-fg/70 italic">
+                      Сообщение удалено
+                    </p>
+                  ) : isImage && m.image_url ? (
+                    <ChatMessageImageBubble
+                      message={m}
+                      isRetrying={imageRetryingId === m.id}
+                      canRetryFile={m.id.startsWith("temp-")}
+                      onOpen={() => setLightboxUrl(m.image_url!)}
+                      onRetry={() => {
+                        if (m.id.startsWith("temp-")) {
+                          void retryImageUpload(m.id);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="text-[15px] leading-relaxed [overflow-wrap:anywhere] break-words">
+                      {buildMessagePreview(m)}
+                    </span>
+                  )}
                 </div>
                 <MessageReactions
                   messageId={m.id}
@@ -1467,6 +1864,29 @@ export default function ChatRoomPage() {
 
         <div className="flex gap-2">
           <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void sendImageFile(f);
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Прикрепить фото"
+            disabled={sending}
+            onClick={() => fileInputRef.current?.click()}
+            className="pressable flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-full border border-line bg-main text-lg transition-colors duration-ui disabled:opacity-50"
+          >
+            <span className="select-none" aria-hidden>
+              🖼
+            </span>
+          </button>
+          <input
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -1492,6 +1912,21 @@ export default function ChatRoomPage() {
           </button>
         </div>
       </div>
+
+      {toast ? (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      ) : null}
+
+      {lightboxUrl ? (
+        <ChatImageLightbox
+          url={lightboxUrl}
+          onClose={() => setLightboxUrl(null)}
+        />
+      ) : null}
     </main>
   );
 }
