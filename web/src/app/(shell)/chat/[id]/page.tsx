@@ -181,7 +181,7 @@ const tickSvg = "block shrink-0 [shape-rendering:geometricPrecision]";
 function ReceiptTickSingle({ className }: { className?: string }) {
   return (
     <svg
-      className={`${tickSvg} h-[5px] w-[9px] ${className ?? ""}`}
+      className={`${tickSvg} h-3 w-[15px] ${className ?? ""}`}
       viewBox="0 0 8 6"
       fill="none"
       aria-hidden
@@ -191,7 +191,7 @@ function ReceiptTickSingle({ className }: { className?: string }) {
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="1.05"
+        strokeWidth="1.45"
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -202,7 +202,7 @@ function ReceiptTickSingle({ className }: { className?: string }) {
 function ReceiptTickDouble({ className }: { className?: string }) {
   return (
     <svg
-      className={`${tickSvg} h-[5px] w-[14px] ${className ?? ""}`}
+      className={`${tickSvg} h-3 w-6 ${className ?? ""}`}
       viewBox="0 0 14 6"
       fill="none"
       aria-hidden
@@ -212,7 +212,7 @@ function ReceiptTickDouble({ className }: { className?: string }) {
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="1.05"
+        strokeWidth="1.45"
         vectorEffect="non-scaling-stroke"
       />
       <path
@@ -220,7 +220,7 @@ function ReceiptTickDouble({ className }: { className?: string }) {
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="1.05"
+        strokeWidth="1.45"
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -299,6 +299,8 @@ export default function ChatRoomPage() {
   const typingHideTimerRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef(0);
   const peerOfflineTimerRef = useRef<number | null>(null);
+  /** Скролл вниз (auto) один раз при открытии чата, после загрузки сообщений. */
+  const initialScrollForChatIdRef = useRef<string | null>(null);
 
   messagesRef.current = messages;
 
@@ -322,6 +324,7 @@ export default function ChatRoomPage() {
       }
     }
     lastTypingSentAtRef.current = 0;
+    initialScrollForChatIdRef.current = null;
   }, [chatId]);
 
   const markIncomingDelivered = useCallback(
@@ -399,19 +402,24 @@ export default function ChatRoomPage() {
     return currentChat.other_name?.trim() || "Чат";
   }, [currentChat]);
 
-  const headerSubtitle = useMemo(() => {
-    if (roomStatus === "reconnecting") return "Переподключение…";
-    if (roomStatus === "connecting") return "Подключение…";
-    if (roomStatus === "error") return "Ошибка соединения";
-    if (peerTyping) return "печатает…";
-    if (currentChat?.is_group) return "";
+  /** Подстрока под названием: соединение / печатает (синий) / last seen — без «онлайн» (оно у заголовка). */
+  const headerSecondaryLine = useMemo(() => {
+    if (roomStatus === "reconnecting")
+      return { kind: "muted" as const, text: "Переподключение…" };
+    if (roomStatus === "connecting")
+      return { kind: "muted" as const, text: "Подключение…" };
+    if (roomStatus === "error")
+      return { kind: "muted" as const, text: "Ошибка соединения" };
+    if (peerTyping) return { kind: "typing" as const, text: "печатает…" };
+    if (currentChat?.is_group) return { kind: "empty" as const, text: "" };
     const peerId = currentChat?.other_user_id;
-    if (peerId && peerOnline) return "онлайн";
-    if (peerId && peerLastSeenAt) {
+    if (peerId && !peerOnline && peerLastSeenAt) {
       const t = formatLastSeen(peerLastSeenAt);
-      return t ? `был(а) в ${t}` : "";
+      return t
+        ? { kind: "muted" as const, text: `был(а) в ${t}` }
+        : { kind: "empty" as const, text: "" };
     }
-    return "";
+    return { kind: "empty" as const, text: "" };
   }, [
     roomStatus,
     peerTyping,
@@ -420,6 +428,15 @@ export default function ChatRoomPage() {
     peerOnline,
     peerLastSeenAt,
   ]);
+
+  const showPeerOnlinePill =
+    roomStatus === "connected" &&
+    Boolean(
+      currentChat &&
+        !currentChat.is_group &&
+        currentChat.other_user_id &&
+        peerOnline,
+    );
 
   const sendTypingSafe = useCallback(() => {
     if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
@@ -458,6 +475,19 @@ export default function ChatRoomPage() {
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     bottomRef.current?.scrollIntoView({ behavior });
   }, []);
+
+  useEffect(() => {
+    if (!chatId || !messages.length) return;
+    if (!messages.every((m) => m.chat_id === chatId)) return;
+    if (initialScrollForChatIdRef.current === chatId) return;
+    initialScrollForChatIdRef.current = chatId;
+    stickBottomRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      });
+    });
+  }, [chatId, messages, scrollToBottom]);
 
   const loadMessages = useCallback(async () => {
     if (!chatId || !isUuid(chatId)) return;
@@ -989,32 +1019,43 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <main className="flex min-h-[calc(100dvh-64px)] flex-col bg-main">
-      <header className="flex shrink-0 items-center gap-3 border-b border-line bg-elevated/90 px-3 py-3 backdrop-blur-md safe-pt">
+    <main className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col overflow-hidden bg-main">
+      <header className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-line bg-elevated/95 px-3 py-3 backdrop-blur-md safe-pt">
         <button
           type="button"
           onClick={() => router.back()}
-          className="pressable min-h-[44px] min-w-[44px] rounded-full px-2 text-sm font-medium text-accent"
+          className="pressable z-10 min-h-[44px] min-w-[44px] rounded-full px-2 text-sm font-medium text-accent"
         >
           ←
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold text-fg">{roomTitle}</div>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <h1 className="truncate text-base font-semibold leading-tight text-fg">
+              {roomTitle}
+            </h1>
+            {showPeerOnlinePill ? (
+              <span className="shrink-0 text-xs font-medium text-green-500">
+                онлайн
+              </span>
+            ) : null}
+          </div>
           <div
-            className={`mt-0.5 min-h-[14px] transition-opacity duration-150 ${
-              peerTyping
-                ? "text-sm font-medium text-violet-600 dark:text-violet-400"
-                : "text-[11px] text-muted"
+            className={`mt-0.5 min-h-[16px] transition-opacity duration-150 ${
+              headerSecondaryLine.kind === "typing"
+                ? "text-sm font-medium leading-snug text-blue-500 dark:text-blue-400"
+                : headerSecondaryLine.kind === "muted"
+                  ? "text-[11px] text-muted"
+                  : ""
             }`}
           >
-            {headerSubtitle}
+            {headerSecondaryLine.text}
           </div>
         </div>
       </header>
 
       {loadErr ? (
-        <div className="p-4">
+        <div className="shrink-0 p-4">
           <ErrorUi text={loadErr} />
         </div>
       ) : null}
@@ -1028,7 +1069,7 @@ export default function ChatRoomPage() {
             el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           stickBottomRef.current = nearBottom;
         }}
-        className="min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 scroll-smooth"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 scroll-smooth"
       >
         {messages.map((m) => {
           const mine = m.sender_id === me;
@@ -1051,7 +1092,7 @@ export default function ChatRoomPage() {
                   {buildMessagePreview(m)}
                 </div>
                 {mine ? (
-                  <div className="flex min-h-[10px] items-center justify-end pr-0.5 pt-px">
+                  <div className="flex min-h-4 items-center justify-end pr-0.5 pt-0.5">
                     <MessageStatusTicks
                       mine
                       delivered_at={m.delivered_at}
@@ -1076,12 +1117,6 @@ export default function ChatRoomPage() {
       <div className="shrink-0 border-t border-line bg-elevated p-3 safe-pb">
         {sendErr ? (
           <p className="mb-2 text-sm font-medium text-danger">{sendErr}</p>
-        ) : null}
-
-        {peerTyping ? (
-          <p className="mb-2 text-center text-sm font-medium text-violet-600 transition-opacity duration-150 dark:text-violet-400">
-            печатает…
-          </p>
         ) : null}
 
         <div className="flex gap-2">
