@@ -1001,7 +1001,13 @@ export default function ChatRoomPage() {
 
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold text-fg">{roomTitle}</div>
-          <div className="mt-0.5 min-h-[14px] text-[11px] text-muted transition-opacity duration-150">
+          <div
+            className={`mt-0.5 min-h-[14px] transition-opacity duration-150 ${
+              peerTyping
+                ? "text-sm font-medium text-violet-600 dark:text-violet-400"
+                : "text-[11px] text-muted"
+            }`}
+          >
             {headerSubtitle}
           </div>
         </div>
@@ -1022,7 +1028,7 @@ export default function ChatRoomPage() {
             el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           stickBottomRef.current = nearBottom;
         }}
-        className="flex-1 space-y-3 overflow-y-auto px-4 py-4 scroll-smooth"
+        className="min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 scroll-smooth"
       >
         {messages.map((m) => {
           const mine = m.sender_id === me;
@@ -1030,13 +1036,13 @@ export default function ChatRoomPage() {
             <div
               key={m.id}
               data-message-id={m.id}
-              className={`flex ${mine ? "justify-end" : "justify-start"}`}
+              className={`flex min-w-0 w-full ${mine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`flex max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
+                className={`flex min-w-0 max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
               >
                 <div
-                  className={`w-full rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui ${
+                  className={`w-full min-w-0 max-w-full rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui break-words [overflow-wrap:anywhere] ${
                     mine
                       ? "bg-accent text-white shadow-soft"
                       : "border border-line bg-elevated text-fg shadow-soft"
@@ -1073,7 +1079,7 @@ export default function ChatRoomPage() {
         ) : null}
 
         {peerTyping ? (
-          <p className="mb-2 text-center text-[11px] text-muted transition-opacity duration-150">
+          <p className="mb-2 text-center text-sm font-medium text-violet-600 transition-opacity duration-150 dark:text-violet-400">
             печатает…
           </p>
         ) : null}
