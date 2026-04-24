@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { getMyListings } from "@/lib/listings";
+import { deleteAccount } from "@/lib/deleteAccount";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import Link from "next/link";
@@ -201,14 +202,13 @@ export default function ProfilePage() {
     setDeleteErr(null);
     setDeleting(true);
     try {
-      const { error } = await supabase.rpc('delete_my_account');
-      if (error) {
-        console.error("delete_my_account error", error);
-        setDeleteErr(error.message ?? "Не удалось удалить аккаунт");
+      const res = await deleteAccount();
+      if (!res.ok) {
+        if (res.error) setDeleteErr(res.error);
+        else setDeleteErr("Не удалось удалить аккаунт");
         return;
       }
-      await supabase.auth.signOut();
-      router.push('/login');
+      router.push("/login");
     } catch (e) {
       console.error("onConfirmDelete error", e);
       setDeleteErr("Неожиданная ошибка при удалении аккаунта");
@@ -428,9 +428,12 @@ export default function ProfilePage() {
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
         ) : (
           <div className="space-y-3">
-            {(myListings || []).map((listing) => {
-              const safeListing = listing ?? null;
-              if (!safeListing || !safeListing.id) return null;
+            {(myListings || [])
+              .filter(
+                (listing) =>
+                  listing && typeof listing === "object" && Boolean(listing.id),
+              )
+              .map((safeListing) => {
               const isOwner = safeListing.user_id === session?.user?.id;
               return (
                 <div key={safeListing.id} className="rounded-card border border-line/40 transition-all duration-200 hover:border-line hover:shadow-soft">

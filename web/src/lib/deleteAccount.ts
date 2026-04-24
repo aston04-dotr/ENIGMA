@@ -30,6 +30,13 @@ export function consumeAccessDeniedMessage(): boolean {
  * Удаление аккаунта через RPC функцию public.delete_my_account().
  */
 export async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    console.warn("no user, skip rpc delete_my_account");
+    return { ok: false, error: "Нет сессии" };
+  }
   const { error: rpcError } = await supabase.rpc("delete_my_account");
   if (rpcError) {
     console.error("delete_my_account RPC error", rpcError);

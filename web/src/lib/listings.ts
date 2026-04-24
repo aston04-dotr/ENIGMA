@@ -626,6 +626,15 @@ async function mergeFavoriteCounts(listings: ListingRow[]): Promise<ListingRow[]
 
 /** true, если RPC выполнился без ошибки (можно локально +1 к счётчику). */
 export async function incrementViews(listingId: string): Promise<boolean> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("no user, skip rpc increment_listing_views");
+    }
+    return false;
+  }
   const { error } = await supabase.rpc("increment_listing_views", { listing: listingId });
   if (error && !isSchemaNotInCache(error)) {
     console.warn("increment_listing_views", error.message);

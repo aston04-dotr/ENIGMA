@@ -19,17 +19,21 @@ function formatUnreadBadge(count: number): string {
 }
 
 export function BottomNav() {
-  const { session, loading } = useAuth();
+  const { session, loading, user } = useAuth();
   const { totalUnread } = useChatUnread();
   const pathname = usePathname();
 
-  if (loading) return null;
-  if (!session?.user) return null;
+  const authed = Boolean(user);
+  const dimmed = loading || !authed;
 
   return (
     <nav
-      className="fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full -translate-x-1/2 items-stretch justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb view-mode-nav"
+      className={
+        "fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full -translate-x-1/2 items-stretch justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb view-mode-nav transition-opacity duration-200 " +
+        (dimmed ? "opacity-75" : "opacity-100")
+      }
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 10px)" }}
+      aria-busy={loading}
     >
       {tabs.map((t) => {
         const active =

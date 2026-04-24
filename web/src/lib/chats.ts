@@ -66,6 +66,12 @@ export async function getOrCreateChat(
       };
     }
 
+    const { data: authSnap } = await supabase.auth.getSession();
+    if (!authSnap?.session?.user) {
+      console.warn("no user, skip rpc get_or_create_direct_chat");
+      return { ok: false, error: "Не авторизован" };
+    }
+
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
       p_buyer: userId,
       p_seller: normalizedSellerId,

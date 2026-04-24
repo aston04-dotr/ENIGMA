@@ -39,6 +39,15 @@ export async function decreaseTrust(userId: string, amount: number): Promise<{ e
 
 /** +5 доверия не чаще раза в сутки (миграция 019). Ошибки игнорируются, если RPC ещё не развёрнут. */
 export async function tryDailyTrustRecovery(): Promise<void> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("no user, skip rpc try_daily_trust_recovery");
+    }
+    return;
+  }
   const { error } = await supabase.rpc("try_daily_trust_recovery");
   if (error && process.env.NODE_ENV === "development") {
     console.warn("try_daily_trust_recovery", error.message);
@@ -50,6 +59,15 @@ export async function reportListingTrustPenalty(
   listingId: string,
   reason: string
 ): Promise<{ error: string | null }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("no user, skip rpc report_listing_trust_penalty");
+    }
+    return { error: "Нет сессии" };
+  }
   const { error } = await (supabase.rpc as unknown as (
     fn: string,
     args?: Record<string, unknown>
