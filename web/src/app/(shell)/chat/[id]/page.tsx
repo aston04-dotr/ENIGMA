@@ -175,23 +175,24 @@ function buildMessagePreview(m: MessageRow): string {
   return m.text || "";
 }
 
+const tickSvg = "block shrink-0 [shape-rendering:geometricPrecision]";
+
 /** Одна галочка — отправлено (ещё не доставлено собеседнику). */
 function ReceiptTickSingle({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 20 12"
-      width="18"
-      height="11"
-      className={className}
+      className={`${tickSvg} h-[5px] w-[9px] ${className ?? ""}`}
+      viewBox="0 0 8 6"
+      fill="none"
       aria-hidden
     >
       <path
-        d="M2 6.5l4.5 4.5L18 1.5"
-        fill="none"
+        d="M 0.65 3.15 L 2.35 4.55 L 5.75 0.5"
         stroke="currentColor"
-        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.05"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );
@@ -201,27 +202,26 @@ function ReceiptTickSingle({ className }: { className?: string }) {
 function ReceiptTickDouble({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 26 12"
-      width="24"
-      height="11"
-      className={className}
+      className={`${tickSvg} h-[5px] w-[14px] ${className ?? ""}`}
+      viewBox="0 0 14 6"
+      fill="none"
       aria-hidden
     >
       <path
-        d="M2 6.5l4.5 4.5L11 1.5"
-        fill="none"
+        d="M 0.6 3.15 L 2.25 4.55 L 5.7 0.5"
         stroke="currentColor"
-        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.05"
+        vectorEffect="non-scaling-stroke"
       />
       <path
-        d="M9 6.5l4.5 4.5L24 1.5"
-        fill="none"
+        d="M 3.35 3.15 L 5 4.55 L 8.55 0.5"
         stroke="currentColor"
-        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.05"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );
@@ -241,14 +241,14 @@ function MessageStatusTicks({
   const tier = read_at ? 2 : delivered_at ? 1 : 0;
   const strokeClass =
     tier === 2
-      ? "text-violet-500 transition-colors duration-200 ease-out dark:text-violet-400"
-      : "text-fg/45 transition-colors duration-200 ease-out dark:text-fg/40";
+      ? "text-violet-600 transition-colors duration-200 ease-out dark:text-violet-400"
+      : "text-fg/33 transition-colors duration-200 ease-out dark:text-fg/35";
 
   const icon =
     tier >= 1 ? (
-      <ReceiptTickDouble className={`shrink-0 ${strokeClass}`} />
+      <ReceiptTickDouble className={strokeClass} />
     ) : (
-      <ReceiptTickSingle className={`shrink-0 ${strokeClass}`} />
+      <ReceiptTickSingle className={strokeClass} />
     );
 
   return (
@@ -1045,7 +1045,7 @@ export default function ChatRoomPage() {
                   {buildMessagePreview(m)}
                 </div>
                 {mine ? (
-                  <div className="flex min-h-[13px] items-center justify-end pr-1 pt-0.5">
+                  <div className="flex min-h-[10px] items-center justify-end pr-0.5 pt-px">
                     <MessageStatusTicks
                       mine
                       delivered_at={m.delivered_at}
