@@ -44,6 +44,43 @@ function normalizeMessage(raw: Record<string, unknown>): MessageRow {
   };
 }
 
+/** Realtime UPDATE часто присылает только изменённые поля — не затираем остальное через normalizeMessage. */
+function patchMessageFromRealtime(
+  prev: MessageRow,
+  raw: Record<string, unknown>,
+): MessageRow {
+  const next: MessageRow = { ...prev };
+  if ("text" in raw) next.text = String(raw.text ?? "");
+  if ("delivered_at" in raw) {
+    next.delivered_at = raw.delivered_at ? String(raw.delivered_at) : null;
+  }
+  if ("read_at" in raw) {
+    next.read_at = raw.read_at ? String(raw.read_at) : null;
+  }
+  if ("edited_at" in raw) {
+    next.edited_at = raw.edited_at ? String(raw.edited_at) : null;
+  }
+  if ("deleted" in raw) next.deleted = Boolean(raw.deleted);
+  if ("status" in raw) next.status = raw.status ? String(raw.status) : null;
+  if ("image_url" in raw) {
+    next.image_url = raw.image_url ? String(raw.image_url) : null;
+  }
+  if ("voice_url" in raw) {
+    next.voice_url = raw.voice_url ? String(raw.voice_url) : null;
+  }
+  if ("sender_id" in raw) next.sender_id = String(raw.sender_id ?? "");
+  if ("chat_id" in raw) next.chat_id = String(raw.chat_id ?? "");
+  if ("created_at" in raw) {
+    next.created_at = String(raw.created_at ?? new Date().toISOString());
+  }
+  if (Array.isArray(raw.hidden_for_user_ids)) {
+    next.hidden_for_user_ids = raw.hidden_for_user_ids.map((item) =>
+      String(item),
+    );
+  }
+  return next;
+}
+
 function sortMessages(messages: MessageRow[]): MessageRow[] {
   return [...messages].sort((a, b) => {
     const ta = new Date(a.created_at).getTime();
@@ -86,6 +123,58 @@ function buildMessagePreview(m: MessageRow): string {
   return m.text || "";
 }
 
+/** Одна галочка — отправлено (ещё не доставлено собеседнику). */
+function ReceiptTickSingle({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 12"
+      width="18"
+      height="11"
+      className={className}
+      aria-hidden
+    >
+      <path
+        d="M2 6.5l4.5 4.5L18 1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Две галочки — доставлено или прочитано (как в WhatsApp, со сдвигом). */
+function ReceiptTickDouble({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 26 12"
+      width="24"
+      height="11"
+      className={className}
+      aria-hidden
+    >
+      <path
+        d="M2 6.5l4.5 4.5L11 1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 6.5l4.5 4.5L24 1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function MessageStatusTicks({
   mine,
   delivered_at,
@@ -96,33 +185,18 @@ function MessageStatusTicks({
   read_at?: string | null;
 }) {
   if (!mine) return null;
-  const hasRead = Boolean(read_at);
-  const hasDel = Boolean(delivered_at);
-  if (!hasDel) {
+  // WhatsApp: прочитано → фиолетовые ✓✓; доставлено → серые ✓✓; иначе одна ✓
+  if (read_at) {
     return (
-      <span className="text-[13px] leading-none text-white/75" aria-hidden>
-        ✓
-      </span>
+      <ReceiptTickDouble className="shrink-0 text-violet-500 dark:text-violet-400" />
     );
   }
-  if (!hasRead) {
+  if (delivered_at) {
     return (
-      <span
-        className="text-[13px] leading-none tracking-[-0.15em] text-white/65"
-        aria-hidden
-      >
-        ✓✓
-      </span>
+      <ReceiptTickDouble className="shrink-0 text-fg/45 dark:text-fg/40" />
     );
   }
-  return (
-    <span
-      className="text-[13px] leading-none tracking-[-0.15em] text-violet-200"
-      aria-hidden
-    >
-      ✓✓
-    </span>
-  );
+  return <ReceiptTickSingle className="shrink-0 text-fg/45 dark:text-fg/40" />;
 }
 
 export default function ChatRoomPage() {
@@ -158,15 +232,24 @@ export default function ChatRoomPage() {
   messagesRef.current = messages;
 
   const markIncomingDelivered = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, senderIdHint?: string) => {
       if (!me || !isUuid(messageId)) return;
+      if (senderIdHint !== undefined && senderIdHint === me) return;
+      const row = messagesRef.current.find((m) => m.id === messageId);
+      if (row && row.sender_id === me) return;
+
       const nowIso = new Date().toISOString();
       const { error } = await supabase
         .from("messages")
         .update({ delivered_at: nowIso })
         .eq("id", messageId)
         .is("delivered_at", null);
-      if (error) return;
+
+      if (error) {
+        console.error("messages delivered_at (single)", error);
+        return;
+      }
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId ? { ...m, delivered_at: nowIso } : m,
@@ -178,21 +261,28 @@ export default function ChatRoomPage() {
 
   const markIncomingDeliveredBatch = useCallback(async () => {
     if (!me || !chatId || !isUuid(chatId)) return;
+
     const nowIso = new Date().toISOString();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("messages")
       .update({ delivered_at: nowIso })
       .eq("chat_id", chatId)
       .neq("sender_id", me)
-      .is("delivered_at", null)
-      .select("id");
-    if (error || !data?.length) return;
-    const ids = new Set(
-      data.map((r: { id: string }) => String(r.id)),
-    );
+      .is("delivered_at", null);
+
+    if (error) {
+      console.error("messages delivered_at (batch)", error);
+      return;
+    }
+
     setMessages((prev) =>
       prev.map((m) =>
-        ids.has(m.id) ? { ...m, delivered_at: nowIso } : m,
+        m.chat_id === chatId &&
+        m.sender_id !== me &&
+        !m.delivered_at &&
+        isUuid(m.id)
+          ? { ...m, delivered_at: nowIso }
+          : m,
       ),
     );
   }, [chatId, me]);
@@ -329,6 +419,12 @@ export default function ChatRoomPage() {
     });
   }, [chatId, loadMessages]);
 
+  /** Повторный batch, если сессия появилась после первой загрузки или UPDATE не вернул строки в select. */
+  useEffect(() => {
+    if (!me || !isUuid(chatId)) return;
+    void markIncomingDeliveredBatch();
+  }, [me, chatId, markIncomingDeliveredBatch]);
+
   useEffect(() => {
     if (!chatId || !isUuid(chatId)) return;
     setActiveChatId(chatId);
@@ -409,13 +505,17 @@ export default function ChatRoomPage() {
               requestAnimationFrame(() => scrollToBottom("smooth"));
             }
 
-            if (
-              newMessage.sender_id !== me &&
-              typeof document !== "undefined" &&
-              document.visibilityState === "visible"
-            ) {
-              void markIncomingDelivered(newMessage.id);
-              void markVisibleRoomRead(newMessage.id);
+            if (me && newMessage.sender_id !== me) {
+              void markIncomingDelivered(
+                newMessage.id,
+                newMessage.sender_id,
+              );
+              if (
+                typeof document !== "undefined" &&
+                document.visibilityState === "visible"
+              ) {
+                void markVisibleRoomRead(newMessage.id);
+              }
             }
           },
         )
@@ -428,12 +528,14 @@ export default function ChatRoomPage() {
             filter: `chat_id=eq.${chatId}`,
           },
           (payload) => {
+            // payload.new может быть частичным (только delivered_at / read_at). Не использовать normalizeMessage.
             const row = payload.new as Record<string, unknown>;
             const id = String(row.id ?? "");
             if (!id) return;
-            const patch = normalizeMessage(row);
             setMessages((prev) =>
-              prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+              prev.map((m) =>
+                m.id === id ? patchMessageFromRealtime(m, row) : m,
+              ),
             );
           },
         );
@@ -695,15 +797,19 @@ export default function ChatRoomPage() {
               className={`flex ${mine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`flex max-w-[min(85%,20rem)] flex-col gap-1 rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui ${
-                  mine
-                    ? "bg-accent text-white shadow-soft"
-                    : "border border-line bg-elevated text-fg shadow-soft"
-                }`}
+                className={`flex max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
               >
-                <span>{buildMessagePreview(m)}</span>
+                <div
+                  className={`w-full rounded-[2rem] px-4 py-2.5 text-[15px] leading-relaxed transition-colors duration-ui ${
+                    mine
+                      ? "bg-accent text-white shadow-soft"
+                      : "border border-line bg-elevated text-fg shadow-soft"
+                  }`}
+                >
+                  {buildMessagePreview(m)}
+                </div>
                 {mine ? (
-                  <div className="flex min-h-[14px] items-end justify-end">
+                  <div className="flex min-h-[13px] items-center justify-end pr-1 pt-0.5">
                     <MessageStatusTicks
                       mine
                       delivered_at={m.delivered_at}
