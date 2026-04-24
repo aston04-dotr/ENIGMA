@@ -186,26 +186,57 @@ export type Database = {
         Relationships: []
       }
       messages: {
+        /** Соответствует public.messages (без устаревшего recipient_id). */
         Row: {
-          chat_id: string | null
-          created_at: string | null
           id: string
-          sender_id: string | null
-          text: string | null
+          chat_id: string
+          sender_id: string
+          text: string
+          type: string
+          created_at: string
+          image_url: string | null
+          voice_url: string | null
+          reply_to: string | null
+          edited_at: string | null
+          deleted: boolean
+          hidden_for_user_ids: string[]
+          status: string
+          delivered_at: string | null
+          read_at: string | null
         }
         Insert: {
-          chat_id?: string | null
-          created_at?: string | null
           id?: string
-          sender_id?: string | null
-          text?: string | null
+          chat_id: string
+          sender_id: string
+          text?: string
+          type?: string
+          created_at?: string
+          image_url?: string | null
+          voice_url?: string | null
+          reply_to?: string | null
+          edited_at?: string | null
+          deleted?: boolean
+          hidden_for_user_ids?: string[]
+          status?: string
+          delivered_at?: string | null
+          read_at?: string | null
         }
         Update: {
-          chat_id?: string | null
-          created_at?: string | null
           id?: string
-          sender_id?: string | null
-          text?: string | null
+          chat_id?: string
+          sender_id?: string
+          text?: string
+          type?: string
+          created_at?: string
+          image_url?: string | null
+          voice_url?: string | null
+          reply_to?: string | null
+          edited_at?: string | null
+          deleted?: boolean
+          hidden_for_user_ids?: string[]
+          status?: string
+          delivered_at?: string | null
+          read_at?: string | null
         }
         Relationships: [
           {
@@ -432,6 +463,11 @@ export type Database = {
           favorite_count: number
           listing_id: string
         }[]
+      }
+      list_my_chats: { Args: { p_limit: number }; Returns: Json }
+      mark_chat_read: {
+        Args: { p_chat_id: string; p_up_to_message_id?: string }
+        Returns: undefined
       }
       report_listing_trust_penalty: {
         Args: { p_amount: number; p_user: string }

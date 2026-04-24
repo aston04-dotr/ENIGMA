@@ -83,6 +83,7 @@ export type MessageStatus = "sent" | "delivered" | "seen";
 
 export type MessageType = "text" | "image";
 
+/** Поля, совпадающие с `public.messages` (recipient_id в схеме нет). Клиент-only поля — с пометками ниже. */
 export type MessageRow = {
   id: string;
   chat_id: string;
