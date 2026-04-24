@@ -23,6 +23,7 @@ function isUuid(value: string): boolean {
   );
 }
 
+/** Только для полных строк (SELECT / Realtime INSERT). Для Realtime UPDATE — {@link patchMessageFromRealtime}. */
 function normalizeMessage(raw: Record<string, unknown>): MessageRow {
   return {
     id: String(raw.id ?? ""),
@@ -50,35 +51,70 @@ function patchMessageFromRealtime(
   raw: Record<string, unknown>,
 ): MessageRow {
   const next: MessageRow = { ...prev };
-  if ("text" in raw) next.text = String(raw.text ?? "");
+  let changed = false;
+
+  const set = <K extends keyof MessageRow>(key: K, val: MessageRow[K]) => {
+    if (prev[key] === val) return;
+    (next as MessageRow)[key] = val;
+    changed = true;
+  };
+
+  if ("text" in raw) {
+    const v = String(raw.text ?? "");
+    set("text", v);
+  }
   if ("delivered_at" in raw) {
-    next.delivered_at = raw.delivered_at ? String(raw.delivered_at) : null;
+    const v = raw.delivered_at ? String(raw.delivered_at) : null;
+    set("delivered_at", v);
   }
   if ("read_at" in raw) {
-    next.read_at = raw.read_at ? String(raw.read_at) : null;
+    const v = raw.read_at ? String(raw.read_at) : null;
+    set("read_at", v);
   }
   if ("edited_at" in raw) {
-    next.edited_at = raw.edited_at ? String(raw.edited_at) : null;
+    const v = raw.edited_at ? String(raw.edited_at) : null;
+    set("edited_at", v);
   }
-  if ("deleted" in raw) next.deleted = Boolean(raw.deleted);
-  if ("status" in raw) next.status = raw.status ? String(raw.status) : null;
+  if ("deleted" in raw) {
+    const v = Boolean(raw.deleted);
+    set("deleted", v);
+  }
+  if ("status" in raw) {
+    const v = raw.status ? String(raw.status) : null;
+    set("status", v);
+  }
   if ("image_url" in raw) {
-    next.image_url = raw.image_url ? String(raw.image_url) : null;
+    const v = raw.image_url ? String(raw.image_url) : null;
+    set("image_url", v);
   }
   if ("voice_url" in raw) {
-    next.voice_url = raw.voice_url ? String(raw.voice_url) : null;
+    const v = raw.voice_url ? String(raw.voice_url) : null;
+    set("voice_url", v);
   }
-  if ("sender_id" in raw) next.sender_id = String(raw.sender_id ?? "");
-  if ("chat_id" in raw) next.chat_id = String(raw.chat_id ?? "");
+  if ("sender_id" in raw) {
+    const v = String(raw.sender_id ?? "");
+    set("sender_id", v);
+  }
+  if ("chat_id" in raw) {
+    const v = String(raw.chat_id ?? "");
+    set("chat_id", v);
+  }
   if ("created_at" in raw) {
-    next.created_at = String(raw.created_at ?? new Date().toISOString());
+    const v = String(raw.created_at ?? new Date().toISOString());
+    set("created_at", v);
   }
   if (Array.isArray(raw.hidden_for_user_ids)) {
-    next.hidden_for_user_ids = raw.hidden_for_user_ids.map((item) =>
-      String(item),
-    );
+    const v = raw.hidden_for_user_ids.map((item) => String(item));
+    if (
+      prev.hidden_for_user_ids?.length !== v.length ||
+      prev.hidden_for_user_ids?.some((x, i) => x !== v[i])
+    ) {
+      next.hidden_for_user_ids = v;
+      changed = true;
+    }
   }
-  return next;
+
+  return changed ? next : prev;
 }
 
 function sortMessages(messages: MessageRow[]): MessageRow[] {
@@ -88,6 +124,17 @@ function sortMessages(messages: MessageRow[]): MessageRow[] {
     if (ta !== tb) return ta - tb;
     return a.id.localeCompare(b.id);
   });
+}
+
+function formatLastSeen(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return "";
+  }
 }
 
 function mergeIncomingInsert(
@@ -186,17 +233,27 @@ function MessageStatusTicks({
 }) {
   if (!mine) return null;
   // WhatsApp: прочитано → фиолетовые ✓✓; доставлено → серые ✓✓; иначе одна ✓
-  if (read_at) {
-    return (
-      <ReceiptTickDouble className="shrink-0 text-violet-500 dark:text-violet-400" />
+  const tier = read_at ? 2 : delivered_at ? 1 : 0;
+  const strokeClass =
+    tier === 2
+      ? "text-violet-500 transition-colors duration-200 ease-out dark:text-violet-400"
+      : "text-fg/45 transition-colors duration-200 ease-out dark:text-fg/40";
+
+  const icon =
+    tier >= 1 ? (
+      <ReceiptTickDouble className={`shrink-0 ${strokeClass}`} />
+    ) : (
+      <ReceiptTickSingle className={`shrink-0 ${strokeClass}`} />
     );
-  }
-  if (delivered_at) {
-    return (
-      <ReceiptTickDouble className="shrink-0 text-fg/45 dark:text-fg/40" />
-    );
-  }
-  return <ReceiptTickSingle className="shrink-0 text-fg/45 dark:text-fg/40" />;
+
+  return (
+    <span
+      key={tier}
+      className="inline-flex origin-center animate-receiptPop transition-opacity duration-150 ease-out"
+    >
+      {icon}
+    </span>
+  );
 }
 
 export default function ChatRoomPage() {
@@ -215,6 +272,9 @@ export default function ChatRoomPage() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [roomStatus, setRoomStatus] = useState<RoomStatus>("connecting");
+  const [peerTyping, setPeerTyping] = useState(false);
+  const [peerOnline, setPeerOnline] = useState(false);
+  const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -228,8 +288,29 @@ export default function ChatRoomPage() {
   const messagesRef = useRef<MessageRow[]>([]);
   const lastVisibleMessageIdRef = useRef<string | null>(null);
   const markReadDebounceRef = useRef<number | null>(null);
+  const peerUserIdRef = useRef<string | null>(null);
+  const peerWasOnlineRef = useRef(false);
+  const typingEmitTimerRef = useRef<number | null>(null);
+  const typingHideTimerRef = useRef<number | null>(null);
 
   messagesRef.current = messages;
+
+  useEffect(() => {
+    setPeerTyping(false);
+    setPeerOnline(false);
+    setPeerLastSeenAt(null);
+    peerWasOnlineRef.current = false;
+    if (typeof window !== "undefined") {
+      if (typingEmitTimerRef.current) {
+        window.clearTimeout(typingEmitTimerRef.current);
+        typingEmitTimerRef.current = null;
+      }
+      if (typingHideTimerRef.current) {
+        window.clearTimeout(typingHideTimerRef.current);
+        typingHideTimerRef.current = null;
+      }
+    }
+  }, [chatId]);
 
   const markIncomingDelivered = useCallback(
     async (messageId: string, senderIdHint?: string) => {
@@ -250,11 +331,13 @@ export default function ChatRoomPage() {
         return;
       }
 
-      setMessages((prev) =>
-        prev.map((m) =>
+      setMessages((prev) => {
+        const row = prev.find((m) => m.id === messageId);
+        if (row?.delivered_at) return prev;
+        return prev.map((m) =>
           m.id === messageId ? { ...m, delivered_at: nowIso } : m,
-        ),
-      );
+        );
+      });
     },
     [me],
   );
@@ -292,6 +375,10 @@ export default function ChatRoomPage() {
     [chatId, getChatRow],
   );
 
+  useEffect(() => {
+    peerUserIdRef.current = currentChat?.other_user_id ?? null;
+  }, [currentChat?.other_user_id]);
+
   const roomTitle = useMemo(() => {
     if (!currentChat) return "Чат";
     if (currentChat.is_group) {
@@ -299,6 +386,47 @@ export default function ChatRoomPage() {
     }
     return currentChat.other_name?.trim() || "Чат";
   }, [currentChat]);
+
+  const headerSubtitle = useMemo(() => {
+    if (roomStatus === "reconnecting") return "Переподключение…";
+    if (roomStatus === "connecting") return "Подключение…";
+    if (roomStatus === "error") return "Ошибка соединения";
+    if (peerTyping) return "печатает…";
+    if (currentChat?.is_group) return "";
+    const peerId = currentChat?.other_user_id;
+    if (peerId && peerOnline) return "онлайн";
+    if (peerId && peerLastSeenAt) {
+      const t = formatLastSeen(peerLastSeenAt);
+      return t ? `был(а) в ${t}` : "";
+    }
+    return "";
+  }, [
+    roomStatus,
+    peerTyping,
+    currentChat?.is_group,
+    currentChat?.other_user_id,
+    peerOnline,
+    peerLastSeenAt,
+  ]);
+
+  const scheduleTypingBroadcast = useCallback(() => {
+    if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
+      return;
+    }
+    if (typingEmitTimerRef.current) {
+      window.clearTimeout(typingEmitTimerRef.current);
+    }
+    typingEmitTimerRef.current = window.setTimeout(() => {
+      typingEmitTimerRef.current = null;
+      const ch = channelRef.current;
+      if (!ch) return;
+      void ch.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { chat_id: chatId, user_id: me },
+      });
+    }, 420);
+  }, [me, chatId]);
 
   const latestMessageId = useMemo(
     () => messages[messages.length - 1]?.id ?? null,
@@ -478,8 +606,50 @@ export default function ChatRoomPage() {
         channelRef.current = null;
       }
 
+      const applyPresenceFromChannel = (ch: RealtimeChannel) => {
+        const peerId = peerUserIdRef.current;
+        if (!peerId) {
+          setPeerOnline(false);
+          return;
+        }
+        const state = ch.presenceState() as Record<string, unknown[] | undefined>;
+        const slice = state[peerId];
+        const online = Array.isArray(slice) && slice.length > 0;
+        setPeerOnline(online);
+        if (online) {
+          peerWasOnlineRef.current = true;
+        } else if (peerWasOnlineRef.current) {
+          setPeerLastSeenAt(new Date().toISOString());
+          peerWasOnlineRef.current = false;
+        }
+      };
+
       const channel = supabase
-        .channel(`chat-${chatId}`)
+        .channel(`chat-${chatId}`, {
+          config: {
+            broadcast: { self: false },
+            ...(me ? { presence: { key: me } } : {}),
+          },
+        })
+        .on("broadcast", { event: "typing" }, (msg) => {
+          const payload = msg.payload as {
+            chat_id?: string;
+            user_id?: string;
+          } | null;
+          if (!payload || payload.chat_id !== chatId) return;
+          if (!payload.user_id || payload.user_id === me) return;
+          setPeerTyping(true);
+          if (typingHideTimerRef.current) {
+            window.clearTimeout(typingHideTimerRef.current);
+          }
+          typingHideTimerRef.current = window.setTimeout(() => {
+            typingHideTimerRef.current = null;
+            setPeerTyping(false);
+          }, 2600);
+        })
+        .on("presence", { event: "sync" }, () => {
+          applyPresenceFromChannel(channel);
+        })
         .on(
           "postgres_changes",
           {
@@ -542,12 +712,20 @@ export default function ChatRoomPage() {
 
       channelRef.current = channel;
 
-      channel.subscribe((status) => {
+      channel.subscribe(async (status) => {
         if (!mountedRef.current || cancelled) return;
 
         if (status === "SUBSCRIBED") {
           reconnectAttemptRef.current = 0;
           setRoomStatus("connected");
+          if (me) {
+            try {
+              await channel.track({ online_at: new Date().toISOString() });
+            } catch (err) {
+              console.error("presence track", err);
+            }
+          }
+          applyPresenceFromChannel(channel);
           void backfillAfterReconnect();
           return;
         }
@@ -579,12 +757,29 @@ export default function ChatRoomPage() {
     return () => {
       cancelled = true;
       clearReconnect();
+      if (typeof window !== "undefined") {
+        if (typingHideTimerRef.current) {
+          window.clearTimeout(typingHideTimerRef.current);
+          typingHideTimerRef.current = null;
+        }
+        if (typingEmitTimerRef.current) {
+          window.clearTimeout(typingEmitTimerRef.current);
+          typingEmitTimerRef.current = null;
+        }
+      }
       if (channelRef.current) {
         void supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, [chatId, supabase, me, markIncomingDelivered, markVisibleRoomRead]);
+  }, [
+    chatId,
+    me,
+    markIncomingDelivered,
+    markVisibleRoomRead,
+    backfillAfterReconnect,
+    scrollToBottom,
+  ]);
 
   useEffect(() => {
     if (!messages.length) return;
@@ -757,16 +952,8 @@ export default function ChatRoomPage() {
 
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold text-fg">{roomTitle}</div>
-          <div className="mt-0.5 text-[11px] text-muted">
-            {roomStatus === "connected"
-              ? "Онлайн"
-              : roomStatus === "reconnecting"
-                ? "Переподключение…"
-                : roomStatus === "connecting"
-                  ? "Подключение…"
-                  : roomStatus === "error"
-                    ? "Ошибка соединения"
-                    : ""}
+          <div className="mt-0.5 min-h-[14px] text-[11px] text-muted transition-opacity duration-150">
+            {headerSubtitle}
           </div>
         </div>
       </header>
@@ -836,12 +1023,19 @@ export default function ChatRoomPage() {
           <p className="mb-2 text-sm font-medium text-danger">{sendErr}</p>
         ) : null}
 
+        {peerTyping ? (
+          <p className="mb-2 text-center text-[11px] text-muted transition-opacity duration-150">
+            печатает…
+          </p>
+        ) : null}
+
         <div className="flex gap-2">
           <input
             value={text}
             onChange={(e) => {
               setText(e.target.value);
               if (sendErr) setSendErr(null);
+              if (e.target.value.trim()) scheduleTypingBroadcast();
             }}
             className="min-h-[48px] flex-1 rounded-full border border-line bg-main px-4 text-base text-fg placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-accent/35"
             placeholder="Сообщение…"

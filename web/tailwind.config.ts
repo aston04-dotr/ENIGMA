@@ -27,6 +27,15 @@ const config: Config = {
       transitionDuration: {
         ui: "200ms",
       },
+      keyframes: {
+        receiptPop: {
+          "0%": { opacity: "0.65", transform: "scale(0.9)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+      },
+      animation: {
+        receiptPop: "receiptPop 0.18s ease-out forwards",
+      },
     },
   },
   plugins: [],
