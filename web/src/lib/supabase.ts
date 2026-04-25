@@ -32,6 +32,13 @@ function getBrowserSupabaseClient(): SupabaseClient {
     browserClient = createBrowserClient(url, anonKey, {
       auth: {
         lock: authQueueLock,
+        /**
+         * По умолчанию createBrowserClient ставит detectSessionInUrl: true — тогда GoTrue
+         * при открытии /auth/callback?code=... уже обменивает код в _initialize(). Страница
+         * callback тогда снова вызывает exchangeCodeForSession → код одноразовый, второй
+         * обмен падает и пользователь оказывается без входа. Разбор URL только в /auth/callback.
+         */
+        detectSessionInUrl: false,
       },
     });
   }
