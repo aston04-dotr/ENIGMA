@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getAuthedSupabaseClient, supabase } from "@/lib/supabase";
+import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/auth-context";
 import type { ChatListRow } from "@/lib/types";
 
@@ -222,28 +222,29 @@ export function ChatUnreadProvider({
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        if (process.env.NODE_ENV === "development") {
-          console.log("RPC SESSION:", sessionData.session);
-        }
-        if (!sessionData?.session?.user) {
-          console.warn("no user, skip rpc list_my_chats");
+        console.log("RPC SESSION:", sessionData.session);
+        if (!sessionData?.session?.access_token) {
+          console.error(
+            "[list_my_chats] нет access_token в сессии; RPC не вызываем. user:",
+            sessionData.session?.user?.id ?? null,
+            "session:",
+            sessionData.session,
+          );
           if (!opts?.silent) setLoadingState(false);
           return;
         }
 
-        const authed = await getAuthedSupabaseClient();
-        if (!authed) {
-          console.warn("no access_token, skip rpc list_my_chats");
+        const rest = getSupabaseRestWithSession();
+        if (!rest) {
+          console.error("[list_my_chats] Supabase URL/key не настроены");
           if (!opts?.silent) setLoadingState(false);
           return;
         }
-        const res = await authed.rpc("list_my_chats", {
+        const res = await rest.rpc("list_my_chats", {
           p_limit: 100,
           p_before: null,
         });
-        if (process.env.NODE_ENV === "development") {
-          console.log("RPC RESULT:", res.data, res.error);
-        }
+        console.log("RPC RESULT:", res.data, res.error);
         if (res.error) {
           console.error("list_my_chats RPC error", {
             message: res.error.message,
@@ -315,10 +316,18 @@ export function ChatUnreadProvider({
       const active = statusRef.current.activeChatId;
       const lastSeen = new Date().toISOString();
 
-      const authed = await getAuthedSupabaseClient();
-      if (!authed) return;
+      const rest = getSupabaseRestWithSession();
+      if (!rest) return;
+      const { data: sPresence } = await supabase.auth.getSession();
+      if (!sPresence?.session?.access_token) {
+        console.error(
+          "[online_users] нет access_token, upsert пропущен. user:",
+          userId,
+        );
+        return;
+      }
 
-      const { error: upsertError } = await authed
+      const { error: upsertError } = await rest
         .from("online_users")
         .upsert(
           {
@@ -334,7 +343,7 @@ export function ChatUnreadProvider({
         console.error("online_users upsert", upsertError);
       }
 
-      const { error: touchPushError } = await authed
+      const { error: touchPushError } = await rest
         .from("push_tokens")
         .update({ last_seen_at: lastSeen })
         .eq("user_id", userId)
@@ -367,16 +376,17 @@ export function ChatUnreadProvider({
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        if (process.env.NODE_ENV === "development") {
-          console.log("mark_chat_read RPC SESSION:", sessionData.session);
-        }
-        if (!sessionData?.session?.user) {
-          console.warn("no user, skip rpc mark_chat_read");
+        console.log("mark_chat_read RPC SESSION:", sessionData.session);
+        if (!sessionData?.session?.access_token) {
+          console.error(
+            "[mark_chat_read] нет access_token, RPC не вызываем. user:",
+            sessionData.session?.user?.id ?? null,
+          );
           return;
         }
-        const authed = await getAuthedSupabaseClient();
-        if (!authed) {
-          console.warn("no access_token, skip mark_chat_read");
+        const rest = getSupabaseRestWithSession();
+        if (!rest) {
+          console.error("[mark_chat_read] Supabase URL/key не настроены");
           return;
         }
         const rpcArgs: { p_chat_id: string; p_up_to_message_id?: string } = {
@@ -386,7 +396,7 @@ export function ChatUnreadProvider({
           rpcArgs.p_up_to_message_id = upToMessageId;
         }
 
-        const res = await authed.rpc("mark_chat_read", rpcArgs);
+        const res = await rest.rpc("mark_chat_read", rpcArgs);
 
         if (res.error) {
           console.error("mark_chat_read RPC error", {
