@@ -19,7 +19,14 @@ import {
   withUploadProgress,
 } from "@/lib/chatImage";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type RoomStatus =
   | "idle"
@@ -153,13 +160,12 @@ function formatLastSeen(iso: string): string {
 const TYPING_SEND_MIN_MS = 1000;
 /** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
 const PRESENCE_OFFLINE_DELAY_MS = 3000;
-/** Ниже этой дистанции от низа — «внизу», включаем автоскролл. */
-const NEAR_BOTTOM_PX = 120;
-/** Скролл вниз: слияние быстрых вызовов. */
-const SCROLL_BOTTOM_DEBOUNCE_MS = 70;
-/** Send: auto-scroll если уже близко к низу. */
-const SEND_SCROLL_INSTANT_IF_WITHIN_PX = 80;
-const MAX_MESSAGE_ENTER_ANIM = 5;
+/** Ниже этой дистанции от низа — «внизу», автоскролл на новые сообщения. */
+const NEAR_BOTTOM_PX = 72;
+/** Дальше от низа — кнопка «к началу». */
+const FAR_FROM_BOTTOM_TOP_BTN_PX = 280;
+const NEAR_TOP_HIDE_TOP_BTN_PX = 64;
+const MAX_MESSAGE_ENTER_ANIM = 0;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -211,6 +217,24 @@ function buildMessagePreview(m: MessageRow): string {
 }
 
 const tickSvg = "block shrink-0 [shape-rendering:geometricPrecision]";
+
+function PaperclipIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? "h-5 w-5"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.5-8.5a4 4 0 0 1 5.66 5.66l-8.5 8.5a2 2 0 0 1-2.83-2.83l7.78-7.78" />
+    </svg>
+  );
+}
 
 /** Одна галочка — отправлено (ещё не доставлено собеседнику). */
 function ReceiptTickSingle({ className }: { className?: string }) {
@@ -317,6 +341,7 @@ export default function ChatRoomPage() {
     type: "success" | "error" | "info";
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const uploadInFlightRef = useRef(false);
   const pendingImageFilesRef = useRef(new Map<string, File>());
   const pendingBlobRegistryRef = useRef(new ChatPendingBlobRegistry());
@@ -326,7 +351,7 @@ export default function ChatRoomPage() {
   const [peerTyping, setPeerTyping] = useState(false);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  const [showScrollToStart, setShowScrollToStart] = useState(false);
   const [headerElevated, setHeaderElevated] = useState(false);
   const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
     () => new Set(),
@@ -354,10 +379,6 @@ export default function ChatRoomPage() {
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
-  const scrollBottomDebounceRef = useRef<number | null>(null);
-  const scrollBottomInFlightRef = useRef(false);
-  const scrollBottomPendingRef = useRef<ScrollBehavior | null>(null);
-  const lastScrollBehaviorRef = useRef<ScrollBehavior>("smooth");
 
   messagesRef.current = messages;
   const revokeAllPendingBlobs = useCallback(() => {
@@ -377,7 +398,7 @@ export default function ChatRoomPage() {
     setPeerTyping(false);
     setPeerOnline(false);
     setPeerLastSeenAt(null);
-    setAtBottom(true);
+    setShowScrollToStart(false);
     setHeaderElevated(false);
     setAppearingMessageIds(new Set());
     messageAnimHydratedChatIdRef.current = null;
@@ -399,12 +420,6 @@ export default function ChatRoomPage() {
     }
     lastTypingSentAtRef.current = 0;
     initialScrollForChatIdRef.current = null;
-    if (typeof window !== "undefined" && scrollBottomDebounceRef.current) {
-      window.clearTimeout(scrollBottomDebounceRef.current);
-      scrollBottomDebounceRef.current = null;
-    }
-    scrollBottomPendingRef.current = null;
-    scrollBottomInFlightRef.current = false;
     uploadInFlightRef.current = false;
     revokeAllPendingBlobs();
     setToast(null);
@@ -561,81 +576,40 @@ export default function ChatRoomPage() {
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
     const nearBottom = dist < NEAR_BOTTOM_PX;
     stickBottomRef.current = nearBottom;
-    setAtBottom(nearBottom);
     setHeaderElevated(el.scrollTop > 2);
+    setShowScrollToStart(
+      dist > FAR_FROM_BOTTOM_TOP_BTN_PX &&
+        el.scrollTop > NEAR_TOP_HIDE_TOP_BTN_PX,
+    );
   }, []);
 
-  const runScrollToBottom = useCallback((behavior: ScrollBehavior) => {
-    if (typeof window === "undefined") return;
-    if (scrollBottomInFlightRef.current) {
-      scrollBottomPendingRef.current = behavior;
-      return;
-    }
-    scrollBottomInFlightRef.current = true;
-    bottomRef.current?.scrollIntoView({ behavior });
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        updateListScrollUi();
-        window.setTimeout(() => {
-          scrollBottomInFlightRef.current = false;
-          const next = scrollBottomPendingRef.current;
-          scrollBottomPendingRef.current = null;
-          if (next !== null) {
-            runScrollToBottom(next);
-          }
-        }, 100);
-      });
-    });
+  /** Мгновенно к низу (без CSS scroll-behavior). */
+  const alignListToBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    updateListScrollUi();
   }, [updateListScrollUi]);
 
-  const scheduleScrollToBottom = useCallback(
-    (behavior: ScrollBehavior) => {
-      lastScrollBehaviorRef.current = behavior;
-      if (typeof window === "undefined") return;
-      if (scrollBottomDebounceRef.current) {
-        window.clearTimeout(scrollBottomDebounceRef.current);
-      }
-      scrollBottomDebounceRef.current = window.setTimeout(() => {
-        scrollBottomDebounceRef.current = null;
-        runScrollToBottom(lastScrollBehaviorRef.current);
-      }, SCROLL_BOTTOM_DEBOUNCE_MS);
-    },
-    [runScrollToBottom],
-  );
-
-  /** Без дебаунса (первичный просмотр). Не кладёт в очередь. */
-  const scrollToBottomImmediate = useCallback(
-    (behavior: ScrollBehavior) => {
-      if (typeof window === "undefined") return;
-      if (scrollBottomDebounceRef.current) {
-        window.clearTimeout(scrollBottomDebounceRef.current);
-        scrollBottomDebounceRef.current = null;
-      }
-      scrollBottomPendingRef.current = null;
-      scrollBottomInFlightRef.current = false;
-      bottomRef.current?.scrollIntoView({ behavior });
+  /** После commit DOM (новые узлы) — подождать кадр, затем мгновенно вниз. */
+  const alignListToBottomAfterPaint = useCallback(() => {
+    if (typeof window === "undefined") return;
+    requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          updateListScrollUi();
-        });
+        alignListToBottom();
       });
-    },
-    [updateListScrollUi],
-  );
+    });
+  }, [alignListToBottom]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!chatId || !messages.length) return;
     if (!messages.every((m) => m.chat_id === chatId)) return;
     if (initialScrollForChatIdRef.current === chatId) return;
     initialScrollForChatIdRef.current = chatId;
     stickBottomRef.current = true;
-    setAtBottom(true);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollToBottomImmediate("auto");
-      });
-    });
-  }, [chatId, messages, scrollToBottomImmediate]);
+    setShowScrollToStart(false);
+    alignListToBottom();
+  }, [chatId, messages, alignListToBottom]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -919,16 +893,12 @@ export default function ChatRoomPage() {
               payload.new as Record<string, unknown>,
             );
 
-            setMessages((prev) => {
-              const exists = prev.some((m) => m.id === newMessage.id);
-              if (exists) return prev;
-              return [...prev, newMessage];
-            });
+            setMessages((prev) => mergeIncomingInsert(prev, newMessage));
 
             lastLoadedMessageIdRef.current = newMessage.id;
 
             if (stickBottomRef.current) {
-              scheduleScrollToBottom("smooth");
+              alignListToBottomAfterPaint();
             }
 
             if (me && newMessage.sender_id !== me) {
@@ -1038,38 +1008,34 @@ export default function ChatRoomPage() {
     markIncomingDelivered,
     markVisibleRoomRead,
     backfillAfterReconnect,
-    scheduleScrollToBottom,
-    updateListScrollUi,
+    alignListToBottomAfterPaint,
   ]);
 
   useEffect(() => {
     if (!messages.length) return;
     if (stickBottomRef.current) {
-      const behavior: ScrollBehavior =
-        messages.length === 1 ? "auto" : "smooth";
-      scheduleScrollToBottom(behavior);
+      alignListToBottomAfterPaint();
     }
-  }, [messages.length, scheduleScrollToBottom]);
-
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined" && scrollBottomDebounceRef.current) {
-        window.clearTimeout(scrollBottomDebounceRef.current);
-        scrollBottomDebounceRef.current = null;
-      }
-    };
-  }, []);
+  }, [messages.length, alignListToBottomAfterPaint]);
 
   useEffect(() => {
     if (!latestMessageId) return;
 
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.chat_id === chatId && m.sender_id !== me
-          ? { ...m, status: "seen" }
-          : m,
-      ),
-    );
+    setMessages((prev) => {
+      let changed = false;
+      const next = prev.map((m) => {
+        if (
+          m.chat_id === chatId &&
+          m.sender_id !== me &&
+          m.status !== "seen"
+        ) {
+          changed = true;
+          return { ...m, status: "seen" as const };
+        }
+        return m;
+      });
+      return changed ? next : prev;
+    });
   }, [chatId, latestMessageId, me]);
 
   useEffect(() => {
@@ -1171,20 +1137,11 @@ export default function ChatRoomPage() {
       read_at: null,
     };
 
-    const listEl = listRef.current;
-    let scrollBehavior: ScrollBehavior = "smooth";
-    if (listEl) {
-      const d =
-        listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
-      scrollBehavior =
-        d < SEND_SCROLL_INSTANT_IF_WITHIN_PX ? "auto" : "smooth";
-    }
-
     setSending(true);
     setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
     setText("");
     stickBottomRef.current = true;
-    scheduleScrollToBottom(scrollBehavior);
+    alignListToBottomAfterPaint();
 
     try {
       const { error } = await supabase.from("messages").insert({
@@ -1192,6 +1149,8 @@ export default function ChatRoomPage() {
         sender_id: me,
         text: trimmed,
         type: "text",
+        deleted: false,
+        hidden_for_user_ids: [],
       });
 
       if (error) {
@@ -1210,6 +1169,7 @@ export default function ChatRoomPage() {
       setText(trimmed);
     } finally {
       setSending(false);
+      queueMicrotask(() => textInputRef.current?.focus());
     }
   }
 
@@ -1257,19 +1217,10 @@ export default function ChatRoomPage() {
       imageUploadFailed: false,
     };
 
-    const listEl = listRef.current;
-    let scrollBehavior: ScrollBehavior = "smooth";
-    if (listEl) {
-      const d =
-        listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
-      scrollBehavior =
-        d < SEND_SCROLL_INSTANT_IF_WITHIN_PX ? "auto" : "smooth";
-    }
-
     setSendErr(null);
     setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
     stickBottomRef.current = true;
-    scheduleScrollToBottom(scrollBehavior);
+    alignListToBottomAfterPaint();
 
     const registry = pendingBlobRegistryRef.current;
     const uploadPhase = { current: "upload" as "upload" | "insert" };
@@ -1305,6 +1256,8 @@ export default function ChatRoomPage() {
               text: "",
               type: "image",
               image_url: publicUrl,
+              deleted: false,
+              hidden_for_user_ids: [],
             })
             .select()
             .single();
@@ -1447,6 +1400,8 @@ export default function ChatRoomPage() {
               text: "",
               type: "image",
               image_url: publicUrl,
+              deleted: false,
+              hidden_for_user_ids: [],
             })
             .select()
             .single();
@@ -1625,8 +1580,9 @@ export default function ChatRoomPage() {
         <div
           ref={listRef}
           onScroll={updateListScrollUi}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 [scroll-behavior:smooth] scroll-smooth"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-1.5"
         >
+          <div className="flex min-h-full flex-col justify-end gap-px">
         {messages.map((m) => {
           const mine = m.sender_id === me;
           const isImage = m.type === "image" && Boolean(m.image_url);
@@ -1639,43 +1595,61 @@ export default function ChatRoomPage() {
               } ${mine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`flex min-w-0 max-w-[min(85%,20rem)] flex-col ${mine ? "items-end gap-1" : ""}`}
+                className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col ${mine ? "items-end" : "items-start"}`}
               >
                 <div
-                  className={`w-full min-w-0 max-w-full rounded-[2rem] text-[15px] transition-colors duration-ui ${
+                  className={`w-full min-w-0 max-w-full text-[15px] leading-[1.38] transition-colors duration-ui ${
                     isImage
-                      ? "max-w-[280px] overflow-hidden p-0"
-                      : "px-4 py-2.5 break-words leading-relaxed [overflow-wrap:anywhere]"
+                      ? "max-w-[min(78vw,280px)] overflow-hidden rounded-[1.125rem] p-0 shadow-sm"
+                      : `max-w-full break-words px-3 py-1.5 [overflow-wrap:anywhere] ${
+                          mine
+                            ? "rounded-[1.125rem] rounded-br-[0.35rem] bg-accent text-white shadow-sm"
+                            : "rounded-[1.125rem] rounded-bl-[0.35rem] border border-line/65 bg-elevated text-fg shadow-sm"
+                        }`
                   } ${
-                    mine
-                      ? "bg-accent text-white shadow-soft"
-                      : "border border-line bg-elevated text-fg shadow-soft"
+                    isImage
+                      ? mine
+                        ? "ring-1 ring-white/10"
+                        : "ring-1 ring-line/35"
+                      : ""
                   }`}
                 >
                   {m.deleted ? (
-                    <p className="px-4 py-2.5 text-[15px] leading-relaxed text-fg/70 italic">
+                    <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-fg/70">
                       Сообщение удалено
                     </p>
                   ) : isImage && m.image_url ? (
-                    <ChatMessageImageBubble
-                      message={m}
-                      isRetrying={imageRetryingId === m.id}
-                      canRetryFile={m.id.startsWith("temp-")}
-                      onOpen={() => setLightboxUrl(m.image_url!)}
-                      onRetry={() => {
-                        if (m.id.startsWith("temp-")) {
-                          void retryImageUpload(m.id);
-                        }
-                      }}
-                    />
+                    <div
+                      className={
+                        mine
+                          ? "min-w-0 overflow-hidden rounded-[1.125rem] rounded-br-[0.35rem]"
+                          : "min-w-0 overflow-hidden rounded-[1.125rem] rounded-bl-[0.35rem]"
+                      }
+                    >
+                      <ChatMessageImageBubble
+                        message={m}
+                        isRetrying={imageRetryingId === m.id}
+                        canRetryFile={m.id.startsWith("temp-")}
+                        onOpen={() => setLightboxUrl(m.image_url!)}
+                        onRetry={() => {
+                          if (m.id.startsWith("temp-")) {
+                            void retryImageUpload(m.id);
+                          }
+                        }}
+                      />
+                    </div>
                   ) : (
-                    <span className="text-[15px] leading-relaxed [overflow-wrap:anywhere] break-words">
+                    <span
+                      className={`block text-[15px] leading-[1.38] [overflow-wrap:anywhere] break-words [text-size-adjust:100%] ${
+                        mine ? "text-right" : "text-left"
+                      }`}
+                    >
                       {buildMessagePreview(m)}
                     </span>
                   )}
                 </div>
                 {mine ? (
-                  <div className="flex min-h-4 items-center justify-end pr-0.5 pt-0.5">
+                  <div className="flex min-h-[13px] shrink-0 items-center justify-end pr-0.5">
                     <MessageStatusTicks
                       mine
                       delivered_at={m.delivered_at}
@@ -1689,38 +1663,38 @@ export default function ChatRoomPage() {
         })}
 
         {!messages.length && !loadErr ? (
-          <div className="rounded-card border border-line bg-elevated px-4 py-5 text-center text-sm text-muted">
+          <div className="rounded-xl border border-line/60 bg-elevated/80 px-3 py-3 text-center text-xs text-muted">
             Пока нет сообщений. Напишите первым.
           </div>
         ) : null}
 
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
+          </div>
         </div>
 
         <button
           type="button"
-          aria-label="Прокрутить вниз"
-          tabIndex={atBottom ? -1 : 0}
-          className={`pressable absolute bottom-3 right-4 z-20 flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-line/80 bg-elevated/95 text-lg text-fg shadow-lg backdrop-blur-sm transition-[transform,opacity] duration-200 ease-out dark:bg-elev-2/95 ${
-            atBottom
-              ? "pointer-events-none translate-y-2 opacity-0"
-              : "translate-y-0 opacity-100"
+          aria-label="К началу чата"
+          tabIndex={showScrollToStart ? 0 : -1}
+          className={`pressable absolute bottom-3 right-3 z-20 flex h-10 w-10 min-h-10 min-w-10 items-center justify-center rounded-full border border-line/70 bg-elevated/95 text-base font-semibold text-fg shadow-md backdrop-blur-sm transition-[transform,opacity] duration-200 ease-out dark:bg-elev-2/95 ${
+            showScrollToStart
+              ? "translate-y-0 pointer-events-auto opacity-100"
+              : "pointer-events-none translate-y-1.5 opacity-0"
           }`}
           onClick={() => {
-            stickBottomRef.current = true;
-            scheduleScrollToBottom("smooth");
+            listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
           }}
         >
-          ↓
+          ↑
         </button>
       </div>
 
-      <div className="shrink-0 border-t border-line bg-elevated p-3 safe-pb">
+      <div className="shrink-0 border-t border-line/80 bg-elevated safe-pb">
         {sendErr ? (
-          <p className="mb-2 text-sm font-medium text-danger">{sendErr}</p>
+          <p className="px-2 pt-1.5 text-xs font-medium text-danger">{sendErr}</p>
         ) : null}
 
-        <div className="flex gap-2">
+        <div className="flex items-end gap-1.5 px-2 py-1.5">
           <input
             ref={fileInputRef}
             type="file"
@@ -1738,20 +1712,19 @@ export default function ChatRoomPage() {
             aria-label="Прикрепить фото"
             disabled={sending}
             onClick={() => fileInputRef.current?.click()}
-            className="pressable flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-full border border-line bg-main text-lg transition-colors duration-ui disabled:opacity-50"
+            className="pressable mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg/90 transition-colors hover:bg-line/45 active:bg-line/60 disabled:opacity-45"
           >
-            <span className="select-none" aria-hidden>
-              🖼
-            </span>
+            <PaperclipIcon className="h-[1.15rem] w-[1.15rem] shrink-0 text-fg/85" />
           </button>
           <input
+            ref={textInputRef}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
               if (sendErr) setSendErr(null);
               if (e.target.value.trim()) scheduleTypingBroadcast();
             }}
-            className="min-h-[48px] flex-1 rounded-full border border-line bg-main px-4 text-base text-fg placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-accent/35"
+            className="min-h-[42px] flex-1 rounded-2xl border border-line/80 bg-main px-3.5 py-2 text-[15px] leading-[1.35] text-fg placeholder:text-muted/65 focus:outline-none focus:ring-2 focus:ring-accent/30"
             placeholder="Сообщение…"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -1764,7 +1737,7 @@ export default function ChatRoomPage() {
             type="button"
             onClick={() => void send()}
             disabled={sending || !text.trim()}
-            className="pressable flex min-h-[48px] min-w-[48px] items-center justify-center rounded-full bg-accent text-lg font-bold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
+            className="pressable mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-base font-bold text-white transition-colors hover:bg-accent-hover disabled:opacity-45"
           >
             →
           </button>

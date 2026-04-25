@@ -196,7 +196,7 @@ export function ChatMessageImageBubble({
   if (imageUploadFailed) {
     return (
       <div
-        className="relative w-full max-w-[280px] overflow-hidden rounded-inherit"
+        className="relative w-full min-w-0 max-w-full overflow-hidden rounded-inherit"
         style={{ aspectRatio: String(aspect), maxHeight: "min(50vh, 360px)" }}
       >
         <img
@@ -241,7 +241,7 @@ export function ChatMessageImageBubble({
   if (loadError) {
     return (
       <div
-        className="flex w-full min-h-[120px] max-w-[280px] flex-col items-center justify-center gap-2 overflow-hidden rounded-inherit border border-dashed border-line/80 bg-elev-2/50 px-3 py-4"
+        className="flex w-full min-h-[120px] min-w-0 max-w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-inherit border border-dashed border-line/80 bg-elev-2/50 px-3 py-4"
         style={{ aspectRatio: String(aspect), maxHeight: "min(50vh, 360px)" }}
       >
         <p className="text-center text-xs text-muted">
@@ -271,10 +271,10 @@ export function ChatMessageImageBubble({
       type="button"
       aria-label="Открыть фото"
       onClick={hapticAndOpen}
-      className="pressable relative block w-full max-w-[280px] origin-center border-0 bg-black/5 p-0 active:scale-[0.98] active:opacity-90 transition-[transform,opacity] duration-100"
+      className="pressable relative block w-full min-w-0 max-w-full origin-center border-0 bg-black/5 p-0 active:scale-[0.99] active:opacity-95 transition-[transform,opacity] duration-100"
     >
       <div
-        className="relative w-full max-w-[280px] overflow-hidden rounded-inherit"
+        className="relative w-full min-w-0 max-w-full overflow-hidden rounded-inherit"
         style={{ aspectRatio: String(aspect), maxHeight: "min(50vh, 360px)" }}
       >
         {!imageReady ? <ChatMessageImageSkeleton /> : null}

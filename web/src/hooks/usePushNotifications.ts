@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import type { Json } from "@/lib/supabase.types";
 
 type UsePushNotificationsOptions = {
   enabled: boolean;
@@ -86,7 +87,7 @@ async function upsertWebPushSubscription(
     user_id: userId,
     token: endpoint,
     provider: "webpush",
-    subscription: safeJson(subscription.toJSON()),
+    subscription: safeJson(subscription.toJSON()) as Json,
     user_agent:
       typeof navigator !== "undefined" ? (navigator.userAgent ?? null) : null,
     last_seen_at: new Date().toISOString(),

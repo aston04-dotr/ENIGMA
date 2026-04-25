@@ -227,7 +227,10 @@ export function ChatUnreadProvider({
           if (!opts?.silent) setLoadingState(false);
           return;
         }
-        const res = await supabase.rpc("list_my_chats", { p_limit: 100 });
+        const res = await supabase.rpc("list_my_chats", {
+          p_limit: 100,
+          p_before: null,
+        });
         if (res.error) {
           console.error("list_my_chats RPC error", {
             message: res.error.message,
@@ -307,7 +310,6 @@ export function ChatUnreadProvider({
             last_seen: lastSeen,
             visibility_state: visibilityState,
             active_chat_id: active,
-            updated_at: lastSeen,
           },
           { onConflict: "user_id" },
         );
@@ -317,16 +319,14 @@ export function ChatUnreadProvider({
       }
 
       const { data: sPush } = await supabase.auth.getSession();
-      if (!sPush?.session?.user?.id) {
-        console.warn("no session user, skip push_tokens touch");
-      } else {
+      if (sPush?.session?.user?.id) {
         const { error: touchPushError } = await supabase
           .from("push_tokens")
           .update({ last_seen_at: lastSeen })
           .eq("user_id", userId)
           .eq("provider", "webpush");
 
-        if (touchPushError) {
+        if (touchPushError && process.env.NODE_ENV === "development") {
           console.warn("push_tokens touch", touchPushError);
         }
       }
