@@ -1,45 +1,8 @@
--- WhatsApp-style: delivered_at / read_at + mark_chat_read(p_chat_id, p_up_to_message_id)
--- Участники чата: chats.buyer_id / chats.seller_id (без chat_members).
--- Итоговая mark_chat_read (порядок: сначала messages.read_at, затем chats.*_last_read_at): 038_mark_chat_read_sync_unread_cursors.sql
+-- Исправление prod: вручную созданная mark_chat_read могла ссылаться на несуществующий столбец messages."read".
+-- Рабочая версия: только read_at (как в 034_messages_delivery_read_status.sql).
+-- Канон для полного db push: 038_mark_chat_read_sync_unread_cursors.sql (тот же v_cutoff и greatest; другой порядок UPDATE: messages, затем chats).
 
-alter table public.messages
-  add column if not exists delivered_at timestamptz;
-
-alter table public.messages
-  add column if not exists read_at timestamptz;
-
-comment on column public.messages.delivered_at is
-  'Получатель открыл/получил сообщение (клиент или batch).';
-comment on column public.messages.read_at is
-  'Собеседник прочитал до этого сообщения (mark_chat_read).';
-
--- Получатель может помечать доставку входящих (sender_id <> auth.uid()).
-drop policy if exists "messages_update_incoming_delivery" on public.messages;
-
-create policy "messages_update_incoming_delivery"
-  on public.messages
-  for update
-  to authenticated
-  using (
-    sender_id is distinct from auth.uid()
-    and exists (
-      select 1
-      from public.chats c
-      where c.id = messages.chat_id
-        and (c.buyer_id = auth.uid() or c.seller_id = auth.uid())
-    )
-  )
-  with check (
-    sender_id is distinct from auth.uid()
-    and exists (
-      select 1
-      from public.chats c
-      where c.id = messages.chat_id
-        and (c.buyer_id = auth.uid() or c.seller_id = auth.uid())
-    )
-  );
-
--- Замена mark_chat_read(uuid) на двухаргументную версию
+drop function if exists public.mark_chat_read(uuid, uuid);
 drop function if exists public.mark_chat_read(uuid);
 
 create or replace function public.mark_chat_read(

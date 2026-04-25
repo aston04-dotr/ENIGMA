@@ -110,7 +110,7 @@ $$;
 grant execute on function public.list_my_chats(int, timestamptz) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Рекомендация: обновите mark_chat_read на проде так, чтобы он выставлял
--- buyer_last_read_at / seller_last_read_at для текущего auth.uid(),
--- иначе unread_count будет включать все старые сообщения собеседника.
+-- unread_count здесь согласуется с mark_chat_read, который выставляет
+-- buyer_last_read_at / seller_last_read_at и messages.read_at — см. 038_mark_chat_read_sync_unread_cursors.sql
+-- (без этого — счётчик непрочитанного завышен относительно «прочитано»).
 -- ---------------------------------------------------------------------------

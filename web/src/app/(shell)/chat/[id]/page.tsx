@@ -1273,6 +1273,8 @@ export default function ChatRoomPage() {
 
     const registry = pendingBlobRegistryRef.current;
     const uploadPhase = { current: "upload" as "upload" | "insert" };
+    let lastStorageError: string | null = null;
+    let lastInsertError: string | null = null;
 
     try {
       const inserted = await withUploadProgress(
@@ -1286,6 +1288,8 @@ export default function ChatRoomPage() {
               upsert: false,
             });
           if (upErr) {
+            lastStorageError = upErr.message;
+            console.error("chat-media upload", upErr);
             throw new Error("upload");
           }
           const { data: pub } = supabase.storage
@@ -1305,6 +1309,8 @@ export default function ChatRoomPage() {
             .select()
             .single();
           if (insErr) {
+            lastInsertError = insErr.message;
+            console.error("messages insert (image)", insErr);
             throw new Error("insert");
           }
           if (!ins) {
@@ -1336,7 +1342,7 @@ export default function ChatRoomPage() {
         await refreshChats({ silent: true });
       }
     } catch (error) {
-      console.error("chat room send image failed", error);
+      console.error("chat room send image failed", { uploadPhase, error });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
@@ -1349,12 +1355,17 @@ export default function ChatRoomPage() {
             : m,
         ),
       );
+      const toastMessage =
+        uploadPhase.current === "insert" && lastInsertError
+          ? lastInsertError
+          : uploadPhase.current === "upload" && lastStorageError
+            ? lastStorageError
+            : uploadPhase.current === "insert"
+              ? "Ошибка отправки"
+              : "Ошибка загрузки";
       setToast({
         type: "error",
-        message:
-          uploadPhase.current === "insert"
-            ? "Ошибка отправки"
-            : "Ошибка загрузки",
+        message: toastMessage,
       });
       registry.clearTimer(tempId);
       registry.scheduleFailedBlobExpiry(tempId, objectUrl, () => {
@@ -1404,6 +1415,8 @@ export default function ChatRoomPage() {
     );
 
     const uploadPhase = { current: "upload" as "upload" | "insert" };
+    let lastStorageError: string | null = null;
+    let lastInsertError: string | null = null;
 
     try {
       const inserted = await withUploadProgress(
@@ -1417,6 +1430,8 @@ export default function ChatRoomPage() {
               upsert: false,
             });
           if (upErr) {
+            lastStorageError = upErr.message;
+            console.error("chat-media upload (retry)", upErr);
             throw new Error("upload");
           }
           const { data: pub } = supabase.storage
@@ -1436,6 +1451,8 @@ export default function ChatRoomPage() {
             .select()
             .single();
           if (insErr) {
+            lastInsertError = insErr.message;
+            console.error("messages insert (image retry)", insErr);
             throw new Error("insert");
           }
           if (!ins) {
@@ -1469,7 +1486,7 @@ export default function ChatRoomPage() {
         await refreshChats({ silent: true });
       }
     } catch (error) {
-      console.error("chat image retry failed", error);
+      console.error("chat image retry failed", { uploadPhase, error });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId
@@ -1482,12 +1499,17 @@ export default function ChatRoomPage() {
             : m,
         ),
       );
+      const toastMessage =
+        uploadPhase.current === "insert" && lastInsertError
+          ? lastInsertError
+          : uploadPhase.current === "upload" && lastStorageError
+            ? lastStorageError
+            : uploadPhase.current === "insert"
+              ? "Ошибка отправки"
+              : "Ошибка загрузки";
       setToast({
         type: "error",
-        message:
-          uploadPhase.current === "insert"
-            ? "Ошибка отправки"
-            : "Ошибка загрузки",
+        message: toastMessage,
       });
       if (previewObjectUrl.startsWith("blob:")) {
         registry.clearTimer(messageId);
