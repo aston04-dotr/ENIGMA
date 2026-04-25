@@ -8,13 +8,14 @@ import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevel
 import { registerRapidListingCreated } from "@/lib/trust";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
 import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
 
 function parseUnknownError(error: unknown): string {
@@ -39,6 +40,31 @@ const inputClass =
 
 const MAX_LISTING_PHOTOS = getMaxListingPhotos();
 const PHONE_REQUIRED_PROMPT = "Please add a phone number so buyers can contact you.";
+const CREATE_FORM_STORAGE_KEY = "create_form";
+
+type CreateFormSnapshot = {
+  title: string;
+  description: string;
+  price: string;
+  city: string;
+  category: string;
+};
+
+function buildDraftPayloadKey(
+  title: string,
+  description: string,
+  price: string,
+  city: string,
+  category: string,
+): string {
+  return JSON.stringify({ title, description, price, city, category });
+}
+
+function cityToSelectedKey(cityRaw: string, safeCities: string[]): string {
+  const n = (cityRaw || "").trim();
+  if (isAllowedListingCity(n) && safeCities.includes(n)) return n;
+  return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
+}
 
 export default function CreatePage() {
   const { session, profile, refreshProfile } = useAuth();
@@ -54,18 +80,26 @@ export default function CreatePage() {
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
+  const [formRestored, setFormRestored] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const lastSavedRef = useRef("");
+  const saveIdleClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDirty = Boolean(title || description || price);
+  const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
+  const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
 
   const handleBack = useCallback(() => {
-    if (typeof window === "undefined") {
-      router.push("/");
-      return;
-    }
-    if (window.history.length > 1) {
-      router.back();
+    if (
+      typeof window !== "undefined" &&
+      document.referrer &&
+      document.referrer.includes(window.location.origin)
+    ) {
+      safeBack(router);
     } else {
-      router.push("/");
+      safePush(router, "/");
     }
-  }, [router]);
+  }, [router, safeBack, safePush]);
 
   const safeCities = useMemo(() => {
     const source = Array.isArray(cities) ? cities : [];
@@ -84,6 +118,9 @@ export default function CreatePage() {
     return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
   }, [city, safeCities]);
 
+  const safeCitiesRef = useRef(safeCities);
+  safeCitiesRef.current = safeCities;
+
   useEffect(() => {
     void (async () => {
       try {
@@ -98,9 +135,190 @@ export default function CreatePage() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    setFormRestored(false);
+    setDraftLoaded(false);
+
+    void (async () => {
+      const sc = safeCitiesRef.current;
+      const localSafe = Array.isArray(sc) && sc.length > 0 ? sc : [...ALLOWED_LISTING_CITIES];
+
+      const setLastSavedFromFields = (fields: {
+        title: string;
+        description: string;
+        price: string;
+        cityRaw: string;
+        category: string;
+      }) => {
+        const cityK = cityToSelectedKey(fields.cityRaw, localSafe);
+        lastSavedRef.current = buildDraftPayloadKey(
+          fields.title,
+          fields.description,
+          fields.price,
+          cityK,
+          fields.category,
+        );
+      };
+
+      const applyLocalSnapshot = (): {
+        title: string;
+        description: string;
+        price: string;
+        cityRaw: string;
+        category: string;
+      } | null => {
+        try {
+          const saved = localStorage.getItem(CREATE_FORM_STORAGE_KEY);
+          if (!saved) return null;
+          const parsed = JSON.parse(saved) as Partial<CreateFormSnapshot>;
+          if (typeof parsed.title === "string") setTitle(parsed.title);
+          if (typeof parsed.description === "string") setDescription(parsed.description);
+          if (typeof parsed.price === "string") setPrice(parsed.price);
+          if (typeof parsed.city === "string" && parsed.city.trim()) setCity(parsed.city);
+          if (typeof parsed.category === "string" && parsed.category.trim()) setCategory(parsed.category);
+          const t = typeof parsed.title === "string" ? parsed.title : "";
+          const d = typeof parsed.description === "string" ? parsed.description : "";
+          const p = typeof parsed.price === "string" ? parsed.price : "";
+          const cRaw = typeof parsed.city === "string" && parsed.city.trim() ? parsed.city : "";
+          const cat =
+            typeof parsed.category === "string" && parsed.category.trim() ? parsed.category : "other";
+          return { title: t, description: d, price: p, cityRaw: cRaw, category: cat };
+        } catch (e) {
+          console.warn("Failed to parse local draft", e);
+          return null;
+        }
+      };
+
+      if (uid) {
+        const rest = getSupabaseRestWithSession();
+        if (rest) {
+          const { data, error } = await rest.from("drafts").select("*").eq("user_id", uid).maybeSingle();
+          if (cancelled) return;
+          if (error) {
+            console.warn("[drafts] load", error);
+          } else if (data) {
+            const t = data.title != null ? String(data.title) : "";
+            const d = data.description != null ? String(data.description) : "";
+            const p = data.price != null ? String(data.price) : "";
+            const cRaw = data.city != null && String(data.city).trim() ? String(data.city) : "";
+            const cat =
+              data.category != null && String(data.category).trim() ? String(data.category) : "other";
+            setTitle(t);
+            setDescription(d);
+            setPrice(p);
+            if (cRaw) setCity(cRaw);
+            setCategory(cat);
+            setLastSavedFromFields({ title: t, description: d, price: p, cityRaw: cRaw, category: cat });
+            setFormRestored(true);
+            setDraftLoaded(true);
+            return;
+          }
+        }
+        if (cancelled) return;
+        const local = applyLocalSnapshot();
+        if (local) {
+          setLastSavedFromFields(local);
+        } else {
+          setLastSavedFromFields({
+            title: "",
+            description: "",
+            price: "",
+            cityRaw: "",
+            category: "other",
+          });
+        }
+        setFormRestored(true);
+        setDraftLoaded(true);
+        return;
+      }
+
+      const local = applyLocalSnapshot();
+      if (local) setLastSavedFromFields(local);
+      if (!cancelled) {
+        setFormRestored(true);
+        setDraftLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !formRestored) return;
+    const timeout = setTimeout(() => {
+      const snapshot: CreateFormSnapshot = {
+        title,
+        description,
+        price,
+        city,
+        category,
+      };
+      try {
+        localStorage.setItem(CREATE_FORM_STORAGE_KEY, JSON.stringify(snapshot));
+      } catch {
+        /* quota / private mode */
+      }
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [formRestored, title, description, price, city, category]);
+
+  useEffect(() => {
+    if (!uid || !isDirty || !draftLoaded || !formRestored) return;
+    const rest = getSupabaseRestWithSession();
+    if (!rest) return;
+
+    const timeout = setTimeout(() => {
+      void (async () => {
+        const payload = buildDraftPayloadKey(title, description, price, selectedCity, category);
+        if (payload === lastSavedRef.current) return;
+
+        setSaveStatus("saving");
+        const priceNum = parseNonNegativePrice(price);
+        const { error } = await rest.from("drafts").upsert(
+          {
+            user_id: uid,
+            title: title.trim() || null,
+            description: description.trim() || null,
+            price: priceNum,
+            city: selectedCity.trim() || null,
+            category: category || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        );
+        if (error) {
+          logRlsIfBlocked(error);
+          console.warn("[drafts] upsert", error);
+          setSaveStatus("idle");
+          return;
+        }
+        lastSavedRef.current = payload;
+        setSaveStatus("saved");
+        if (saveIdleClearRef.current) clearTimeout(saveIdleClearRef.current);
+        saveIdleClearRef.current = setTimeout(() => {
+          setSaveStatus("idle");
+          saveIdleClearRef.current = null;
+        }, 2000);
+      })();
+    }, 1000);
+
+    return () => clearTimeout(timeout);
+  }, [uid, isDirty, draftLoaded, formRestored, title, description, price, category, selectedCity]);
+
+  useEffect(() => {
+    return () => {
+      if (saveIdleClearRef.current) clearTimeout(saveIdleClearRef.current);
+    };
+  }, []);
+
   const publish = useCallback(async () => {
     if (!uid) {
-      router.push("/login");
+      safePush(router, "/login");
       return;
     }
     setErr("");
@@ -200,8 +418,25 @@ export default function CreatePage() {
       }
 
       registerRapidListingCreated(uid);
+      const restForDraft = getSupabaseRestWithSession();
+      if (restForDraft) {
+        const { error: draftDeleteError } = await restForDraft.from("drafts").delete().eq("user_id", uid);
+        logRlsIfBlocked(draftDeleteError);
+        if (draftDeleteError) console.warn("[drafts] delete after publish", draftDeleteError);
+      }
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(CREATE_FORM_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
+      // Сбрасываем dirty-поля до редиректа, чтобы guard не сработал.
+      setTitle("");
+      setDescription("");
+      setPrice("");
       await refreshProfile();
-      router.push(`/listing/${lid}`);
+      safePush(router, `/listing/${lid}`);
     } catch (e: unknown) {
       const message = parseUnknownError(e);
       console.error("FETCH ERROR", message);
@@ -210,7 +445,7 @@ export default function CreatePage() {
       setBusy(false);
       setPublishStage("idle");
     }
-  }, [uid, profile, title, description, price, selectedCity, category, files, router, refreshProfile]);
+  }, [uid, profile, title, description, price, selectedCity, category, files, safePush, router, refreshProfile]);
 
   if (!session) {
     return (
@@ -237,28 +472,27 @@ export default function CreatePage() {
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <div className="space-y-2">
         <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
+        {isDirty ? (
+          <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
+        ) : null}
         <button
           type="button"
           onClick={handleBack}
-          className="pressable inline-flex min-h-[44px] items-center gap-1.5 rounded-lg py-1.5 pl-0 pr-2 text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover"
           aria-label="Назад"
+          className="flex items-center gap-2 text-sm text-blue-500 hover:opacity-80 active:scale-95 transition-all duration-150"
         >
           <svg
-            className="h-5 w-5 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
             xmlns="http://www.w3.org/2000/svg"
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
             aria-hidden
           >
-            <path
-              d="M15 18l-6-6 6-6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          <span>Назад</span>
+          Назад
         </button>
       </div>
       <div>
@@ -320,6 +554,8 @@ export default function CreatePage() {
           ))}
         </select>
       </div>
+      {saveStatus === "saving" ? <div className="text-xs text-gray-400">Сохранение...</div> : null}
+      {saveStatus === "saved" ? <div className="text-xs text-green-500">Сохранено ✓</div> : null}
       {err ? <p className="text-sm font-medium text-danger">{err}</p> : null}
       {err === PHONE_REQUIRED_PROMPT ? (
         <Link
@@ -331,9 +567,9 @@ export default function CreatePage() {
       ) : null}
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !canSubmitBasic}
         onClick={() => void publish()}
-        className="pressable w-full min-h-[52px] rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
+        className="pressable w-full min-h-[52px] rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? (publishStage === "uploading" ? "Загрузка фото..." : "Создание объявления...") : "Опубликовать"}
       </button>

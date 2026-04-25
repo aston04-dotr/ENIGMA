@@ -9,6 +9,7 @@ import { getMyListings } from "@/lib/listings";
 import { deleteAccount } from "@/lib/deleteAccount";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -123,9 +124,16 @@ export default function ProfilePage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [phoneMessage, setPhoneMessage] = useState<string | null>(null);
+  const [guardEnabled, setGuardEnabled] = useState(true);
   const [myListings, setMyListings] = useState<ListingRow[]>([]);
   const [myListingsLoading, setMyListingsLoading] = useState(true);
   const [myListingsError, setMyListingsError] = useState<string | null>(null);
+  const profileNameValue = (profile?.name ?? "").trim();
+  const profilePhoneValue = (profile?.phone ?? "").trim();
+  const isDirty =
+    nameInput.trim() !== profileNameValue ||
+    phoneInput.trim() !== profilePhoneValue;
+  const { safePush } = useUnsavedChangesGuard(isDirty, { enabled: guardEnabled });
 
   useEffect(() => {
     if (!authResolved || loading) return;
@@ -208,7 +216,8 @@ export default function ProfilePage() {
         else setDeleteErr("Не удалось удалить аккаунт");
         return;
       }
-      router.push("/login");
+      setGuardEnabled(false);
+      safePush(router, "/login");
     } catch (e) {
       console.error("onConfirmDelete error", e);
       setDeleteErr("Неожиданная ошибка при удалении аккаунта");
@@ -340,6 +349,9 @@ export default function ProfilePage() {
     <>
       <main className="safe-pt space-y-2 bg-main px-5 pb-8 pt-8">
       <h1 className="text-[26px] font-bold tracking-tight text-fg">Профиль</h1>
+      {isDirty ? (
+        <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
+      ) : null}
       <p className="text-sm text-muted">{session.user?.email}</p>
       {profile?.name ? <p className="text-lg font-semibold text-fg">{profile.name}</p> : null}
       {profile?.public_id ? <p className="text-xs text-muted">ID: {profile.public_id}</p> : null}
@@ -914,13 +926,16 @@ export default function ProfilePage() {
               const qty = parseInt(customQuantity);
               const { total } = calculateCustomPrice(customType, qty);
               console.log("BUY CUSTOM", { type: customType, quantity: qty, total });
-              router.push(`/payment?type=${customType}&qty=${qty}&amount=${total}`);
+              safePush(router, `/payment?type=${customType}&qty=${qty}&amount=${total}`);
             } else if (selectedPackage) {
               const pkg = packageInfo[selectedPackage.type]?.[selectedPackage.size as PackageSize];
               const count = pkg?.count ?? 0;
               const price = pkg?.price ?? 0;
               console.log("BUY PACKAGE", { type: selectedPackage.type, size: selectedPackage.size, count, price });
-              router.push(`/payment?type=${selectedPackage.type}&size=${selectedPackage.size}&qty=${count}&amount=${price}`);
+              safePush(
+                router,
+                `/payment?type=${selectedPackage.type}&size=${selectedPackage.size}&qty=${count}&amount=${price}`,
+              );
             }
           }}
           className={`mt-8 w-full min-h-[56px] rounded-xl text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${

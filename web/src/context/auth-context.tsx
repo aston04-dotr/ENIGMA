@@ -141,11 +141,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    console.log("AUTH USER:", user);
-    console.log("SESSION:", session);
-  }, [user, session]);
-
-  useEffect(() => {
     const uid = user?.id ?? null;
     if (!uid) {
       setProfile(null);
@@ -164,22 +159,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
 
     const init = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
       if (!mounted) return;
-      console.log("SESSION INIT:", sessionData.session);
-
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr) {
-        console.warn("USER INIT getUser:", userErr);
+      if (sessionErr) {
+        console.warn("[auth] getSession", sessionErr);
       }
-      console.log("USER INIT:", userData.user);
 
       if (!mounted) return;
       setSession(sessionData.session);
-      setUser(userData.user ?? sessionData.session?.user ?? null);
+      setUser(sessionData.session?.user ?? null);
       setAuthResolved(true);
       setLoading(false);
       setReady(true);
+
+      if (sessionData.session) {
+        void (async () => {
+          try {
+            const { data: userData, error: userErr } = await supabase.auth.getUser();
+            if (!mounted) return;
+            if (userErr) {
+              console.warn("[auth] getUser (refresh in background)", userErr);
+            } else if (userData.user) {
+              setUser(userData.user);
+            }
+          } catch (e) {
+            console.error("[auth] getUser unexpected", e);
+          }
+        })();
+      }
     };
 
     void init().catch((err) => {
@@ -194,8 +201,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
-      console.log("AUTH EVENT:", event);
-      console.log("SESSION:", nextSession);
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.log("[auth] event", event);
+      }
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);

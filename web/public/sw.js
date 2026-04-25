@@ -6,7 +6,9 @@
  * 3) Notification click deep-linking into chat routes
  */
 
-const CACHE_NAME = "enigma-v9";
+// Один run на парсинг sw.js при установке/обновлении — новый бакет, старые кэши чистит activate.
+const APP_VERSION = Date.now();
+const CACHE_NAME = "enigma-" + APP_VERSION;
 const MAX_ITEMS = 120;
 
 const SHELL = ["/", "/offline.html"];

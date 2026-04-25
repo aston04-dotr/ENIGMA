@@ -88,6 +88,39 @@ export type Database = {
           },
         ]
       }
+      drafts: {
+        Row: {
+          id: string
+          user_id: string
+          title: string | null
+          description: string | null
+          price: number | null
+          city: string | null
+          category: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title?: string | null
+          description?: string | null
+          price?: number | null
+          city?: string | null
+          category?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string | null
+          description?: string | null
+          price?: number | null
+          city?: string | null
+          category?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       images: {
         Row: {
           created_at: string | null

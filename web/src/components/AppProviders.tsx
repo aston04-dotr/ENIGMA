@@ -11,6 +11,8 @@ import { DevCacheClear } from "@/components/DevCacheClear";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { AppVersionCheck } from "@/components/AppVersionCheck";
+import { GlobalErrorHandlers } from "@/components/GlobalErrorHandlers";
 import { PushNotificationsBootstrap } from "@/components/PushNotificationsBootstrap";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -20,6 +22,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <DevCacheClear />
       <AuthDebugTracker />
       <ServiceWorkerRegister />
+      <AppVersionCheck />
+      <GlobalErrorHandlers />
       <ThemeProvider>
         <AuthProvider>
           <ViewModeProvider>
