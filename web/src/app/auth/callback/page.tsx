@@ -19,6 +19,12 @@ export default function CallbackPage() {
   const [message, setMessage] = useState("Вход…");
 
   useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => {
+      console.log("CALLBACK SESSION:", data.session);
+    });
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const t0 = typeof performance !== "undefined" ? performance.now() : 0;
     const stamp = (label: string) => {
@@ -53,14 +59,28 @@ export default function CallbackPage() {
       }
 
       try {
+        const { data: preAuth } = await supabase.auth.getSession();
+        if (preAuth.session?.user?.id) {
+          stamp("session:already (detectSessionInUrl or repeat visit)");
+        }
+
         if (code) {
-          stamp("exchange:start");
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          stamp("exchange:end");
-          if (error) {
-            console.error("[callback] exchangeCodeForSession failed", error);
-            if (active) window.location.replace("/login?auth_error=exchange_failed");
-            return;
+          if (preAuth.session?.user) {
+            stamp("exchange:skip (session already from URL)");
+          } else {
+            stamp("exchange:start");
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            stamp("exchange:end");
+            if (error) {
+              const retry = await supabase.auth.getSession();
+              if (retry.data.session?.user) {
+                stamp("exchange:recovered (session from detectSessionInUrl or parallel)");
+              } else {
+                console.error("[callback] exchangeCodeForSession failed", error);
+                if (active) window.location.replace("/login?auth_error=exchange_failed");
+                return;
+              }
+            }
           }
         } else if (tokenHash && rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)) {
           stamp("verifyOtp:start");

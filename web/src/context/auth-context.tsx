@@ -163,39 +163,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     setLoading(true);
 
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (!mounted) return;
-        setSession(data.session);
-        setUser(data.session?.user ?? null);
-        setAuthResolved(true);
-        setLoading(false);
-        setReady(true);
-      })
-      .catch((err) => {
-        console.error("[auth-context] getSession", err);
-        if (!mounted) return;
-        setSession(null);
-        setUser(null);
-        setAuthResolved(true);
-        setLoading(false);
-        setReady(true);
-      });
+    const init = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!mounted) return;
+      console.log("SESSION INIT:", sessionData.session);
 
-    const { data: subData } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
-        if (!mounted) return;
-        setSession(nextSession);
-        setUser(nextSession?.user ?? null);
-        setLoading(false);
-        setAuthResolved(true);
-        if (_event === "SIGNED_OUT") {
-          setProfile(null);
-          setProfileLoading(false);
-        }
-      },
-    );
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) {
+        console.warn("USER INIT getUser:", userErr);
+      }
+      console.log("USER INIT:", userData.user);
+
+      if (!mounted) return;
+      setSession(sessionData.session);
+      setUser(userData.user ?? sessionData.session?.user ?? null);
+      setAuthResolved(true);
+      setLoading(false);
+      setReady(true);
+    };
+
+    void init().catch((err) => {
+      console.error("[auth-context] init", err);
+      if (!mounted) return;
+      setSession(null);
+      setUser(null);
+      setAuthResolved(true);
+      setLoading(false);
+      setReady(true);
+    });
+
+    const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!mounted) return;
+      console.log("AUTH EVENT:", event);
+      console.log("SESSION:", nextSession);
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setLoading(false);
+      setAuthResolved(true);
+      if (event === "SIGNED_OUT") {
+        setProfile(null);
+        setProfileLoading(false);
+      }
+    });
 
     return () => {
       mounted = false;
