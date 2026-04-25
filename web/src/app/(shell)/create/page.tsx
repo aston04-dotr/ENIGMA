@@ -55,6 +55,18 @@ export default function CreatePage() {
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
 
+  const handleBack = useCallback(() => {
+    if (typeof window === "undefined") {
+      router.push("/");
+      return;
+    }
+    if (window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }, [router]);
+
   const safeCities = useMemo(() => {
     const source = Array.isArray(cities) ? cities : [];
     const normalized = source
@@ -223,7 +235,32 @@ export default function CreatePage() {
   try {
     return (
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
-      <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
+      <div className="space-y-2">
+        <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
+        <button
+          type="button"
+          onClick={handleBack}
+          className="pressable inline-flex min-h-[44px] items-center gap-1.5 rounded-lg py-1.5 pl-0 pr-2 text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover"
+          aria-label="Назад"
+        >
+          <svg
+            className="h-5 w-5 shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden
+          >
+            <path
+              d="M15 18l-6-6 6-6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span>Назад</span>
+        </button>
+      </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Фото</label>
         <input
