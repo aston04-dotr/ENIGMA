@@ -8,8 +8,9 @@ import { getSupabasePublicConfig } from "./runtimeConfig";
 const { url, anonKey, configured } = getSupabasePublicConfig();
 
 /**
- * Сессия в localStorage, PKCE из URL (маглинк) обрабатывается на клиенте
- * (detectSessionInUrl: true), чтобы JWT доходил до PostgREST / RPC.
+ * Единый browser-клиент: сессия, magic link, Realtime, auth listeners.
+ * Не плодим второй `createClient` с тем же storage key — это даёт
+ * "Multiple GoTrueClient instances detected".
  */
 export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
@@ -21,30 +22,25 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
 
 export const isSupabaseConfigured = configured;
 
+let supabaseRestSingleton: SupabaseClient<Database> | null = null;
+
 /**
- * ПостgREST (fetchWithAuth) подставляет `access_token` из `auth.getSession()`.
- * Если в момент запроса в памяти/куках нет access_token, в `Authorization` улетает
- * anon key — `auth.uid()` в RLS = null. Отдельный клиент с явным
- * `Authorization: Bearer <user_jwt>` гарантирует JWT в RPC / `.from()`.
+ * Один `createClient` **без** отдельного GoTrue: опция `accessToken` взята из
+ * основного `supabase.auth.getSession()`. PostgREST/RPC/Storage/Functions
+ * получают `Authorization: Bearer <user_jwt>`, а не `sb_publishable_…`.
+ * Не вызывайте `supabaseRest.auth.*` (namespace disabled при `accessToken`).
  */
-export async function getAuthedSupabaseClient(): Promise<SupabaseClient<Database> | null> {
+export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
   if (!url || !anonKey) return null;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.warn("[supabase] getAuthedSupabaseClient getSession", error);
+  if (!supabaseRestSingleton) {
+    supabaseRestSingleton = createClient<Database>(url, anonKey, {
+      accessToken: async () => {
+        const { data } = await supabase.auth.getSession();
+        return data.session?.access_token ?? null;
+      },
+    });
   }
-  const token = data.session?.access_token;
-  if (!token) return null;
-  return createClient<Database>(url, anonKey, {
-    global: {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
+  return supabaseRestSingleton;
 }
 
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
