@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { supabase } from "@/lib/supabase";
+import { getAuthedSupabaseClient, supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/auth-context";
 import type { ChatListRow } from "@/lib/types";
 
@@ -221,16 +221,29 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
-        const { data: authSnap } = await supabase.auth.getSession();
-        if (!authSnap?.session?.user) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (process.env.NODE_ENV === "development") {
+          console.log("RPC SESSION:", sessionData.session);
+        }
+        if (!sessionData?.session?.user) {
           console.warn("no user, skip rpc list_my_chats");
           if (!opts?.silent) setLoadingState(false);
           return;
         }
-        const res = await supabase.rpc("list_my_chats", {
+
+        const authed = await getAuthedSupabaseClient();
+        if (!authed) {
+          console.warn("no access_token, skip rpc list_my_chats");
+          if (!opts?.silent) setLoadingState(false);
+          return;
+        }
+        const res = await authed.rpc("list_my_chats", {
           p_limit: 100,
           p_before: null,
         });
+        if (process.env.NODE_ENV === "development") {
+          console.log("RPC RESULT:", res.data, res.error);
+        }
         if (res.error) {
           console.error("list_my_chats RPC error", {
             message: res.error.message,
@@ -302,7 +315,10 @@ export function ChatUnreadProvider({
       const active = statusRef.current.activeChatId;
       const lastSeen = new Date().toISOString();
 
-      const { error: upsertError } = await supabase
+      const authed = await getAuthedSupabaseClient();
+      if (!authed) return;
+
+      const { error: upsertError } = await authed
         .from("online_users")
         .upsert(
           {
@@ -318,17 +334,14 @@ export function ChatUnreadProvider({
         console.error("online_users upsert", upsertError);
       }
 
-      const { data: sPush } = await supabase.auth.getSession();
-      if (sPush?.session?.user?.id) {
-        const { error: touchPushError } = await supabase
-          .from("push_tokens")
-          .update({ last_seen_at: lastSeen })
-          .eq("user_id", userId)
-          .eq("provider", "webpush");
+      const { error: touchPushError } = await authed
+        .from("push_tokens")
+        .update({ last_seen_at: lastSeen })
+        .eq("user_id", userId)
+        .eq("provider", "webpush");
 
-        if (touchPushError && process.env.NODE_ENV === "development") {
-          console.warn("push_tokens touch", touchPushError);
-        }
+      if (touchPushError && process.env.NODE_ENV === "development") {
+        console.warn("push_tokens touch", touchPushError);
       }
     } catch (e) {
       console.error("presence heartbeat", e);
@@ -353,9 +366,17 @@ export function ChatUnreadProvider({
       if (!userId || !isUuid(chatId)) return;
 
       try {
-        const { data: authSnap } = await supabase.auth.getSession();
-        if (!authSnap?.session?.user) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (process.env.NODE_ENV === "development") {
+          console.log("mark_chat_read RPC SESSION:", sessionData.session);
+        }
+        if (!sessionData?.session?.user) {
           console.warn("no user, skip rpc mark_chat_read");
+          return;
+        }
+        const authed = await getAuthedSupabaseClient();
+        if (!authed) {
+          console.warn("no access_token, skip mark_chat_read");
           return;
         }
         const rpcArgs: { p_chat_id: string; p_up_to_message_id?: string } = {
@@ -365,7 +386,7 @@ export function ChatUnreadProvider({
           rpcArgs.p_up_to_message_id = upToMessageId;
         }
 
-        const res = await supabase.rpc("mark_chat_read", rpcArgs);
+        const res = await authed.rpc("mark_chat_read", rpcArgs);
 
         if (res.error) {
           console.error("mark_chat_read RPC error", {
