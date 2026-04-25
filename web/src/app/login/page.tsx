@@ -4,8 +4,9 @@ import { signInWithMagicLink } from "@/lib/auth";
 import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
+import { trackEvent } from "@/lib/analytics";
 import Link from "next/link";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const RESEND_COOLDOWN_MS = 60_000;
@@ -33,8 +34,10 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [sent, setSent] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [, bumpCooldownUi] = useReducer((n: number) => n + 1, 0);
+  const loginSuccessTrackedRef = useRef(false);
 
   useEffect(() => {
     if (consumeAccessDeniedMessage()) {
@@ -66,6 +69,10 @@ export default function LoginPage() {
   // Редирект если уже вошёл
   useEffect(() => {
     if (ready && session?.user) {
+      if (!loginSuccessTrackedRef.current) {
+        loginSuccessTrackedRef.current = true;
+        trackEvent("login_success", { user_id: session.user.id });
+      }
       router.replace("/");
     }
   }, [ready, session, router]);
@@ -75,6 +82,10 @@ export default function LoginPage() {
 
   async function send() {
     setErr("");
+    if (!acceptedTerms) {
+      setErr("Подтвердите согласие с пользовательским соглашением");
+      return;
+    }
     const em = email.trim().toLowerCase();
     if (!em || !isOptionalEmailValid(em)) {
       setErr("Введите корректный email");
@@ -103,6 +114,7 @@ export default function LoginPage() {
   }
 
   function onPrimaryClick() {
+    trackEvent("login_click", { has_terms: acceptedTerms });
     void send();
   }
 
@@ -122,6 +134,29 @@ export default function LoginPage() {
       <p className="mt-2 max-w-[320px] text-[13px] leading-relaxed text-muted">
         Открывайте ссылку в том же браузере и на том же устройстве, где запрашивали вход.
       </p>
+      <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
+        <input
+          type="checkbox"
+          checked={acceptedTerms}
+          onChange={(e) => {
+            setAcceptedTerms(e.target.checked);
+            if (err) setErr("");
+          }}
+          className="mt-0.5 h-4 w-4 rounded border-line bg-elevated text-accent focus:ring-accent/40"
+        />
+        <span>
+          Нажимая «Войти», вы соглашаетесь с{" "}
+          <Link
+            href="/legal/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-accent underline-offset-2 hover:underline"
+          >
+            пользовательским соглашением
+          </Link>
+          .
+        </span>
+      </label>
       <label className="mt-10 block text-[11px] font-semibold uppercase tracking-wider text-muted">Email</label>
       <input
         type="email"
@@ -148,10 +183,10 @@ export default function LoginPage() {
       <button
         type="button"
         onClick={onPrimaryClick}
-        disabled={loading || !canSendNow}
+        disabled={loading || !canSendNow || !acceptedTerms}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "Отправка…" : sent ? "Отправить снова" : "Отправить ссылку"}
+        {loading ? "Отправка…" : sent ? "Войти снова" : "Войти"}
       </button>
       {(sent || err) && !loading ? (
         <p className="mt-3 text-center text-xs text-muted">

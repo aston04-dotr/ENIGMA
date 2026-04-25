@@ -1,6 +1,5 @@
 "use client";
 
-import TypingIndicator from "@/components/chat/TypingIndicator";
 import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
 import { Toast } from "@/components/Toast";
@@ -158,6 +157,17 @@ function formatLastSeen(iso: string): string {
   }
 }
 
+function formatMessageTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return "";
+  }
+}
+
 /** Throttle исходящих typing:true (мс) — мгновенно только первый символ. */
 const TYPING_SEND_THROTTLE_MS = 250;
 /** После паузы ввода — typing:false (broadcast) и сброс локального флага. */
@@ -165,6 +175,7 @@ const TYPING_LOCAL_IDLE_MS = 1200;
 /** Peer «печатает» — TTL без новых пингов (и проверка по интервалу). */
 const TYPING_PEER_TTL_MS = 1500;
 const PEER_TYPING_CHECK_INTERVAL_MS = 300;
+const MIN_TYPING_VISIBLE_MS = 600;
 /** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
 const PRESENCE_OFFLINE_DELAY_MS = 3000;
 /** Ниже этой дистанции — «у низа» (автоскролл при новом сообщении). */
@@ -227,8 +238,6 @@ function buildMessagePreview(m: MessageRow): string {
   return m.text || "";
 }
 
-const tickSvg = "block shrink-0 [shape-rendering:geometricPrecision]";
-
 function PaperclipIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -247,56 +256,6 @@ function PaperclipIcon({ className }: { className?: string }) {
   );
 }
 
-/** Одна галочка — отправлено (ещё не доставлено собеседнику). */
-function ReceiptTickSingle({ className }: { className?: string }) {
-  return (
-    <svg
-      className={`${tickSvg} h-3 w-[15px] ${className ?? ""}`}
-      viewBox="0 0 8 6"
-      fill="none"
-      aria-hidden
-    >
-      <path
-        d="M 0.65 3.15 L 2.35 4.55 L 5.75 0.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.45"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
-/** Две галочки — доставлено или прочитано (как в WhatsApp, со сдвигом). */
-function ReceiptTickDouble({ className }: { className?: string }) {
-  return (
-    <svg
-      className={`${tickSvg} h-3 w-6 ${className ?? ""}`}
-      viewBox="0 0 14 6"
-      fill="none"
-      aria-hidden
-    >
-      <path
-        d="M 0.6 3.15 L 2.25 4.55 L 5.7 0.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.45"
-        vectorEffect="non-scaling-stroke"
-      />
-      <path
-        d="M 3.35 3.15 L 5 4.55 L 8.55 0.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.45"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
 function MessageStatusTicks({
   mine,
   delivered_at,
@@ -307,27 +266,14 @@ function MessageStatusTicks({
   read_at?: string | null;
 }) {
   if (!mine) return null;
-  // WhatsApp: прочитано → фиолетовые ✓✓; доставлено → серые ✓✓; иначе одна ✓
-  const tier = read_at ? 2 : delivered_at ? 1 : 0;
-  const strokeClass =
-    tier === 2
-      ? "text-violet-600 transition-colors duration-200 ease-out dark:text-violet-400"
-      : "text-fg/33 transition-colors duration-200 ease-out dark:text-fg/35";
-
-  const icon =
-    tier >= 1 ? (
-      <ReceiptTickDouble className={strokeClass} />
-    ) : (
-      <ReceiptTickSingle className={strokeClass} />
-    );
-
+  const isDelivered = Boolean(delivered_at);
+  const isRead = Boolean(read_at);
+  const ticks = isDelivered ? "✓✓" : "✓";
+  const colorClass = isRead
+    ? "text-sky-500 dark:text-sky-400"
+    : "text-fg/40 dark:text-fg/35";
   return (
-    <span
-      key={tier}
-      className="inline-flex origin-center animate-receiptPop will-change-[transform,opacity]"
-    >
-      {icon}
-    </span>
+    <span className={`text-[11px] leading-none ${colorClass}`}>{ticks}</span>
   );
 }
 
@@ -347,6 +293,8 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   onRetryImage: (id: string) => void;
 }) {
   const isImage = m.type === "image" && Boolean(m.image_url);
+  const isOptimistic = m.id.startsWith("temp-");
+  const messageTime = formatMessageTime(m.created_at);
   return (
     <div
       data-message-id={m.id}
@@ -372,7 +320,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
                 ? "ring-1 ring-white/10"
                 : "ring-1 ring-line/35"
               : ""
-          }`}
+          } ${isOptimistic ? "opacity-70" : "opacity-100"}`}
         >
           {m.deleted ? (
             <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-fg/70">
@@ -408,15 +356,16 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
             </span>
           )}
         </div>
-        {mine ? (
-          <div className="flex min-h-[13px] shrink-0 items-center justify-end pr-0.5">
+        <div className="mt-0.5 flex min-h-[14px] shrink-0 items-center justify-end gap-1 px-0.5 text-xs text-fg/40">
+          <span>{messageTime}</span>
+          {mine ? (
             <MessageStatusTicks
               mine
               delivered_at={m.delivered_at}
               read_at={m.read_at}
             />
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -487,6 +436,8 @@ export default function ChatRoomPage() {
   const peerTypingAtRef = useRef(0);
   const lastPeerTypingStateRef = useRef(false);
   const peerTypingIntervalRef = useRef<number | null>(null);
+  const peerTypingHideTimerRef = useRef<number | null>(null);
+  const typingShownAtRef = useRef(0);
   const realtimeInsertIdsRef = useRef<Set<string>>(new Set());
   const peerOfflineTimerRef = useRef<number | null>(null);
   const optimisticMessageIdSeqRef = useRef(0);
@@ -508,6 +459,38 @@ export default function ChatRoomPage() {
     lastPeerTypingStateRef.current = newState;
     setPeerTyping(newState);
   }, []);
+
+  const clearPeerTypingHideTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (!peerTypingHideTimerRef.current) return;
+    window.clearTimeout(peerTypingHideTimerRef.current);
+    peerTypingHideTimerRef.current = null;
+  }, []);
+
+  const setPeerTypingWithMinVisible = useCallback(
+    (active: boolean) => {
+      if (active) {
+        clearPeerTypingHideTimer();
+        typingShownAtRef.current = Date.now();
+        setPeerTypingStable(true);
+        return;
+      }
+      const elapsed = Date.now() - typingShownAtRef.current;
+      if (elapsed < MIN_TYPING_VISIBLE_MS) {
+        clearPeerTypingHideTimer();
+        if (typeof window !== "undefined") {
+          peerTypingHideTimerRef.current = window.setTimeout(() => {
+            peerTypingHideTimerRef.current = null;
+            setPeerTypingStable(false);
+          }, MIN_TYPING_VISIBLE_MS - elapsed);
+        }
+        return;
+      }
+      clearPeerTypingHideTimer();
+      setPeerTypingStable(false);
+    },
+    [clearPeerTypingHideTimer, setPeerTypingStable],
+  );
 
   useEffect(() => {
     isTypingLocalRef.current = isTypingLocal;
@@ -541,6 +524,10 @@ export default function ChatRoomPage() {
         window.clearInterval(peerTypingIntervalRef.current);
         peerTypingIntervalRef.current = null;
       }
+      if (peerTypingHideTimerRef.current) {
+        window.clearTimeout(peerTypingHideTimerRef.current);
+        peerTypingHideTimerRef.current = null;
+      }
       lastTypingPulseRef.current = 0;
       peerTypingAtRef.current = 0;
     };
@@ -550,10 +537,11 @@ export default function ChatRoomPage() {
   useEffect(() => {
     lastTypingPulseRef.current = 0;
     peerTypingAtRef.current = 0;
+    clearPeerTypingHideTimer();
     setPeerTypingStable(false);
     isTypingLocalRef.current = false;
     setIsTypingLocal(false);
-  }, [chatId, setPeerTypingStable]);
+  }, [chatId, clearPeerTypingHideTimer, setPeerTypingStable]);
 
   useEffect(() => {
     setPeerOnline(false);
@@ -576,6 +564,10 @@ export default function ChatRoomPage() {
         window.clearInterval(peerTypingIntervalRef.current);
         peerTypingIntervalRef.current = null;
       }
+      if (peerTypingHideTimerRef.current) {
+        window.clearTimeout(peerTypingHideTimerRef.current);
+        peerTypingHideTimerRef.current = null;
+      }
       if (peerOfflineTimerRef.current) {
         window.clearTimeout(peerOfflineTimerRef.current);
         peerOfflineTimerRef.current = null;
@@ -583,6 +575,7 @@ export default function ChatRoomPage() {
     }
     lastTypingPulseRef.current = 0;
     peerTypingAtRef.current = 0;
+    clearPeerTypingHideTimer();
     setPeerTypingStable(false);
     isTypingLocalRef.current = false;
     setIsTypingLocal(false);
@@ -591,7 +584,7 @@ export default function ChatRoomPage() {
     uploadInFlightRef.current = false;
     revokeAllPendingBlobs();
     setToast(null);
-  }, [chatId, revokeAllPendingBlobs, setPeerTypingStable]);
+  }, [chatId, clearPeerTypingHideTimer, revokeAllPendingBlobs, setPeerTypingStable]);
 
   const markIncomingDelivered = useCallback(
     async (messageId: string, senderIdHint?: string) => {
@@ -651,6 +644,30 @@ export default function ChatRoomPage() {
     );
   }, [chatId, me]);
 
+  const markMessagesAsRead = useCallback(async () => {
+    if (!chatId || !me || !isUuid(chatId)) return;
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .from("messages")
+      .update({ read_at: nowIso })
+      .eq("chat_id", chatId)
+      .neq("sender_id", me)
+      .is("read_at", null);
+
+    if (error) {
+      console.error("messages read_at (batch)", error);
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.chat_id === chatId && m.sender_id !== me && !m.read_at
+          ? { ...m, read_at: nowIso }
+          : m,
+      ),
+    );
+  }, [chatId, me]);
+
   const currentChat = useMemo(
     () => (chatId ? getChatRow(chatId) : null),
     [chatId, getChatRow],
@@ -672,9 +689,9 @@ export default function ChatRoomPage() {
     return "Чат";
   }, [currentChat, chatId]);
 
-  const isTyping = isTypingLocal || peerTyping;
+  const isTyping = peerTyping;
 
-  /** Подстрока: соединение / last seen. «печатает…» — отдельной полоской у поля ввода (isTyping). */
+  /** Подстрока: соединение / last seen (typing показываем в шапке отдельной строкой). */
   const headerSecondaryLine = useMemo(() => {
     if (roomStatus === "reconnecting")
       return { kind: "muted" as const, text: "Переподключение…" };
@@ -811,7 +828,7 @@ export default function ChatRoomPage() {
       const at = peerTypingAtRef.current;
       if (at > 0 && Date.now() - at > TYPING_PEER_TTL_MS) {
         peerTypingAtRef.current = 0;
-        setPeerTypingStable(false);
+        setPeerTypingWithMinVisible(false);
       }
     }, PEER_TYPING_CHECK_INTERVAL_MS);
     return () => {
@@ -820,7 +837,7 @@ export default function ChatRoomPage() {
         peerTypingIntervalRef.current = null;
       }
     };
-  }, [chatId, setPeerTypingStable]);
+  }, [chatId, setPeerTypingWithMinVisible]);
 
   const latestMessageId = useMemo(
     () => messages[messages.length - 1]?.id ?? null,
@@ -1021,6 +1038,11 @@ export default function ChatRoomPage() {
   }, [me, chatId, markIncomingDeliveredBatch]);
 
   useEffect(() => {
+    if (!chatId || !me) return;
+    void markMessagesAsRead();
+  }, [chatId, me, markMessagesAsRead]);
+
+  useEffect(() => {
     if (!chatId || !isUuid(chatId)) return;
     setActiveChatId(chatId);
     setMessages((prev) =>
@@ -1158,11 +1180,11 @@ export default function ChatRoomPage() {
           }
           if (payload.typing === false) {
             peerTypingAtRef.current = 0;
-            setPeerTypingStable(false);
+            setPeerTypingWithMinVisible(false);
             return;
           }
           peerTypingAtRef.current = Date.now();
-          setPeerTypingStable(true);
+          setPeerTypingWithMinVisible(true);
         })
         .on("presence", { event: "sync" }, () => {
           if (reconnectingTypingResetPendingRef.current) {
@@ -1306,6 +1328,7 @@ export default function ChatRoomPage() {
     markVisibleRoomRead,
     backfillAfterReconnect,
     alignListToBottomAfterPaint,
+    setPeerTypingWithMinVisible,
     setPeerTypingStable,
   ]);
 
@@ -1847,15 +1870,22 @@ export default function ChatRoomPage() {
               </span>
             ) : null}
           </div>
-          <div
-            className={`mt-0.5 min-h-[16px] transition-opacity duration-150 ${
-              headerSecondaryLine.kind === "muted"
-                ? "text-[11px] text-muted"
-                : ""
-            }`}
-          >
-            {headerSecondaryLine.text}
-          </div>
+          {isTyping ? (
+            <div className="mt-0.5 flex items-center gap-1 text-xs text-gray-400 transition-opacity duration-200">
+              Печатает
+              <span className="animate-pulse">...</span>
+            </div>
+          ) : (
+            <div
+              className={`mt-0.5 min-h-[16px] transition-opacity duration-150 ${
+                headerSecondaryLine.kind === "muted"
+                  ? "text-[11px] text-muted"
+                  : ""
+              }`}
+            >
+              {headerSecondaryLine.text}
+            </div>
+          )}
         </div>
       </header>
 
@@ -1963,7 +1993,6 @@ export default function ChatRoomPage() {
       </div>
 
       <div className="shrink-0 border-t border-line/80 bg-elevated safe-pb">
-        {isTyping ? <TypingIndicator /> : null}
         {sendErr ? (
           <button
             type="button"

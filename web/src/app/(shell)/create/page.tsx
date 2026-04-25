@@ -13,6 +13,7 @@ import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
 import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
+import { trackEvent } from "@/lib/analytics";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -88,6 +89,10 @@ export default function CreatePage() {
   const isDirty = Boolean(title || description || price);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
   const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
+
+  useEffect(() => {
+    trackEvent("create_open");
+  }, []);
 
   const handleBack = useCallback(() => {
     if (
@@ -418,6 +423,10 @@ export default function CreatePage() {
       }
 
       registerRapidListingCreated(uid);
+      trackEvent("listing_publish", {
+        category,
+        city: selectedCity,
+      });
       const restForDraft = getSupabaseRestWithSession();
       if (restForDraft) {
         const { error: draftDeleteError } = await restForDraft.from("drafts").delete().eq("user_id", uid);

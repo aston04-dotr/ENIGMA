@@ -12,7 +12,7 @@ export function LandingScreen({ minimal = false }: { minimal?: boolean }) {
         </h1>
         {!minimal && (
           <>
-            <p className="landing-subtitle mt-5 text-sm font-medium tracking-[0.08em] text-[#95a1ad]">Объявления нового уровня</p>
+            <p className="landing-subtitle mt-5 text-sm font-medium tracking-[0.08em] text-[#95a1ad]">Покупай и продавай рядом</p>
             <Link
               href="/login"
               prefetch

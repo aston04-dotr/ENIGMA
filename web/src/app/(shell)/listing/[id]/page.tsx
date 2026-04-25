@@ -6,6 +6,7 @@ import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
 import {
+  fetchListingFavoriteCounts,
   fetchListingById,
   incrementViews,
   normalizeListingImages,
@@ -74,8 +75,26 @@ export default function ListingDetailPage() {
         const res = await fetchListingById(String(id));
         if (cancelled) return;
         if (res.row) {
-          setRow(res.row);
-          void incrementViews(res.row.id);
+          const loadedRow = res.row;
+          setRow(loadedRow);
+          void incrementViews(loadedRow.id).then((ok) => {
+            if (!ok || cancelled) return;
+            setRow((prev) =>
+              prev && prev.id === loadedRow.id
+                ? { ...prev, view_count: Number(prev.view_count ?? 0) + 1 }
+                : prev,
+            );
+          });
+          void fetchListingFavoriteCounts([loadedRow.id]).then((counts) => {
+            if (cancelled) return;
+            const fav = counts.get(loadedRow.id);
+            if (fav == null) return;
+            setRow((prev) =>
+              prev && prev.id === loadedRow.id
+                ? { ...prev, favorite_count: fav }
+                : prev,
+            );
+          });
         } else {
           const msg = res.loadError ?? "Не найдено";
           console.error("FETCH ERROR", msg);
@@ -202,6 +221,14 @@ export default function ListingDetailPage() {
   const viewCount = Number.isFinite(Number(safeItem.view_count))
     ? Number(safeItem.view_count)
     : 0;
+  const favoritesCount = Number.isFinite(Number(safeItem.favorite_count))
+    ? Number(safeItem.favorite_count)
+    : 0;
+  const liveViewersRaw = (safeItem as { live_viewers?: unknown }).live_viewers;
+  const liveViewers =
+    Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
+      ? Number(liveViewersRaw)
+      : null;
   const price = new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency: "RUB",
@@ -270,9 +297,14 @@ export default function ListingDetailPage() {
           <h1 className="mt-2 text-xl font-semibold leading-snug text-fg">
             {title}
           </h1>
-          <p className="mt-3 text-sm text-muted">
-            {city} · {categoryLabel(category)} · {viewCount} просм.
-          </p>
+          <p className="mt-3 text-sm text-muted">{city} · {categoryLabel(category)}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+            <span className="rounded-md bg-main/55 px-1.5 py-0.5">👁 {viewCount}</span>
+            <span className="rounded-md bg-main/55 px-1.5 py-0.5">❤️ {favoritesCount}</span>
+            {liveViewers != null ? (
+              <span className="rounded-md bg-main/55 px-1.5 py-0.5">👀 {liveViewers}</span>
+            ) : null}
+          </div>
           <p className="mt-6 whitespace-pre-wrap text-[15px] leading-relaxed text-fg opacity-90">
             {description}
           </p>

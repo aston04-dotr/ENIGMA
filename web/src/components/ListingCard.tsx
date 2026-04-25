@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { categoryLabel } from "@/lib/categories";
+import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
@@ -35,6 +36,13 @@ export function ListingCard({ item }: Props) {
   const viewerId = session?.user?.id ?? null;
   const isOwn = Boolean(viewerId && item.user_id && item.user_id === viewerId);
   const partner = item.is_partner_ad === true;
+  const views = Number.isFinite(Number(item.view_count)) ? Number(item.view_count) : 0;
+  const favorites = Number.isFinite(Number(item.favorite_count)) ? Number(item.favorite_count) : 0;
+  const liveViewersRaw = (item as ListingRow & { live_viewers?: unknown }).live_viewers;
+  const liveViewers =
+    Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
+      ? Number(liveViewersRaw)
+      : null;
   const priceRub = defaultBoostCtaPriceRub();
 
   if (!lid) return null;
@@ -59,7 +67,18 @@ export function ListingCard({ item }: Props) {
 
   return (
     <div className="pressable mb-5 overflow-hidden rounded-card border border-line bg-elevated shadow-soft transition-shadow duration-ui hover:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-      <Link href={`/listing/${lid}`} prefetch className="block">
+      <Link
+        href={`/listing/${lid}`}
+        prefetch
+        className="block"
+        onClick={() =>
+          trackEvent("listing_open", {
+            listing_id: lid,
+            category: item?.category ?? null,
+            city: item?.city ?? null,
+          })
+        }
+      >
         <div className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
             <Image src={uri} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 32rem" unoptimized />
@@ -85,6 +104,13 @@ export function ListingCard({ item }: Props) {
           <p className="text-xs text-muted">
             {itemCity} · {categoryLabel(item?.category)}
           </p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+            <span className="rounded-md bg-main/55 px-1.5 py-0.5">👁 {views}</span>
+            <span className="rounded-md bg-main/55 px-1.5 py-0.5">❤️ {favorites}</span>
+            {liveViewers != null ? (
+              <span className="rounded-md bg-main/55 px-1.5 py-0.5">👀 {liveViewers}</span>
+            ) : null}
+          </div>
         </div>
       </Link>
       {isOwn && !partner ? (

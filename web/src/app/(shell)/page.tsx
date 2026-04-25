@@ -10,6 +10,8 @@ import {
 import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
+import { CATEGORIES, categoryLabel } from "@/lib/categories";
+import { trackEvent } from "@/lib/analytics";
 import { ALLOWED_LISTING_CITIES } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import {
@@ -21,9 +23,10 @@ import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import type { ListingRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Select from "react-select";
 
 const CACHE_KEY = "cached_listings";
+const FEED_CATEGORY_KEY = "feed_category";
+const ALL_CATEGORY = "all";
 
 type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
 
@@ -51,6 +54,28 @@ function readFeedCache(): FeedCache {
     return { items, nextCursor: nc };
   } catch {
     return { items: [], nextCursor: null };
+  }
+}
+
+function readStoredFeedCategory(): string {
+  if (typeof window === "undefined") return ALL_CATEGORY;
+  try {
+    const raw = localStorage.getItem(FEED_CATEGORY_KEY);
+    if (!raw) return ALL_CATEGORY;
+    const normalized = raw.trim();
+    if (normalized === ALL_CATEGORY) return ALL_CATEGORY;
+    return CATEGORIES.some((x) => x.id === normalized) ? normalized : ALL_CATEGORY;
+  } catch {
+    return ALL_CATEGORY;
+  }
+}
+
+function persistFeedCategory(category: string) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(FEED_CATEGORY_KEY, category);
+  } catch {
+    /* private mode */
   }
 }
 
@@ -112,6 +137,10 @@ function FeedPage({ session }: { session: Session }) {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
+  const [citySheetOpen, setCitySheetOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORY);
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
 
@@ -121,6 +150,10 @@ function FeedPage({ session }: { session: Session }) {
       console.log("[CITIES-FEED] Loaded:", dbCities.length, "cities");
       setCities(dbCities);
     })();
+  }, []);
+
+  useEffect(() => {
+    setSelectedCategory(readStoredFeedCategory());
   }, []);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -133,16 +166,21 @@ function FeedPage({ session }: { session: Session }) {
   const lastLoadMoreAtRef = useRef(0);
   const feedFilters = useMemo(() => {
     const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
+    if (selectedCategory !== ALL_CATEGORY) {
+      f.category = selectedCategory;
+    }
     return f;
-  }, [city]);
+  }, [city, selectedCategory]);
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
     return items.filter((x) => {
       if (!listingIsRussiaForFeed(x)) return false;
-      return x.city?.toLowerCase().trim() === city.toLowerCase().trim();
+      if (x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
+      if (selectedCategory === ALL_CATEGORY) return true;
+      return (x.category ?? "").trim() === selectedCategory;
     });
-  }, [items, city]);
+  }, [items, city, selectedCategory]);
 
   const applyRes = useCallback(
     (
@@ -188,6 +226,7 @@ function FeedPage({ session }: { session: Session }) {
     let cancelled = false;
     prefetchedRef.current = null;
     prefetchKeyRef.current = null;
+    setIsFeedRefreshing(true);
     (async () => {
       try {
         const res = await fetchListings(feedFilters);
@@ -214,6 +253,10 @@ function FeedPage({ session }: { session: Session }) {
         if (cancelled) return;
         console.error("LISTINGS INITIAL FETCH ERROR", e);
         setFeedError(FETCH_ERROR_MESSAGE);
+      } finally {
+        if (!cancelled) {
+          setIsFeedRefreshing(false);
+        }
       }
     })();
     return () => {
@@ -229,7 +272,7 @@ function FeedPage({ session }: { session: Session }) {
 
   const runPrefetch = useCallback(async () => {
     if (!nextCursor || prefetchingRef.current) return;
-    const key = `${nextCursor.created_at}\0${nextCursor.id}\0${city}`;
+    const key = `${nextCursor.created_at}\0${nextCursor.id}\0${city}\0${selectedCategory}`;
     if (prefetchedRef.current && prefetchKeyRef.current === key) return;
     prefetchingRef.current = true;
     try {
@@ -248,7 +291,11 @@ function FeedPage({ session }: { session: Session }) {
     } finally {
       prefetchingRef.current = false;
     }
-  }, [nextCursor, feedFilters, city, session?.user?.id]);
+  }, [nextCursor, feedFilters, city, selectedCategory, session?.user?.id]);
+
+  useEffect(() => {
+    persistFeedCategory(selectedCategory);
+  }, [selectedCategory]);
 
   useEffect(() => {
     if (!nextCursor) return;
@@ -310,11 +357,25 @@ function FeedPage({ session }: { session: Session }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [nextCursor, runPrefetch, loadMore]);
 
-  console.log("[CITIES DEBUG] state:", cities?.length, cities);
+  const categoryTitle =
+    selectedCategory === ALL_CATEGORY ? "Все" : categoryLabel(selectedCategory);
+  const foundCountLabel = new Intl.NumberFormat("ru-RU").format(filtered.length);
+  const filterRowClass =
+    "pressable flex w-full items-center justify-between rounded-card border border-line bg-elevated px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.995]";
+  const hasActiveFilters =
+    city !== ALLOWED_LISTING_CITIES[0] || selectedCategory !== ALL_CATEGORY;
+  const quickCategories = useMemo(() => CATEGORIES.slice(0, 8), []);
 
-  const cityOptions = cities.map((c) => ({ value: c, label: c }));
-
-  console.log("[CITIES DEBUG] options:", cityOptions?.length, cityOptions);
+  const resetFilters = useCallback(() => {
+    trackEvent("filters_reset", {
+      city,
+      category: selectedCategory,
+    });
+    setCity(ALLOWED_LISTING_CITIES[0]);
+    setSelectedCategory(ALL_CATEGORY);
+    setCitySheetOpen(false);
+    setCategorySheetOpen(false);
+  }, [city, selectedCategory]);
 
   return (
     <main className="safe-pt min-h-screen bg-main">
@@ -326,22 +387,69 @@ function FeedPage({ session }: { session: Session }) {
             </h1>
           </div>
         </div>
-        <div className="mt-6">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">
-            Город
-          </label>
-          <div className="mt-2">
-            <Select
-              value={cityOptions.find((option) => option.value === city)}
-              onChange={(selectedOption) =>
-                setCity(selectedOption?.value || ALLOWED_LISTING_CITIES[0])
-              }
-              options={cityOptions}
-              placeholder="Выберите город"
-              isSearchable={false}
-              className="react-select-container"
-              classNamePrefix="react-select"
-            />
+        <div className="mt-6 space-y-2.5">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setCitySheetOpen(true)}
+              className={filterRowClass}
+            >
+              <span className="text-sm text-fg">Город: {city}</span>
+              <span className="text-sm font-semibold text-muted">{">"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategorySheetOpen(true)}
+              className={filterRowClass}
+            >
+              <span className="text-sm text-fg">Категория: {categoryTitle}</span>
+              <span className="text-sm font-semibold text-muted">{">"}</span>
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-gray-500">Найдено: {foundCountLabel} объявлений</p>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="pressable text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+              >
+                Сбросить
+              </button>
+            ) : null}
+          </div>
+          <div className="-mx-0.5 flex gap-2 overflow-x-auto pb-1 pt-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent("category_quick_select", { category: ALL_CATEGORY });
+                setSelectedCategory(ALL_CATEGORY);
+              }}
+              className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                selectedCategory === ALL_CATEGORY
+                  ? "border-accent/40 bg-accent/10 text-accent"
+                  : "border-line bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Все
+            </button>
+            {quickCategories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                  onClick={() => {
+                    trackEvent("category_quick_select", { category: cat.id });
+                    setSelectedCategory(cat.id);
+                  }}
+                className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  selectedCategory === cat.id
+                    ? "border-accent/40 bg-accent/10 text-accent"
+                    : "border-line bg-elevated text-fg hover:bg-elev-2"
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
           </div>
         </div>
       </header>
@@ -357,12 +465,32 @@ function FeedPage({ session }: { session: Session }) {
         </div>
       ) : null}
 
-      <div className="px-5 pb-6 pt-2">
+      <div
+        className={`relative px-5 pb-6 pt-2 transition-opacity duration-200 ${
+          isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
+        }`}
+      >
         {filtered.map((item) => (
           <ListingCard key={item.id} item={item} />
         ))}
         {filtered.length === 0 ? (
           <EmptyState title="Пока нет объявлений. Будь первым 🔥" />
+        ) : null}
+        {isFeedRefreshing ? (
+          <div className="pointer-events-none absolute inset-0 z-10 px-1 pt-2">
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={`feed-refresh-skeleton-${idx}`}
+                  className="overflow-hidden rounded-card border border-line/70 bg-elevated/80 p-3"
+                >
+                  <div className="h-40 animate-skeleton rounded-xl bg-elev-2/85" />
+                  <div className="mt-3 h-4 w-2/3 animate-skeleton rounded bg-elev-2/85" />
+                  <div className="mt-2 h-4 w-1/3 animate-skeleton rounded bg-elev-2/85" />
+                </div>
+              ))}
+            </div>
+          </div>
         ) : null}
       </div>
 
@@ -378,6 +506,122 @@ function FeedPage({ session }: { session: Session }) {
       >
         ↑
       </button>
+
+      {categorySheetOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-main/40 p-4 backdrop-blur-sm animate-[feedBackdropIn_200ms_ease-out] sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="feed-category-title"
+          onClick={() => setCategorySheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-card border border-line bg-elevated p-4 shadow-soft animate-[feedSheetUp_200ms_cubic-bezier(0.2,0.8,0.2,1)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="feed-category-title" className="text-base font-semibold text-fg">
+              Выберите категорию
+            </h2>
+            <div className="mt-3 max-h-[55vh] overflow-y-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  trackEvent("category_select_sheet", { category: ALL_CATEGORY });
+                  setSelectedCategory(ALL_CATEGORY);
+                  setCategorySheetOpen(false);
+                }}
+                className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                  selectedCategory === ALL_CATEGORY
+                    ? "bg-accent/10 text-accent"
+                    : "text-fg hover:bg-elev-2"
+                }`}
+              >
+                <span>Все</span>
+                {selectedCategory === ALL_CATEGORY ? <span>✓</span> : null}
+              </button>
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    trackEvent("category_select_sheet", { category: cat.id });
+                    setSelectedCategory(cat.id);
+                    setCategorySheetOpen(false);
+                  }}
+                  className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                    selectedCategory === cat.id
+                      ? "bg-accent/10 text-accent"
+                      : "text-fg hover:bg-elev-2"
+                  }`}
+                >
+                  <span>{cat.label}</span>
+                  {selectedCategory === cat.id ? <span>✓</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {citySheetOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-main/40 p-4 backdrop-blur-sm animate-[feedBackdropIn_200ms_ease-out] sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="feed-city-title"
+          onClick={() => setCitySheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-card border border-line bg-elevated p-4 shadow-soft animate-[feedSheetUp_200ms_cubic-bezier(0.2,0.8,0.2,1)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="feed-city-title" className="text-base font-semibold text-fg">
+              Выберите город
+            </h2>
+            <div className="mt-3 max-h-[55vh] overflow-y-auto">
+              {cities.map((cityOption) => (
+                <button
+                  key={cityOption}
+                  type="button"
+                  onClick={() => {
+                    trackEvent("city_select", { city: cityOption });
+                    setCity(cityOption || ALLOWED_LISTING_CITIES[0]);
+                    setCitySheetOpen(false);
+                  }}
+                  className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                    city === cityOption
+                      ? "bg-accent/10 text-accent"
+                      : "text-fg hover:bg-elev-2"
+                  }`}
+                >
+                  <span>{cityOption}</span>
+                  {city === cityOption ? <span>✓</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <style jsx global>{`
+        @keyframes feedBackdropIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @keyframes feedSheetUp {
+          from {
+            transform: translateY(100%);
+            opacity: 0.96;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </main>
   );
 }

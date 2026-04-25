@@ -1,6 +1,7 @@
 import { isValidListingUuid } from "./listingParams";
 import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
 import { getListingsPageSize } from "./runtimeConfig";
+import { trackEvent } from "./analytics";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import {
@@ -536,6 +537,7 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
       if (error && error.code !== "23505") {
         throw error;
       }
+      trackEvent("favorite_add", { listing_id: id });
     } else {
       const { error } = await supabase
         .from("listing_favorites")
