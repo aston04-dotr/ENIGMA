@@ -113,24 +113,32 @@ export type MessageRow = {
   read_at?: string | null;
 };
 
+/**
+ * Список чатов: `list_my_chats` сейчас отдаёт только id / buyer / seller / created_at;
+ * поля превью и имени — опциональны, доезжают с Realtime/истории или подставляются в UI.
+ */
 export type ChatListRow = {
   chat_id: string;
-  listing_id: string | null;
-  is_group: boolean;
-  title: string | null;
-  other_user_id: string | null;
-  other_name: string | null;
-  other_avatar: string | null;
-  other_public_id: string | null;
-  last_message_id: string | null;
-  last_message_text: string | null;
-  last_message_sender_id: string | null;
-  last_message_created_at: string | null;
+  /** Из RPC `chats` (1:1) */
+  buyer_id: string | null;
+  seller_id: string | null;
+  created_at: string;
+  listing_id?: string | null;
+  is_group?: boolean;
+  title?: string | null;
+  other_user_id?: string | null;
+  other_name?: string | null;
+  other_avatar?: string | null;
+  other_public_id?: string | null;
+  last_message_id?: string | null;
+  last_message_text?: string | null;
+  last_message_sender_id?: string | null;
+  last_message_created_at?: string | null;
   last_message_image_url?: string | null;
   last_message_voice_url?: string | null;
   last_message_deleted?: boolean | null;
-  last_message_at: string | null;
-  unread_count: number;
+  last_message_at?: string | null;
+  unread_count?: number;
 };
 
 export type ChatUnreadSnapshot = {

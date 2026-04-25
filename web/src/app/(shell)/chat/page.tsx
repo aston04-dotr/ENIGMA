@@ -42,21 +42,22 @@ function buildPreview(row: {
   if (row.last_message_image_url) return "📷 Фото";
   if (row.last_message_voice_url) return "🎤 Голосовое";
   if (row.last_message_text?.trim()) return row.last_message_text.trim();
-  return "Напишите первым";
+  return "—";
 }
 
 function buildDisplayName(row: {
-  is_group: boolean;
-  title: string | null;
-  other_name: string | null;
+  chat_id: string;
+  is_group?: boolean;
+  title?: string | null;
+  other_name?: string | null;
   other_public_id?: string | null;
 }): string {
   if (row.is_group) {
     return row.title?.trim() || "Группа";
   }
-  return (
-    row.other_name?.trim() || row.other_public_id?.trim() || "Пользователь"
-  );
+  const n = row.other_name?.trim() || row.other_public_id?.trim();
+  if (n) return n;
+  return `Чат #${row.chat_id.slice(0, 6)}`;
 }
 
 function formatUnreadCount(value: number): string {
@@ -91,8 +92,10 @@ export default function ChatsPage() {
   const sortedRows = useMemo(
     () =>
       [...rows].sort((a, b) => {
-        const tb = new Date(b.last_message_at ?? 0).getTime();
-        const ta = new Date(a.last_message_at ?? 0).getTime();
+        const ts = (r: (typeof rows)[number]) =>
+          r.last_message_at || r.last_message_created_at || r.created_at;
+        const tb = new Date(ts(b)).getTime();
+        const ta = new Date(ts(a)).getTime();
         return tb - ta;
       }),
     [rows],
@@ -141,7 +144,9 @@ export default function ChatsPage() {
           const displayName = buildDisplayName(row);
           const preview = buildPreview(row);
           const timeLabel = formatTimeLabel(
-            row.last_message_created_at ?? row.last_message_at,
+            row.last_message_created_at ||
+              row.last_message_at ||
+              row.created_at,
           );
           const unread = Math.max(0, Number(row.unread_count || 0));
 

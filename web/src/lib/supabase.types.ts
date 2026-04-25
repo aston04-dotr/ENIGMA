@@ -559,8 +559,13 @@ export type Database = {
         }[]
       }
       list_my_chats: {
-        Args: { p_limit?: number; p_before?: string | null }
-        Returns: Json
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          buyer_id: string
+          seller_id: string
+          created_at: string
+        }[]
       }
       mark_chat_read: {
         Args: { p_chat_id: string; p_up_to_message_id?: string }

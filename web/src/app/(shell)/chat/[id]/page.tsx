@@ -497,8 +497,12 @@ export default function ChatRoomPage() {
     if (currentChat.is_group) {
       return currentChat.title?.trim() || "Группа";
     }
-    return currentChat.other_name?.trim() || "Чат";
-  }, [currentChat]);
+    const n =
+      currentChat.other_name?.trim() || currentChat.other_public_id?.trim();
+    if (n) return n;
+    if (chatId && isUuid(chatId)) return `Чат #${chatId.slice(0, 6)}`;
+    return "Чат";
+  }, [currentChat, chatId]);
 
   /** Подстрока под названием: соединение / печатает (синий) / last seen — без «онлайн» (оно у заголовка). */
   const headerSecondaryLine = useMemo(() => {

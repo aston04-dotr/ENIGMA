@@ -34,6 +34,7 @@ export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
   if (!url || !anonKey) return null;
   if (!supabaseRestSingleton) {
     supabaseRestSingleton = createClient<Database>(url, anonKey, {
+      /** Один shared GoTrue — `supabase`; здесь только чтение токена для PostgREST. */
       accessToken: async () => {
         const { data } = await supabase.auth.getSession();
         return data.session?.access_token ?? null;

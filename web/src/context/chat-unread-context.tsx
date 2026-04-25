@@ -52,32 +52,44 @@ function normalizeChatRow(
   raw: Record<string, unknown>,
   viewerId: string | null,
 ): ChatListRow {
-  const buyerId = raw.buyer_id ? String(raw.buyer_id) : null;
-  const sellerId = raw.seller_id ? String(raw.seller_id) : null;
+  const chatId = String(raw.chat_id ?? raw.id ?? "");
+  const buyerId = raw.buyer_id != null ? String(raw.buyer_id) : null;
+  const sellerId = raw.seller_id != null ? String(raw.seller_id) : null;
+  const createdAt = raw.created_at
+    ? String(raw.created_at)
+    : new Date(0).toISOString();
+
   let otherUserId = raw.other_user_id ? String(raw.other_user_id) : null;
   if (!otherUserId && viewerId && buyerId && sellerId) {
     if (viewerId === buyerId) otherUserId = sellerId;
     else if (viewerId === sellerId) otherUserId = buyerId;
   }
 
-  const lastMessageAt = raw.last_message_at ? String(raw.last_message_at) : null;
+  const lastMessageAt = raw.last_message_at
+    ? String(raw.last_message_at)
+    : null;
   const lastMessageCreatedAt = raw.last_message_created_at
     ? String(raw.last_message_created_at)
-    : lastMessageAt;
+    : null;
+  const derivedLastAt = lastMessageAt || lastMessageCreatedAt || createdAt;
 
   return {
-    chat_id: String(raw.chat_id ?? ""),
-    listing_id: raw.listing_id ? String(raw.listing_id) : null,
+    chat_id: chatId,
+    buyer_id: buyerId,
+    seller_id: sellerId,
+    created_at: createdAt,
+    listing_id: raw.listing_id != null ? String(raw.listing_id) : null,
     is_group: Boolean(raw.is_group),
-    title: raw.title ? String(raw.title) : null,
+    title: raw.title != null ? String(raw.title) : null,
     other_user_id: otherUserId,
-    other_name: raw.other_name ? String(raw.other_name) : null,
-    other_avatar: raw.other_avatar ? String(raw.other_avatar) : null,
-    other_public_id: raw.other_public_id ? String(raw.other_public_id) : null,
-    last_message_id: raw.last_message_id ? String(raw.last_message_id) : null,
-    last_message_text: raw.last_message_text
-      ? String(raw.last_message_text)
-      : null,
+    other_name: raw.other_name != null ? String(raw.other_name) : null,
+    other_avatar: raw.other_avatar != null ? String(raw.other_avatar) : null,
+    other_public_id:
+      raw.other_public_id != null ? String(raw.other_public_id) : null,
+    last_message_id:
+      raw.last_message_id != null ? String(raw.last_message_id) : null,
+    last_message_text:
+      raw.last_message_text != null ? String(raw.last_message_text) : null,
     last_message_sender_id: raw.last_message_sender_id
       ? String(raw.last_message_sender_id)
       : null,
@@ -92,7 +104,7 @@ function normalizeChatRow(
       typeof raw.last_message_deleted === "boolean"
         ? raw.last_message_deleted
         : null,
-    last_message_at: lastMessageAt,
+    last_message_at: lastMessageAt ?? derivedLastAt,
     unread_count: Number.isFinite(Number(raw.unread_count))
       ? Math.max(0, Number(raw.unread_count))
       : 0,
@@ -162,10 +174,19 @@ function createCrossTabBus() {
   };
 }
 
+function listSortKey(row: ChatListRow): string {
+  return (
+    row.last_message_at ||
+    row.last_message_created_at ||
+    row.created_at ||
+    ""
+  );
+}
+
 function sortByLastMessageDesc(rows: ChatListRow[]): ChatListRow[] {
   return [...rows].sort((a, b) => {
-    const tb = new Date(b.last_message_at ?? 0).getTime();
-    const ta = new Date(a.last_message_at ?? 0).getTime();
+    const tb = new Date(listSortKey(b)).getTime();
+    const ta = new Date(listSortKey(a)).getTime();
     if (tb !== ta) return tb - ta;
     return b.chat_id.localeCompare(a.chat_id);
   });
@@ -224,12 +245,7 @@ export function ChatUnreadProvider({
         const { data: sessionData } = await supabase.auth.getSession();
         console.log("RPC SESSION:", sessionData.session);
         if (!sessionData?.session?.access_token) {
-          console.error(
-            "[list_my_chats] нет access_token в сессии; RPC не вызываем. user:",
-            sessionData.session?.user?.id ?? null,
-            "session:",
-            sessionData.session,
-          );
+          console.error("NO ACCESS TOKEN → RPC SKIPPED");
           if (!opts?.silent) setLoadingState(false);
           return;
         }
@@ -242,7 +258,6 @@ export function ChatUnreadProvider({
         }
         const res = await rest.rpc("list_my_chats", {
           p_limit: 100,
-          p_before: null,
         });
         console.log("RPC RESULT:", res.data, res.error);
         if (res.error) {
@@ -549,8 +564,8 @@ export function ChatUnreadProvider({
                   : chat,
               )
               .sort((a, b) => {
-                const tb = new Date(b.last_message_at ?? 0).getTime();
-                const ta = new Date(a.last_message_at ?? 0).getTime();
+                const tb = new Date(listSortKey(b)).getTime();
+                const ta = new Date(listSortKey(a)).getTime();
                 if (tb !== ta) return tb - ta;
                 return b.chat_id.localeCompare(a.chat_id);
               });
