@@ -2,15 +2,18 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { categoryLabel } from "@/lib/categories";
+import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
-import { normalizeListingImages } from "@/lib/listings";
+import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
+import { useEffect, useState } from "react";
 
 function formatPrice(n: number) {
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);
@@ -23,6 +26,7 @@ type Props = {
 export function ListingCard({ item }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
+  const router = useRouter();
   if (!item || typeof item !== "object") return null;
 
   const imgs = normalizeListingImages((item as ListingRow & { images?: unknown })?.images).sort(
@@ -43,7 +47,24 @@ export function ListingCard({ item }: Props) {
     Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
       ? Number(liveViewersRaw)
       : null;
+  const favoriteStateRaw = (item as ListingRow & {
+    is_favorited?: unknown;
+    isFavorited?: unknown;
+  });
+  const isFavorited =
+    favoriteStateRaw.is_favorited === true || favoriteStateRaw.isFavorited === true;
+  const [favoriteCountLocal, setFavoriteCountLocal] = useState(favorites);
+  const [isFavoritedLocal, setIsFavoritedLocal] = useState(isFavorited);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const priceRub = defaultBoostCtaPriceRub();
+
+  useEffect(() => {
+    setFavoriteCountLocal(favorites);
+  }, [favorites, lid]);
+
+  useEffect(() => {
+    setIsFavoritedLocal(isFavorited);
+  }, [isFavorited, lid]);
 
   if (!lid) return null;
 
@@ -101,16 +122,39 @@ export function ListingCard({ item }: Props) {
         <div className="space-y-2 p-4">
           <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-fg">{itemTitle}</p>
           <p className="text-xl font-bold tracking-tight text-fg">{formatPrice(Number(item?.price ?? 0))}</p>
+          <ListingMetricsRow
+            views={views}
+            favorites={favoriteCountLocal}
+            live={liveViewers ?? undefined}
+            isFavorited={isFavoritedLocal}
+            variant="card"
+            onToggleFavorite={() => {
+              if (favoriteBusy) return;
+              if (!viewerId) {
+                router.push("/login");
+                return;
+              }
+              setFavoriteBusy(true);
+              void toggleFavorite({
+                listingId: lid,
+                state: {
+                  isFavorited: isFavoritedLocal,
+                  favoriteCount: favoriteCountLocal,
+                },
+                onOptimistic: (next) => {
+                  setIsFavoritedLocal(next.isFavorited);
+                  setFavoriteCountLocal(next.favoriteCount);
+                },
+                onRollback: (prev) => {
+                  setIsFavoritedLocal(prev.isFavorited);
+                  setFavoriteCountLocal(prev.favoriteCount);
+                },
+              }).finally(() => setFavoriteBusy(false));
+            }}
+          />
           <p className="text-xs text-muted">
             {itemCity} · {categoryLabel(item?.category)}
           </p>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-            <span className="rounded-md bg-main/55 px-1.5 py-0.5">👁 {views}</span>
-            <span className="rounded-md bg-main/55 px-1.5 py-0.5">❤️ {favorites}</span>
-            {liveViewers != null ? (
-              <span className="rounded-md bg-main/55 px-1.5 py-0.5">👀 {liveViewers}</span>
-            ) : null}
-          </div>
         </div>
       </Link>
       {isOwn && !partner ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
+import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { useAuth } from "@/context/auth-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
@@ -10,6 +11,7 @@ import {
   fetchListingById,
   incrementViews,
   normalizeListingImages,
+  toggleFavorite,
 } from "@/lib/listings";
 import { categoryLabel } from "@/lib/categories";
 import Image from "next/image";
@@ -116,6 +118,19 @@ export default function ListingDetailPage() {
   const safeItem = (row || {}) as Partial<import("@/lib/types").ListingRow>;
   const rowId = typeof safeItem.id === "string" ? safeItem.id : "";
   const ownerId = typeof safeItem.user_id === "string" ? safeItem.user_id : "";
+  const favoriteStateRaw = safeItem as {
+    is_favorited?: unknown;
+    isFavorited?: unknown;
+    favorite_count?: unknown;
+  };
+  const favoriteCountFromRow = Number.isFinite(Number(favoriteStateRaw.favorite_count))
+    ? Number(favoriteStateRaw.favorite_count)
+    : 0;
+  const isFavoritedFromRow =
+    favoriteStateRaw.is_favorited === true || favoriteStateRaw.isFavorited === true;
+  const [favoriteCountLocal, setFavoriteCountLocal] = useState(favoriteCountFromRow);
+  const [isFavoritedLocal, setIsFavoritedLocal] = useState(isFavoritedFromRow);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const isOwnListing = Boolean(
     row && viewerId && ownerId && ownerId === viewerId,
   );
@@ -128,6 +143,14 @@ export default function ListingDetailPage() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [isOwnListing, partnerListing, row]);
+
+  useEffect(() => {
+    setFavoriteCountLocal(favoriteCountFromRow);
+  }, [favoriteCountFromRow, rowId]);
+
+  useEffect(() => {
+    setIsFavoritedLocal(isFavoritedFromRow);
+  }, [isFavoritedFromRow, rowId]);
 
   const openChat = useCallback(
     async (ownerId: string) => {
@@ -221,9 +244,6 @@ export default function ListingDetailPage() {
   const viewCount = Number.isFinite(Number(safeItem.view_count))
     ? Number(safeItem.view_count)
     : 0;
-  const favoritesCount = Number.isFinite(Number(safeItem.favorite_count))
-    ? Number(safeItem.favorite_count)
-    : 0;
   const liveViewersRaw = (safeItem as { live_viewers?: unknown }).live_viewers;
   const liveViewers =
     Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
@@ -298,12 +318,37 @@ export default function ListingDetailPage() {
             {title}
           </h1>
           <p className="mt-3 text-sm text-muted">{city} · {categoryLabel(category)}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-            <span className="rounded-md bg-main/55 px-1.5 py-0.5">👁 {viewCount}</span>
-            <span className="rounded-md bg-main/55 px-1.5 py-0.5">❤️ {favoritesCount}</span>
-            {liveViewers != null ? (
-              <span className="rounded-md bg-main/55 px-1.5 py-0.5">👀 {liveViewers}</span>
-            ) : null}
+          <div className="mt-2">
+            <ListingMetricsRow
+              views={viewCount}
+              favorites={favoriteCountLocal}
+              live={liveViewers ?? undefined}
+              isFavorited={isFavoritedLocal}
+              variant="detail"
+              onToggleFavorite={() => {
+                if (favoriteBusy || !rowId) return;
+                if (!viewerId) {
+                  router.push("/login");
+                  return;
+                }
+                setFavoriteBusy(true);
+                void toggleFavorite({
+                  listingId: rowId,
+                  state: {
+                    isFavorited: isFavoritedLocal,
+                    favoriteCount: favoriteCountLocal,
+                  },
+                  onOptimistic: (next) => {
+                    setIsFavoritedLocal(next.isFavorited);
+                    setFavoriteCountLocal(next.favoriteCount);
+                  },
+                  onRollback: (prev) => {
+                    setIsFavoritedLocal(prev.isFavorited);
+                    setFavoriteCountLocal(prev.favoriteCount);
+                  },
+                }).finally(() => setFavoriteBusy(false));
+              }}
+            />
           </div>
           <p className="mt-6 whitespace-pre-wrap text-[15px] leading-relaxed text-fg opacity-90">
             {description}
