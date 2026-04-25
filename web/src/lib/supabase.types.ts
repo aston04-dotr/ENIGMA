@@ -34,19 +34,49 @@ export type Database = {
       }
       chats: {
         Row: {
-          created_at: string | null
           id: string
+          user1: string | null
+          user2: string | null
+          buyer_id: string | null
+          seller_id: string | null
           listing_id: string | null
+          created_at: string
+          last_message_at: string
+          title: string | null
+          is_group: boolean
+          buyer_last_read_at: string | null
+          seller_last_read_at: string | null
+          pinned_message_id: string | null
         }
         Insert: {
-          created_at?: string | null
           id?: string
+          user1?: string | null
+          user2?: string | null
+          buyer_id?: string | null
+          seller_id?: string | null
           listing_id?: string | null
+          created_at?: string
+          last_message_at?: string
+          title?: string | null
+          is_group?: boolean
+          buyer_last_read_at?: string | null
+          seller_last_read_at?: string | null
+          pinned_message_id?: string | null
         }
         Update: {
-          created_at?: string | null
           id?: string
+          user1?: string | null
+          user2?: string | null
+          buyer_id?: string | null
+          seller_id?: string | null
           listing_id?: string | null
+          created_at?: string
+          last_message_at?: string
+          title?: string | null
+          is_group?: boolean
+          buyer_last_read_at?: string | null
+          seller_last_read_at?: string | null
+          pinned_message_id?: string | null
         }
         Relationships: [
           {
@@ -248,6 +278,35 @@ export type Database = {
           },
         ]
       }
+      online_users: {
+        Row: {
+          user_id: string
+          last_seen: string
+          visibility_state: string
+          active_chat_id: string | null
+        }
+        Insert: {
+          user_id: string
+          last_seen?: string
+          visibility_state?: string
+          active_chat_id?: string | null
+        }
+        Update: {
+          user_id?: string
+          last_seen?: string
+          visibility_state?: string
+          active_chat_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "online_users_active_chat_id_fkey"
+            columns: ["active_chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number | null
@@ -269,6 +328,36 @@ export type Database = {
           id?: string
           status?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      push_tokens: {
+        Row: {
+          user_id: string
+          token: string
+          created_at: string
+          provider: string
+          subscription: Json | null
+          user_agent: string | null
+          last_seen_at: string
+        }
+        Insert: {
+          user_id: string
+          token: string
+          created_at?: string
+          provider?: string
+          subscription?: Json | null
+          user_agent?: string | null
+          last_seen_at?: string
+        }
+        Update: {
+          user_id?: string
+          token?: string
+          created_at?: string
+          provider?: string
+          subscription?: Json | null
+          user_agent?: string | null
+          last_seen_at?: string
         }
         Relationships: []
       }
@@ -323,9 +412,14 @@ export type Database = {
         Args: { p_amount: number; p_user: string }
         Returns: undefined
       }
+      delete_my_account: { Args: Record<string, never>; Returns: undefined }
       ensure_dm_chat_membership: {
         Args: { p_chat_id: string }
         Returns: undefined
+      }
+      get_or_create_direct_chat: {
+        Args: { p_other_user_id: string; p_listing_id?: string | null }
+        Returns: string
       }
       http: {
         Args: { request: Database["public"]["CompositeTypes"]["http_request"] }
@@ -464,7 +558,10 @@ export type Database = {
           listing_id: string
         }[]
       }
-      list_my_chats: { Args: { p_limit: number }; Returns: Json }
+      list_my_chats: {
+        Args: { p_limit?: number; p_before?: string | null }
+        Returns: Json
+      }
       mark_chat_read: {
         Args: { p_chat_id: string; p_up_to_message_id?: string }
         Returns: undefined

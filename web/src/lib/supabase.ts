@@ -3,11 +3,12 @@
 import type { LockFunc } from "@supabase/auth-js";
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./supabase.types";
 import { getSupabasePublicConfig } from "./runtimeConfig";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
 
-let browserClient: SupabaseClient | null = null;
+let browserClient: SupabaseClient<Database> | null = null;
 
 /**
  * GoTrue по умолчанию использует Web Locks API + lockAcquireTimeout: при параллельных
@@ -27,9 +28,9 @@ const authQueueLock: LockFunc = async (_name, _acquireTimeout, fn) => {
   return await next;
 };
 
-function getBrowserSupabaseClient(): SupabaseClient {
+function getBrowserSupabaseClient(): SupabaseClient<Database> {
   if (!browserClient) {
-    browserClient = createBrowserClient(url, anonKey, {
+    browserClient = createBrowserClient<Database>(url, anonKey, {
       auth: {
         lock: authQueueLock,
         /**

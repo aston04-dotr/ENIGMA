@@ -21,30 +21,22 @@ export async function getOrCreateChat(
   try {
     const normalizedSellerId = String(sellerId ?? "").trim();
 
-    console.log("SELLER ID:", normalizedSellerId);
-
     if (!normalizedSellerId || !isValidUuid(normalizedSellerId)) {
-      console.error("CHAT ERROR:", "Invalid sellerId");
       return { ok: false, error: "Некорректный продавец" };
     }
 
     const { data: userData, error: authError } = await supabase.auth.getUser();
     const userId = userData?.user?.id ?? null;
 
-    console.log("USER:", userId);
-
     if (authError) {
-      console.error("ERROR:", authError);
       return { ok: false, error: authError.message || "Ошибка авторизации" };
     }
 
     if (!userId) {
-      console.error("ERROR:", "User is not authenticated");
       return { ok: false, error: "Не авторизован" };
     }
 
     if (userId === normalizedSellerId) {
-      console.error("ERROR:", "Cannot open chat with self");
       return { ok: false, error: "Нельзя написать самому себе" };
     }
 
@@ -54,8 +46,8 @@ export async function getOrCreateChat(
       .eq("id", userId)
       .maybeSingle();
 
-    if (profileError) {
-      console.error("ERROR:", profileError);
+    if (profileError && process.env.NODE_ENV === "development") {
+      console.warn("profiles trust_score", profileError);
     }
 
     if (!canStartNewChat(profileData?.trust_score)) {
@@ -68,20 +60,18 @@ export async function getOrCreateChat(
 
     const { data: authSnap } = await supabase.auth.getSession();
     if (!authSnap?.session?.user) {
-      console.warn("no user, skip rpc get_or_create_direct_chat");
       return { ok: false, error: "Не авторизован" };
     }
 
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
-      p_buyer: userId,
-      p_seller: normalizedSellerId,
+      p_other_user_id: normalizedSellerId,
+      p_listing_id: null,
     });
 
-    console.log("CHAT RESULT:", data);
-    console.log("ERROR:", error);
-
     if (error || !data) {
-      console.error("CHAT ERROR:", error);
+      if (error && process.env.NODE_ENV === "development") {
+        console.error("get_or_create_direct_chat", error);
+      }
       return {
         ok: false,
         error: error?.message || "Не удалось открыть чат",
@@ -111,7 +101,9 @@ export async function getOrCreateChat(
 
     return { ok: false, error: "RPC не вернул id чата" };
   } catch (error) {
-    console.error("CHAT ERROR:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("getOrCreateChat", error);
+    }
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: message || "Ошибка сети" };
   }
