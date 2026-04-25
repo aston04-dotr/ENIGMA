@@ -105,6 +105,7 @@ export type MessageRow = {
   reply_to?: string | null;
   edited_at?: string | null;
   deleted?: boolean;
+  deleted_at?: string | null;
   hidden_for_user_ids?: string[];
   status?: MessageStatus | string | null;
   /** Получатель отметил доставку (✓✓ серые). */

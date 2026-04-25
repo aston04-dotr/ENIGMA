@@ -36,6 +36,13 @@ type RoomStatus =
   | "reconnecting"
   | "error";
 
+type MessageContextMenuState = {
+  id: string;
+  mine: boolean;
+  x: number;
+  y: number;
+};
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
@@ -56,6 +63,7 @@ function normalizeMessage(raw: Record<string, unknown>): MessageRow {
     reply_to: raw.reply_to ? String(raw.reply_to) : null,
     edited_at: raw.edited_at ? String(raw.edited_at) : null,
     deleted: Boolean(raw.deleted),
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
     hidden_for_user_ids: Array.isArray(raw.hidden_for_user_ids)
       ? raw.hidden_for_user_ids.map((item) => String(item))
       : [],
@@ -98,6 +106,10 @@ function patchMessageFromRealtime(
   if ("deleted" in raw) {
     const v = Boolean(raw.deleted);
     set("deleted", v);
+  }
+  if ("deleted_at" in raw) {
+    const v = raw.deleted_at ? String(raw.deleted_at) : null;
+    set("deleted_at", v);
   }
   if ("status" in raw) {
     const v = raw.status ? String(raw.status) : null;
@@ -284,6 +296,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   imageRetryingId,
   onOpenLightbox,
   onRetryImage,
+  onOpenMessageMenu,
 }: {
   m: MessageRow;
   mine: boolean;
@@ -291,13 +304,50 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   imageRetryingId: string | null;
   onOpenLightbox: (url: string) => void;
   onRetryImage: (id: string) => void;
+  onOpenMessageMenu: (
+    message: MessageRow,
+    payload: { x: number; y: number },
+  ) => void;
 }) {
   const isImage = m.type === "image" && Boolean(m.image_url);
   const isOptimistic = m.id.startsWith("temp-");
   const messageTime = formatMessageTime(m.created_at);
+  const longPressTimerRef = useRef<number | null>(null);
+  const canOpenMenu = !m.id.startsWith("temp-");
+
+  const clearLongPress = () => {
+    if (typeof window === "undefined") return;
+    if (!longPressTimerRef.current) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
+
+  useEffect(() => clearLongPress, []);
+
+  const openMenuAt = (x: number, y: number) => {
+    if (!canOpenMenu) return;
+    onOpenMessageMenu(m, { x, y });
+  };
   return (
     <div
       data-message-id={m.id}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openMenuAt(e.clientX, e.clientY);
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType !== "touch") return;
+        clearLongPress();
+        const x = e.clientX;
+        const y = e.clientY;
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTimerRef.current = null;
+          openMenuAt(x, y);
+        }, 420);
+      }}
+      onPointerUp={clearLongPress}
+      onPointerCancel={clearLongPress}
+      onPointerMove={clearLongPress}
       className={`flex min-w-0 w-full ${
         isAppearing ? "animate-messageAppear" : ""
       } ${mine ? "justify-end" : "justify-start"}`}
@@ -323,8 +373,8 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
           } ${isOptimistic ? "opacity-70" : "opacity-100"}`}
         >
           {m.deleted ? (
-            <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-fg/70">
-              Сообщение удалено
+            <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-gray-400">
+              {mine ? "Вы удалили сообщение" : "Сообщение удалено"}
             </p>
           ) : isImage && m.image_url ? (
             <div
@@ -356,16 +406,18 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
             </span>
           )}
         </div>
-        <div className="mt-0.5 flex min-h-[14px] shrink-0 items-center justify-end gap-1 px-0.5 text-xs text-fg/40">
-          <span>{messageTime}</span>
-          {mine ? (
-            <MessageStatusTicks
-              mine
-              delivered_at={m.delivered_at}
-              read_at={m.read_at}
-            />
-          ) : null}
-        </div>
+        {!m.deleted ? (
+          <div className="mt-0.5 flex min-h-[14px] shrink-0 items-center justify-end gap-1 px-0.5 text-xs text-fg/40">
+            <span>{messageTime}</span>
+            {mine ? (
+              <MessageStatusTicks
+                mine
+                delivered_at={m.delivered_at}
+                read_at={m.read_at}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -411,6 +463,8 @@ export default function ChatRoomPage() {
   const [showScrollToStart, setShowScrollToStart] = useState(false);
   const [showScrollToNew, setShowScrollToNew] = useState(false);
   const [headerElevated, setHeaderElevated] = useState(false);
+  const [messageMenu, setMessageMenu] = useState<MessageContextMenuState | null>(null);
+  const [deleteForAllPendingId, setDeleteForAllPendingId] = useState<string | null>(null);
   const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -451,6 +505,13 @@ export default function ChatRoomPage() {
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
 
   messagesRef.current = messages;
+
+  const visibleMessages = useMemo(() => {
+    if (!me) return messages;
+    return messages.filter(
+      (m) => !m.hidden_for_user_ids?.includes(me),
+    );
+  }, [messages, me]);
 
   const setPeerTypingStable = useCallback((newState: boolean) => {
     if (newState === lastPeerTypingStateRef.current) {
@@ -548,6 +609,8 @@ export default function ChatRoomPage() {
     setPeerLastSeenAt(null);
     setShowScrollToStart(false);
     setShowScrollToNew(false);
+    setMessageMenu(null);
+    setDeleteForAllPendingId(null);
     setHeaderElevated(false);
     setAppearingMessageIds(new Set());
     messageAnimHydratedChatIdRef.current = null;
@@ -1454,6 +1517,131 @@ export default function ChatRoomPage() {
     };
   }, [backfillAfterReconnect, chatId, me]);
 
+  const openMessageContextMenu = useCallback(
+    (message: MessageRow, pos: { x: number; y: number }) => {
+      if (!me) return;
+      if (message.id.startsWith("temp-")) return;
+      const mine = message.sender_id === me;
+      setDeleteForAllPendingId(null);
+      setMessageMenu({
+        id: message.id,
+        mine,
+        x: Math.max(12, pos.x),
+        y: Math.max(12, pos.y),
+      });
+    },
+    [me],
+  );
+
+  const deleteMessageForMe = useCallback(
+    async (messageId: string) => {
+      if (!me) return;
+      const row = messagesRef.current.find((m) => m.id === messageId);
+      if (!row) return;
+      const prevHidden = row.hidden_for_user_ids ?? [];
+      const nextHidden = Array.from(new Set([...prevHidden, me]));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, hidden_for_user_ids: nextHidden }
+            : m,
+        ),
+      );
+      const { error } = await (supabase as any).rpc("hide_message_for_me", {
+        p_message_id: messageId,
+      });
+      if (error) {
+        console.error("chat hide message for me", error);
+        setToast({
+          type: "error",
+          message: "Не удалось скрыть сообщение",
+        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, hidden_for_user_ids: prevHidden }
+              : m,
+          ),
+        );
+      }
+    },
+    [me],
+  );
+
+  const deleteMessageForAll = useCallback(
+    async (messageId: string) => {
+      if (!me) return;
+      const row = messagesRef.current.find((m) => m.id === messageId);
+      if (!row || row.sender_id !== me) return;
+      const nowIso = new Date().toISOString();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                deleted: true,
+                deleted_at: nowIso,
+                text: "",
+                image_url: null,
+                voice_url: null,
+                pendingUpload: false,
+                imageUploadFailed: false,
+                imageUploadProgress: undefined,
+              }
+            : m,
+        ),
+      );
+
+      const deletePayload: Record<string, unknown> = {
+        deleted: true,
+        deleted_at: nowIso,
+        text: null,
+        image_url: null,
+        voice_url: null,
+      };
+      let { error } = await (supabase.from("messages") as any)
+        .update(deletePayload)
+        .eq("id", messageId)
+        .eq("sender_id", me);
+
+      if (error && /deleted_at/i.test(String(error.message ?? ""))) {
+        const retry = await (supabase.from("messages") as any)
+          .update({
+            deleted: true,
+            text: null,
+            image_url: null,
+            voice_url: null,
+          })
+          .eq("id", messageId)
+          .eq("sender_id", me);
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error("chat delete message for all", error);
+        setToast({
+          type: "error",
+          message: "Не удалось удалить сообщение у всех",
+        });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? row : m)),
+        );
+      }
+    },
+    [me],
+  );
+
+  useEffect(() => {
+    if (!messageMenu && !deleteForAllPendingId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMessageMenu(null);
+      setDeleteForAllPendingId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [messageMenu, deleteForAllPendingId]);
+
   function send() {
     if (!text.trim()) return;
     if (!me || !chatId || !isUuid(chatId) || sendingText) return;
@@ -1934,7 +2122,7 @@ export default function ChatRoomPage() {
             </p>
           </div>
         ) : null}
-        {showScrollToNew && messages.length > 0 ? (
+        {showScrollToNew && visibleMessages.length > 0 ? (
           <button
             type="button"
             onClick={() => {
@@ -1953,7 +2141,7 @@ export default function ChatRoomPage() {
           className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-1.5"
         >
           <div className="flex min-h-full flex-col justify-end gap-px">
-        {messages.map((m) => (
+        {visibleMessages.map((m) => (
           <ChatListMessageRow
             key={m.id}
             m={m}
@@ -1962,10 +2150,11 @@ export default function ChatRoomPage() {
             imageRetryingId={imageRetryingId}
             onOpenLightbox={setLightboxUrl}
             onRetryImage={retryImageUpload}
+            onOpenMessageMenu={openMessageContextMenu}
           />
         ))}
 
-        {!messages.length && !loadErr ? (
+        {!visibleMessages.length && !loadErr ? (
           <div className="rounded-xl border border-line/60 bg-elevated/80 px-3 py-3 text-center text-xs text-muted">
             Пока нет сообщений. Напишите первым.
           </div>
@@ -2051,6 +2240,92 @@ export default function ChatRoomPage() {
           </button>
         </div>
       </div>
+
+      {messageMenu ? (
+        <div
+          className="fixed inset-0 z-[70]"
+          onClick={() => setMessageMenu(null)}
+          aria-hidden
+        >
+          <div
+            className="absolute w-48 rounded-xl border border-line/70 bg-elevated/95 p-1 shadow-soft backdrop-blur-md"
+            style={{
+              left: messageMenu.x,
+              top: messageMenu.y,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="pressable flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-fg hover:bg-elev-2"
+              onClick={() => {
+                const id = messageMenu.id;
+                setMessageMenu(null);
+                void deleteMessageForMe(id);
+              }}
+            >
+              Удалить у меня
+            </button>
+            {messageMenu.mine ? (
+              <button
+                type="button"
+                className="pressable flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+                onClick={() => {
+                  const id = messageMenu.id;
+                  setMessageMenu(null);
+                  setDeleteForAllPendingId(id);
+                }}
+              >
+                Удалить у всех
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {deleteForAllPendingId ? (
+        <div
+          className="fixed inset-0 z-[75] flex items-end justify-center bg-main/70 p-4 backdrop-blur-sm sm:items-center"
+          onClick={() => setDeleteForAllPendingId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-for-all-title"
+        >
+          <div
+            className="w-full max-w-sm rounded-card border border-line bg-elevated p-5 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-for-all-title" className="text-base font-semibold text-fg">
+              Удалить сообщение у всех?
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              Это действие нельзя отменить. У всех участников останется пометка
+              «Сообщение удалено».
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                className="pressable min-h-[44px] flex-1 rounded-lg border border-line bg-transparent px-3 text-sm font-medium text-fg"
+                onClick={() => setDeleteForAllPendingId(null)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="pressable min-h-[44px] flex-1 rounded-lg bg-danger px-3 text-sm font-semibold text-white"
+                onClick={() => {
+                  const id = deleteForAllPendingId;
+                  setDeleteForAllPendingId(null);
+                  if (!id) return;
+                  void deleteMessageForAll(id);
+                }}
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {toast ? (
         <Toast
