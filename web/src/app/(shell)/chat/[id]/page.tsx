@@ -1,5 +1,6 @@
 "use client";
 
+import TypingIndicator from "@/components/chat/TypingIndicator";
 import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
 import { Toast } from "@/components/Toast";
@@ -26,6 +27,7 @@ import {
   useMemo,
   useRef,
   useState,
+  memo,
 } from "react";
 
 type RoomStatus =
@@ -156,16 +158,25 @@ function formatLastSeen(iso: string): string {
   }
 }
 
-/** Минимум между broadcast typing; дебаунс ввода остаётся отдельно. */
-const TYPING_SEND_MIN_MS = 1000;
+/** Throttle исходящих typing:true (мс) — мгновенно только первый символ. */
+const TYPING_SEND_THROTTLE_MS = 250;
+/** После паузы ввода — typing:false (broadcast) и сброс локального флага. */
+const TYPING_LOCAL_IDLE_MS = 1200;
+/** Peer «печатает» — TTL без новых пингов (и проверка по интервалу). */
+const TYPING_PEER_TTL_MS = 1500;
+const PEER_TYPING_CHECK_INTERVAL_MS = 300;
 /** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
 const PRESENCE_OFFLINE_DELAY_MS = 3000;
-/** Ниже этой дистанции от низа — «внизу», автоскролл на новые сообщения. */
+/** Ниже этой дистанции — «у низа» (автоскролл при новом сообщении). */
+const SCROLL_AT_BOTTOM_PX = 80;
 const NEAR_BOTTOM_PX = 72;
 /** Дальше от низа — кнопка «к началу». */
 const FAR_FROM_BOTTOM_TOP_BTN_PX = 280;
 const NEAR_TOP_HIDE_TOP_BTN_PX = 64;
 const MAX_MESSAGE_ENTER_ANIM = 0;
+/** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
+const MESSAGE_LIST_MAX = 200;
+const MESSAGE_LIST_KEEP = 150;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -320,6 +331,97 @@ function MessageStatusTicks({
   );
 }
 
+const ChatListMessageRow = memo(function ChatListMessageRow({
+  m,
+  mine,
+  isAppearing,
+  imageRetryingId,
+  onOpenLightbox,
+  onRetryImage,
+}: {
+  m: MessageRow;
+  mine: boolean;
+  isAppearing: boolean;
+  imageRetryingId: string | null;
+  onOpenLightbox: (url: string) => void;
+  onRetryImage: (id: string) => void;
+}) {
+  const isImage = m.type === "image" && Boolean(m.image_url);
+  return (
+    <div
+      data-message-id={m.id}
+      className={`flex min-w-0 w-full ${
+        isAppearing ? "animate-messageAppear" : ""
+      } ${mine ? "justify-end" : "justify-start"}`}
+    >
+      <div
+        className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col ${mine ? "items-end" : "items-start"}`}
+      >
+        <div
+          className={`w-full min-w-0 max-w-full text-[15px] leading-[1.38] transition-colors duration-ui ${
+            isImage
+              ? "max-w-[min(78vw,280px)] overflow-hidden rounded-[1.125rem] p-0 shadow-sm"
+              : `max-w-full break-words px-3 py-1.5 [overflow-wrap:anywhere] ${
+                  mine
+                    ? "rounded-[1.125rem] rounded-br-[0.35rem] bg-accent text-white shadow-sm"
+                    : "rounded-[1.125rem] rounded-bl-[0.35rem] border border-line/65 bg-elevated text-fg shadow-sm"
+                }`
+          } ${
+            isImage
+              ? mine
+                ? "ring-1 ring-white/10"
+                : "ring-1 ring-line/35"
+              : ""
+          }`}
+        >
+          {m.deleted ? (
+            <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-fg/70">
+              Сообщение удалено
+            </p>
+          ) : isImage && m.image_url ? (
+            <div
+              className={
+                mine
+                  ? "min-w-0 overflow-hidden rounded-[1.125rem] rounded-br-[0.35rem]"
+                  : "min-w-0 overflow-hidden rounded-[1.125rem] rounded-bl-[0.35rem]"
+              }
+            >
+              <ChatMessageImageBubble
+                message={m}
+                isRetrying={imageRetryingId === m.id}
+                canRetryFile={m.id.startsWith("temp-")}
+                onOpen={() => onOpenLightbox(m.image_url!)}
+                onRetry={() => {
+                  if (m.id.startsWith("temp-")) {
+                    onRetryImage(m.id);
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <span
+              className={`block text-[15px] leading-[1.38] [overflow-wrap:anywhere] break-words [text-size-adjust:100%] ${
+                mine ? "text-right" : "text-left"
+              }`}
+            >
+              {buildMessagePreview(m)}
+            </span>
+          )}
+        </div>
+        {mine ? (
+          <div className="flex min-h-[13px] shrink-0 items-center justify-end pr-0.5">
+            <MessageStatusTicks
+              mine
+              delivered_at={m.delivered_at}
+              read_at={m.read_at}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
+
 export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -334,7 +436,10 @@ export default function ChatRoomPage() {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
+  /** Блокировка на загрузку/отправку изображений (текст не шарит это состояние). */
+  const [sendingImage, setSendingImage] = useState(false);
+  /** Вставка текстового сообщения в полёте (кнопка «→», не поле ввода). */
+  const [sendingText, setSendingText] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     message: string;
@@ -349,9 +454,13 @@ export default function ChatRoomPage() {
   const [isChatDragOver, setIsChatDragOver] = useState(false);
   const [roomStatus, setRoomStatus] = useState<RoomStatus>("connecting");
   const [peerTyping, setPeerTyping] = useState(false);
+  /** Сразу при наборе — до прихода realtime у собеседника (локальный UX). */
+  const [isTypingLocal, setIsTypingLocal] = useState(false);
+  const isTypingLocalRef = useRef(false);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null);
   const [showScrollToStart, setShowScrollToStart] = useState(false);
+  const [showScrollToNew, setShowScrollToNew] = useState(false);
   const [headerElevated, setHeaderElevated] = useState(false);
   const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
     () => new Set(),
@@ -360,6 +469,8 @@ export default function ChatRoomPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickBottomRef = useRef(true);
+  /** Пользователь у нижнего края (не дёргать при чтении истории). */
+  const isAtBottomRef = useRef(true);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -371,16 +482,37 @@ export default function ChatRoomPage() {
   const markReadDebounceRef = useRef<number | null>(null);
   const peerUserIdRef = useRef<string | null>(null);
   const peerWasOnlineRef = useRef(false);
-  const typingEmitTimerRef = useRef<number | null>(null);
-  const typingHideTimerRef = useRef<number | null>(null);
-  const lastTypingSentAtRef = useRef(0);
+  const typingLocalStopTimerRef = useRef<number | null>(null);
+  const lastTypingPulseRef = useRef(0);
+  const peerTypingAtRef = useRef(0);
+  const lastPeerTypingStateRef = useRef(false);
+  const peerTypingIntervalRef = useRef<number | null>(null);
+  const realtimeInsertIdsRef = useRef<Set<string>>(new Set());
   const peerOfflineTimerRef = useRef<number | null>(null);
+  const optimisticMessageIdSeqRef = useRef(0);
+  /** Синхронный id чата (устаревшие broadcast после смены комнаты). */
+  const currentChatIdRef = useRef(chatId);
+  const reconnectingTypingResetPendingRef = useRef(false);
+  const lastRttLogAtRef = useRef(0);
   /** Скролл вниз (auto) один раз при открытии чата, после загрузки сообщений. */
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
 
   messagesRef.current = messages;
+
+  const setPeerTypingStable = useCallback((newState: boolean) => {
+    if (newState === lastPeerTypingStateRef.current) {
+      return;
+    }
+    lastPeerTypingStateRef.current = newState;
+    setPeerTyping(newState);
+  }, []);
+
+  useEffect(() => {
+    isTypingLocalRef.current = isTypingLocal;
+  }, [isTypingLocal]);
+
   const revokeAllPendingBlobs = useCallback(() => {
     pendingBlobRegistryRef.current.revokeAll();
     pendingImageFilesRef.current.clear();
@@ -395,35 +527,71 @@ export default function ChatRoomPage() {
   }, []);
 
   useEffect(() => {
-    setPeerTyping(false);
+    currentChatIdRef.current = chatId;
+  }, [chatId]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") return;
+      if (typingLocalStopTimerRef.current) {
+        window.clearTimeout(typingLocalStopTimerRef.current);
+        typingLocalStopTimerRef.current = null;
+      }
+      if (peerTypingIntervalRef.current) {
+        window.clearInterval(peerTypingIntervalRef.current);
+        peerTypingIntervalRef.current = null;
+      }
+      lastTypingPulseRef.current = 0;
+      peerTypingAtRef.current = 0;
+    };
+  }, []);
+
+  /** Жёсткий сброс typing при смене чата (без «залипшего печатает»). */
+  useEffect(() => {
+    lastTypingPulseRef.current = 0;
+    peerTypingAtRef.current = 0;
+    setPeerTypingStable(false);
+    isTypingLocalRef.current = false;
+    setIsTypingLocal(false);
+  }, [chatId, setPeerTypingStable]);
+
+  useEffect(() => {
     setPeerOnline(false);
     setPeerLastSeenAt(null);
     setShowScrollToStart(false);
+    setShowScrollToNew(false);
     setHeaderElevated(false);
     setAppearingMessageIds(new Set());
     messageAnimHydratedChatIdRef.current = null;
     messageAnimKnownIdsRef.current = new Set();
     peerWasOnlineRef.current = false;
+    reconnectingTypingResetPendingRef.current = false;
+    realtimeInsertIdsRef.current.clear();
     if (typeof window !== "undefined") {
-      if (typingEmitTimerRef.current) {
-        window.clearTimeout(typingEmitTimerRef.current);
-        typingEmitTimerRef.current = null;
+      if (typingLocalStopTimerRef.current) {
+        window.clearTimeout(typingLocalStopTimerRef.current);
+        typingLocalStopTimerRef.current = null;
       }
-      if (typingHideTimerRef.current) {
-        window.clearTimeout(typingHideTimerRef.current);
-        typingHideTimerRef.current = null;
+      if (peerTypingIntervalRef.current) {
+        window.clearInterval(peerTypingIntervalRef.current);
+        peerTypingIntervalRef.current = null;
       }
       if (peerOfflineTimerRef.current) {
         window.clearTimeout(peerOfflineTimerRef.current);
         peerOfflineTimerRef.current = null;
       }
     }
-    lastTypingSentAtRef.current = 0;
+    lastTypingPulseRef.current = 0;
+    peerTypingAtRef.current = 0;
+    setPeerTypingStable(false);
+    isTypingLocalRef.current = false;
+    setIsTypingLocal(false);
     initialScrollForChatIdRef.current = null;
+    isAtBottomRef.current = true;
     uploadInFlightRef.current = false;
     revokeAllPendingBlobs();
     setToast(null);
-  }, [chatId, revokeAllPendingBlobs]);
+  }, [chatId, revokeAllPendingBlobs, setPeerTypingStable]);
 
   const markIncomingDelivered = useCallback(
     async (messageId: string, senderIdHint?: string) => {
@@ -504,7 +672,9 @@ export default function ChatRoomPage() {
     return "Чат";
   }, [currentChat, chatId]);
 
-  /** Подстрока под названием: соединение / печатает (синий) / last seen — без «онлайн» (оно у заголовка). */
+  const isTyping = isTypingLocal || peerTyping;
+
+  /** Подстрока: соединение / last seen. «печатает…» — отдельной полоской у поля ввода (isTyping). */
   const headerSecondaryLine = useMemo(() => {
     if (roomStatus === "reconnecting")
       return { kind: "muted" as const, text: "Переподключение…" };
@@ -512,7 +682,6 @@ export default function ChatRoomPage() {
       return { kind: "muted" as const, text: "Подключение…" };
     if (roomStatus === "error")
       return { kind: "muted" as const, text: "Ошибка соединения" };
-    if (peerTyping) return { kind: "typing" as const, text: "печатает…" };
     if (currentChat?.is_group) return { kind: "empty" as const, text: "" };
     const peerId = currentChat?.other_user_id;
     if (peerId && !peerOnline && peerLastSeenAt) {
@@ -524,7 +693,6 @@ export default function ChatRoomPage() {
     return { kind: "empty" as const, text: "" };
   }, [
     roomStatus,
-    peerTyping,
     currentChat?.is_group,
     currentChat?.other_user_id,
     peerOnline,
@@ -540,34 +708,119 @@ export default function ChatRoomPage() {
         peerOnline,
     );
 
-  const sendTypingSafe = useCallback(() => {
+  const sendTypingSafe = useCallback((active: boolean) => {
     if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
       return;
     }
     const ch = channelRef.current;
     if (!ch) return;
     const now = Date.now();
-    if (now - lastTypingSentAtRef.current < TYPING_SEND_MIN_MS) return;
-    lastTypingSentAtRef.current = now;
+    if (active) {
+      if (now - lastTypingPulseRef.current < TYPING_SEND_THROTTLE_MS) return;
+      lastTypingPulseRef.current = now;
+    } else {
+      lastTypingPulseRef.current = 0;
+    }
+    const sentAt = Date.now();
+    if (process.env.NODE_ENV === "development") {
+      // eslint-disable-next-line no-console
+      console.log("TYPING send (payload ts)", sentAt);
+    }
     void ch.send({
       type: "broadcast",
       event: "typing",
-      payload: { chat_id: chatId, user_id: me },
+      payload: {
+        chat_id: chatId,
+        user_id: me,
+        typing: active,
+        sentAt,
+      },
     });
   }, [me, chatId]);
 
-  const scheduleTypingBroadcast = useCallback(() => {
-    if (typeof window === "undefined" || !me || !chatId || !isUuid(chatId)) {
-      return;
+  const handleComposerChange = useCallback(
+    (value: string, previousText: string) => {
+      if (sendErr) setSendErr(null);
+      setText(value);
+      const trim = value.trim();
+      if (!me || !chatId || !isUuid(chatId)) {
+        if (trim.length > 0) {
+          isTypingLocalRef.current = true;
+          setIsTypingLocal(true);
+        } else {
+          isTypingLocalRef.current = false;
+          setIsTypingLocal(false);
+        }
+        return;
+      }
+
+      if (typingLocalStopTimerRef.current) {
+        window.clearTimeout(typingLocalStopTimerRef.current);
+        typingLocalStopTimerRef.current = null;
+      }
+
+      if (value.length === 0) {
+        isTypingLocalRef.current = false;
+        setIsTypingLocal(false);
+        sendTypingSafe(false);
+        return;
+      }
+
+      if (!trim) {
+        if (isTypingLocalRef.current) {
+          isTypingLocalRef.current = false;
+          setIsTypingLocal(false);
+          sendTypingSafe(false);
+        } else {
+          setIsTypingLocal(false);
+        }
+        return;
+      }
+
+      isTypingLocalRef.current = true;
+      setIsTypingLocal(true);
+
+      if (!lastTypingPulseRef.current || !previousText.trim()) {
+        lastTypingPulseRef.current = 0;
+        sendTypingSafe(true);
+      } else {
+        const now = Date.now();
+        if (now - lastTypingPulseRef.current >= TYPING_SEND_THROTTLE_MS) {
+          sendTypingSafe(true);
+        }
+      }
+
+      typingLocalStopTimerRef.current = window.setTimeout(() => {
+        typingLocalStopTimerRef.current = null;
+        isTypingLocalRef.current = false;
+        setIsTypingLocal(false);
+        sendTypingSafe(false);
+      }, TYPING_LOCAL_IDLE_MS);
+    },
+    [me, chatId, sendErr, sendTypingSafe],
+  );
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (typeof window === "undefined") return;
+    if (peerTypingIntervalRef.current) {
+      window.clearInterval(peerTypingIntervalRef.current);
+      peerTypingIntervalRef.current = null;
     }
-    if (typingEmitTimerRef.current) {
-      window.clearTimeout(typingEmitTimerRef.current);
-    }
-    typingEmitTimerRef.current = window.setTimeout(() => {
-      typingEmitTimerRef.current = null;
-      sendTypingSafe();
-    }, 420);
-  }, [me, chatId, sendTypingSafe]);
+    peerTypingIntervalRef.current = window.setInterval(() => {
+      const at = peerTypingAtRef.current;
+      if (at > 0 && Date.now() - at > TYPING_PEER_TTL_MS) {
+        peerTypingAtRef.current = 0;
+        setPeerTypingStable(false);
+      }
+    }, PEER_TYPING_CHECK_INTERVAL_MS);
+    return () => {
+      if (peerTypingIntervalRef.current) {
+        window.clearInterval(peerTypingIntervalRef.current);
+        peerTypingIntervalRef.current = null;
+      }
+    };
+  }, [chatId, setPeerTypingStable]);
 
   const latestMessageId = useMemo(
     () => messages[messages.length - 1]?.id ?? null,
@@ -578,8 +831,10 @@ export default function ChatRoomPage() {
     const el = listRef.current;
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const nearBottom = dist < NEAR_BOTTOM_PX;
-    stickBottomRef.current = nearBottom;
+    const atBottom = dist < SCROLL_AT_BOTTOM_PX;
+    isAtBottomRef.current = atBottom;
+    stickBottomRef.current = atBottom;
+    setShowScrollToNew(!atBottom);
     setHeaderElevated(el.scrollTop > 2);
     setShowScrollToStart(
       dist > FAR_FROM_BOTTOM_TOP_BTN_PX &&
@@ -610,6 +865,7 @@ export default function ChatRoomPage() {
     if (!messages.every((m) => m.chat_id === chatId)) return;
     if (initialScrollForChatIdRef.current === chatId) return;
     initialScrollForChatIdRef.current = chatId;
+    isAtBottomRef.current = true;
     stickBottomRef.current = true;
     setShowScrollToStart(false);
     alignListToBottom();
@@ -664,6 +920,7 @@ export default function ChatRoomPage() {
         console.error("chat room load messages", error);
         setLoadErr(FETCH_ERROR_MESSAGE);
         setMessages([]);
+        realtimeInsertIdsRef.current.clear();
         return;
       }
 
@@ -674,6 +931,10 @@ export default function ChatRoomPage() {
       if (!mountedRef.current) return;
 
       setMessages(sortMessages(safe));
+      realtimeInsertIdsRef.current.clear();
+      for (const row of safe) {
+        if (isUuid(row.id)) realtimeInsertIdsRef.current.add(row.id);
+      }
       lastLoadedMessageIdRef.current =
         safe.length > 0 ? safe[safe.length - 1].id : null;
       void markIncomingDeliveredBatch();
@@ -682,8 +943,17 @@ export default function ChatRoomPage() {
       if (!mountedRef.current) return;
       setLoadErr(FETCH_ERROR_MESSAGE);
       setMessages([]);
+      realtimeInsertIdsRef.current.clear();
     }
   }, [chatId, markIncomingDeliveredBatch]);
+
+  useEffect(() => {
+    setMessages((prev) =>
+      prev.length > MESSAGE_LIST_MAX
+        ? prev.slice(-MESSAGE_LIST_KEEP)
+        : prev,
+    );
+  }, [messages.length]);
 
   const markVisibleRoomRead = useCallback(
     async (explicitMessageId?: string | null) => {
@@ -743,20 +1013,6 @@ export default function ChatRoomPage() {
       mountedRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!chatId || !isUuid(chatId)) {
-      setLoadErr("Некорректный id чата");
-      setRoomStatus("error");
-      return;
-    }
-
-    setRoomStatus("connecting");
-    void loadMessages().then(() => {
-      if (!mountedRef.current) return;
-      setRoomStatus("connected");
-    });
-  }, [chatId, loadMessages]);
 
   /** Повторный batch, если сессия появилась после первой загрузки или UPDATE не вернул строки в select. */
   useEffect(() => {
@@ -858,6 +1114,7 @@ export default function ChatRoomPage() {
         }, PRESENCE_OFFLINE_DELAY_MS);
       };
 
+      /** Один канал на чат: postgres (messages) + presence + broadcast("typing") — без записи в БД для «печатает…». */
       const channel = supabase
         .channel(`chat-${chatId}`, {
           config: {
@@ -869,19 +1126,50 @@ export default function ChatRoomPage() {
           const payload = msg.payload as {
             chat_id?: string;
             user_id?: string;
+            typing?: boolean;
+            sentAt?: number;
           } | null;
-          if (!payload || payload.chat_id !== chatId) return;
-          if (!payload.user_id || payload.user_id === me) return;
-          setPeerTyping(true);
-          if (typingHideTimerRef.current) {
-            window.clearTimeout(typingHideTimerRef.current);
+          if (!payload) return;
+          if (!payload.chat_id || payload.chat_id !== currentChatIdRef.current) {
+            return;
           }
-          typingHideTimerRef.current = window.setTimeout(() => {
-            typingHideTimerRef.current = null;
-            setPeerTyping(false);
-          }, 2600);
+          if (!me) return;
+          if (!payload.user_id) return;
+          if (payload.user_id === me) {
+            return;
+          }
+          if (
+            process.env.NODE_ENV === "development" &&
+            payload.sentAt != null &&
+            typeof payload.sentAt === "number"
+          ) {
+            const rtt = Date.now() - payload.sentAt;
+            const now = Date.now();
+            if (now - lastRttLogAtRef.current >= 2000) {
+              lastRttLogAtRef.current = now;
+              if (rtt > 2000) {
+                // eslint-disable-next-line no-console
+                console.warn("⚠️ HIGH TYPING RTT (ms):", rtt);
+              } else {
+                // eslint-disable-next-line no-console
+                console.log("TYPING RTT (ms):", rtt);
+              }
+            }
+          }
+          if (payload.typing === false) {
+            peerTypingAtRef.current = 0;
+            setPeerTypingStable(false);
+            return;
+          }
+          peerTypingAtRef.current = Date.now();
+          setPeerTypingStable(true);
         })
         .on("presence", { event: "sync" }, () => {
+          if (reconnectingTypingResetPendingRef.current) {
+            setPeerTypingStable(false);
+            peerTypingAtRef.current = 0;
+            reconnectingTypingResetPendingRef.current = false;
+          }
           applyPresenceFromChannel(channel);
         })
         .on(
@@ -896,12 +1184,19 @@ export default function ChatRoomPage() {
             const newMessage = normalizeMessage(
               payload.new as Record<string, unknown>,
             );
+            if (!newMessage.id || !String(newMessage.id).trim()) return;
+            if (isUuid(newMessage.id) && realtimeInsertIdsRef.current.has(newMessage.id)) {
+              return;
+            }
+            if (isUuid(newMessage.id)) {
+              realtimeInsertIdsRef.current.add(newMessage.id);
+            }
 
             setMessages((prev) => mergeIncomingInsert(prev, newMessage));
 
             lastLoadedMessageIdRef.current = newMessage.id;
 
-            if (stickBottomRef.current) {
+            if (isAtBottomRef.current) {
               alignListToBottomAfterPaint();
             }
 
@@ -946,6 +1241,9 @@ export default function ChatRoomPage() {
         if (!mountedRef.current || cancelled) return;
 
         if (status === "SUBSCRIBED") {
+          reconnectingTypingResetPendingRef.current = false;
+          setPeerTypingStable(false);
+          peerTypingAtRef.current = 0;
           reconnectAttemptRef.current = 0;
           setRoomStatus("connected");
           if (me) {
@@ -965,6 +1263,9 @@ export default function ChatRoomPage() {
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
+          reconnectingTypingResetPendingRef.current = true;
+          setPeerTypingStable(false);
+          peerTypingAtRef.current = 0;
           setRoomStatus("reconnecting");
           const nextAttempt = Math.min(reconnectAttemptRef.current + 1, 6);
           reconnectAttemptRef.current = nextAttempt;
@@ -988,14 +1289,6 @@ export default function ChatRoomPage() {
       cancelled = true;
       clearReconnect();
       if (typeof window !== "undefined") {
-        if (typingHideTimerRef.current) {
-          window.clearTimeout(typingHideTimerRef.current);
-          typingHideTimerRef.current = null;
-        }
-        if (typingEmitTimerRef.current) {
-          window.clearTimeout(typingEmitTimerRef.current);
-          typingEmitTimerRef.current = null;
-        }
         if (peerOfflineTimerRef.current) {
           window.clearTimeout(peerOfflineTimerRef.current);
           peerOfflineTimerRef.current = null;
@@ -1013,11 +1306,27 @@ export default function ChatRoomPage() {
     markVisibleRoomRead,
     backfillAfterReconnect,
     alignListToBottomAfterPaint,
+    setPeerTypingStable,
   ]);
+
+  /**
+   * История: после валидного chatId. Realtime+typing — в эффекте **выше** (подписка
+   * стартует до окончания fetch, чтобы «печатает» и INSERT не замирали в первые секунды).
+   */
+  useEffect(() => {
+    if (!chatId || !isUuid(chatId)) {
+      setLoadErr("Некорректный id чата");
+      setRoomStatus("error");
+      return;
+    }
+
+    setRoomStatus("connecting");
+    void loadMessages();
+  }, [chatId, loadMessages]);
 
   useEffect(() => {
     if (!messages.length) return;
-    if (stickBottomRef.current) {
+    if (isAtBottomRef.current) {
       alignListToBottomAfterPaint();
     }
   }, [messages.length, alignListToBottomAfterPaint]);
@@ -1122,13 +1431,16 @@ export default function ChatRoomPage() {
     };
   }, [backfillAfterReconnect, chatId, me]);
 
-  async function send() {
-    if (!me || !chatId || !isUuid(chatId) || !text.trim() || sending) return;
+  function send() {
+    if (!text.trim()) return;
+    if (!me || !chatId || !isUuid(chatId) || sendingText) return;
+    if (sendingImage) return;
 
     setSendErr(null);
     const trimmed = text.trim();
+    const tempId = `temp-${Date.now()}-${String(++optimisticMessageIdSeqRef.current)}`;
     const optimisticMessage: MessageRow = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       chat_id: chatId,
       sender_id: me,
       text: trimmed,
@@ -1141,40 +1453,52 @@ export default function ChatRoomPage() {
       read_at: null,
     };
 
-    setSending(true);
+    setSendingText(true);
     setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
+    if (typingLocalStopTimerRef.current) {
+      window.clearTimeout(typingLocalStopTimerRef.current);
+      typingLocalStopTimerRef.current = null;
+    }
+    isTypingLocalRef.current = false;
+    setIsTypingLocal(false);
+    sendTypingSafe(false);
     setText("");
+    isAtBottomRef.current = true;
     stickBottomRef.current = true;
     alignListToBottomAfterPaint();
 
-    try {
-      const { error } = await supabase.from("messages").insert({
-        chat_id: chatId,
-        sender_id: me,
-        text: trimmed,
-        type: "text",
-        deleted: false,
-        hidden_for_user_ids: [],
-      });
+    void (async () => {
+      try {
+        const { error } = await supabase.from("messages").insert({
+          chat_id: chatId,
+          sender_id: me,
+          text: trimmed,
+          type: "text",
+          deleted: false,
+          hidden_for_user_ids: [],
+        });
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
+
+        try {
+          await refreshChats({ silent: true });
+        } catch (e) {
+          console.error("chat room refreshChats after text send", e);
+        }
+      } catch (error) {
+        console.error("chat room send failed", error);
+        setSendErr("Не отправлено. Нажмите, чтобы повторить");
+        setMessages((prev) =>
+          prev.filter((message) => message.id !== optimisticMessage.id),
+        );
+        setText(trimmed);
+      } finally {
+        setSendingText(false);
+        queueMicrotask(() => textInputRef.current?.focus());
       }
-
-      await refreshChats({ silent: true });
-    } catch (error) {
-      console.error("chat room send failed", error);
-      setSendErr(
-        "Не удалось отправить сообщение. Проверьте интернет и попробуйте снова.",
-      );
-      setMessages((prev) =>
-        prev.filter((message) => message.id !== optimisticMessage.id),
-      );
-      setText(trimmed);
-    } finally {
-      setSending(false);
-      queueMicrotask(() => textInputRef.current?.focus());
-    }
+    })();
   }
 
   async function sendImageFile(file: File) {
@@ -1185,7 +1509,7 @@ export default function ChatRoomPage() {
       return;
     }
     if (uploadInFlightRef.current) return;
-    if (sending) return;
+    if (sendingImage) return;
 
     const { data: authData } = await supabase.auth.getSession();
     if (!authData?.session) {
@@ -1194,11 +1518,11 @@ export default function ChatRoomPage() {
     }
 
     uploadInFlightRef.current = true;
-    setSending(true);
+    setSendingImage(true);
 
     const objectUrl = URL.createObjectURL(file);
     pendingBlobRegistryRef.current.add(objectUrl);
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${Date.now()}-${String(++optimisticMessageIdSeqRef.current)}`;
     pendingImageFilesRef.current.set(tempId, file);
     const aspect = await getAspectFromObjectUrl(objectUrl);
 
@@ -1223,6 +1547,7 @@ export default function ChatRoomPage() {
 
     setSendErr(null);
     setMessages((prev) => mergeIncomingInsert(prev, optimisticMessage));
+    isAtBottomRef.current = true;
     stickBottomRef.current = true;
     alignListToBottomAfterPaint();
 
@@ -1331,7 +1656,7 @@ export default function ChatRoomPage() {
       });
     } finally {
       uploadInFlightRef.current = false;
-      setSending(false);
+      setSendingImage(false);
     }
   }
 
@@ -1355,7 +1680,7 @@ export default function ChatRoomPage() {
 
     setImageRetryingId(messageId);
     uploadInFlightRef.current = true;
-    setSending(true);
+    setSendingImage(true);
     const registry = pendingBlobRegistryRef.current;
     registry.clearTimer(messageId);
     setMessages((prev) =>
@@ -1480,7 +1805,7 @@ export default function ChatRoomPage() {
     } finally {
       setImageRetryingId(null);
       uploadInFlightRef.current = false;
-      setSending(false);
+      setSendingImage(false);
     }
   }
 
@@ -1524,11 +1849,9 @@ export default function ChatRoomPage() {
           </div>
           <div
             className={`mt-0.5 min-h-[16px] transition-opacity duration-150 ${
-              headerSecondaryLine.kind === "typing"
-                ? "text-sm font-medium leading-snug text-blue-500 dark:text-blue-400"
-                : headerSecondaryLine.kind === "muted"
-                  ? "text-[11px] text-muted"
-                  : ""
+              headerSecondaryLine.kind === "muted"
+                ? "text-[11px] text-muted"
+                : ""
             }`}
           >
             {headerSecondaryLine.text}
@@ -1581,90 +1904,36 @@ export default function ChatRoomPage() {
             </p>
           </div>
         ) : null}
+        {showScrollToNew && messages.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              isAtBottomRef.current = true;
+              stickBottomRef.current = true;
+              alignListToBottomAfterPaint();
+            }}
+            className="pressable absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-full border border-line/80 bg-elevated/95 px-3.5 py-1.5 text-xs font-medium text-fg shadow-md backdrop-blur-sm transition-transform duration-200 ease-out hover:bg-line/20 dark:bg-elev-2/95"
+          >
+            ↓ Новые сообщения
+          </button>
+        ) : null}
         <div
           ref={listRef}
           onScroll={updateListScrollUi}
           className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-1.5"
         >
           <div className="flex min-h-full flex-col justify-end gap-px">
-        {messages.map((m) => {
-          const mine = m.sender_id === me;
-          const isImage = m.type === "image" && Boolean(m.image_url);
-          return (
-            <div
-              key={m.id}
-              data-message-id={m.id}
-              className={`flex min-w-0 w-full ${
-                appearingMessageIds.has(m.id) ? "animate-messageAppear" : ""
-              } ${mine ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col ${mine ? "items-end" : "items-start"}`}
-              >
-                <div
-                  className={`w-full min-w-0 max-w-full text-[15px] leading-[1.38] transition-colors duration-ui ${
-                    isImage
-                      ? "max-w-[min(78vw,280px)] overflow-hidden rounded-[1.125rem] p-0 shadow-sm"
-                      : `max-w-full break-words px-3 py-1.5 [overflow-wrap:anywhere] ${
-                          mine
-                            ? "rounded-[1.125rem] rounded-br-[0.35rem] bg-accent text-white shadow-sm"
-                            : "rounded-[1.125rem] rounded-bl-[0.35rem] border border-line/65 bg-elevated text-fg shadow-sm"
-                        }`
-                  } ${
-                    isImage
-                      ? mine
-                        ? "ring-1 ring-white/10"
-                        : "ring-1 ring-line/35"
-                      : ""
-                  }`}
-                >
-                  {m.deleted ? (
-                    <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-fg/70">
-                      Сообщение удалено
-                    </p>
-                  ) : isImage && m.image_url ? (
-                    <div
-                      className={
-                        mine
-                          ? "min-w-0 overflow-hidden rounded-[1.125rem] rounded-br-[0.35rem]"
-                          : "min-w-0 overflow-hidden rounded-[1.125rem] rounded-bl-[0.35rem]"
-                      }
-                    >
-                      <ChatMessageImageBubble
-                        message={m}
-                        isRetrying={imageRetryingId === m.id}
-                        canRetryFile={m.id.startsWith("temp-")}
-                        onOpen={() => setLightboxUrl(m.image_url!)}
-                        onRetry={() => {
-                          if (m.id.startsWith("temp-")) {
-                            void retryImageUpload(m.id);
-                          }
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <span
-                      className={`block text-[15px] leading-[1.38] [overflow-wrap:anywhere] break-words [text-size-adjust:100%] ${
-                        mine ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {buildMessagePreview(m)}
-                    </span>
-                  )}
-                </div>
-                {mine ? (
-                  <div className="flex min-h-[13px] shrink-0 items-center justify-end pr-0.5">
-                    <MessageStatusTicks
-                      mine
-                      delivered_at={m.delivered_at}
-                      read_at={m.read_at}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
+        {messages.map((m) => (
+          <ChatListMessageRow
+            key={m.id}
+            m={m}
+            mine={m.sender_id === me}
+            isAppearing={appearingMessageIds.has(m.id)}
+            imageRetryingId={imageRetryingId}
+            onOpenLightbox={setLightboxUrl}
+            onRetryImage={retryImageUpload}
+          />
+        ))}
 
         {!messages.length && !loadErr ? (
           <div className="rounded-xl border border-line/60 bg-elevated/80 px-3 py-3 text-center text-xs text-muted">
@@ -1694,8 +1963,15 @@ export default function ChatRoomPage() {
       </div>
 
       <div className="shrink-0 border-t border-line/80 bg-elevated safe-pb">
+        {isTyping ? <TypingIndicator /> : null}
         {sendErr ? (
-          <p className="px-2 pt-1.5 text-xs font-medium text-danger">{sendErr}</p>
+          <button
+            type="button"
+            onClick={() => void send()}
+            className="pressable w-full max-w-sm px-2 pt-1.5 text-left text-xs font-medium text-danger transition-opacity hover:opacity-90"
+          >
+            {sendErr}
+          </button>
         ) : null}
 
         <div className="flex items-end gap-1.5 px-2 py-1.5">
@@ -1714,7 +1990,7 @@ export default function ChatRoomPage() {
           <button
             type="button"
             aria-label="Прикрепить фото"
-            disabled={sending}
+            disabled={sendingImage}
             onClick={() => fileInputRef.current?.click()}
             className="pressable mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg/90 transition-colors hover:bg-line/45 active:bg-line/60 disabled:opacity-45"
           >
@@ -1723,10 +1999,9 @@ export default function ChatRoomPage() {
           <input
             ref={textInputRef}
             value={text}
+            style={{ willChange: "transform" }}
             onChange={(e) => {
-              setText(e.target.value);
-              if (sendErr) setSendErr(null);
-              if (e.target.value.trim()) scheduleTypingBroadcast();
+              handleComposerChange(e.target.value, text);
             }}
             className="min-h-[42px] flex-1 rounded-2xl border border-line/80 bg-main px-3.5 py-2 text-[15px] leading-[1.35] text-fg placeholder:text-muted/65 focus:outline-none focus:ring-2 focus:ring-accent/30"
             placeholder="Сообщение…"
@@ -1740,7 +2015,7 @@ export default function ChatRoomPage() {
           <button
             type="button"
             onClick={() => void send()}
-            disabled={sending || !text.trim()}
+            disabled={sendingImage || sendingText || !text.trim()}
             className="pressable mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-base font-bold text-white transition-colors hover:bg-accent-hover disabled:opacity-45"
           >
             →

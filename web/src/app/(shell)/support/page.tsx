@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/auth-context";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { createSupportTicket } from "@/lib/support";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -37,6 +38,8 @@ export default function SupportPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const isDirty = Boolean(topic || message.trim());
+  useUnsavedChangesGuard(isDirty, { enabled: true });
 
   const answer = useMemo(() => (topic ? topicAnswer(topic) : ""), [topic]);
 
@@ -84,6 +87,9 @@ export default function SupportPage() {
       </div>
 
       <h1 className="text-xl font-bold text-fg">Поддержка</h1>
+      {isDirty ? (
+        <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
+      ) : null}
       <p className="mt-2 text-sm text-muted">Выберите тему и получите быстрый ответ.</p>
 
       <div className="mt-5 space-y-2">

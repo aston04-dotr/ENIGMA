@@ -2,6 +2,7 @@
 
 import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { useAuth } from "@/context/auth-context";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { fetchListingById } from "@/lib/listings";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useParams } from "next/navigation";
@@ -143,6 +144,8 @@ export default function EditListingPage() {
     description.trim() !== originalData.description ||
     Number(price) !== originalData.price
   );
+  const isDirty = Boolean(hasChanges);
+  const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
 
   if (authLoading || !authResolved) {
     return <AuthLoadingScreen />;
@@ -166,7 +169,7 @@ export default function EditListingPage() {
       <main className="safe-pt px-5 pb-8 pt-8">
         <p className="text-danger">{err}</p>
         <button
-          onClick={() => router.push("/profile")}
+          onClick={() => safePush(router, "/profile")}
           className="mt-4 text-accent hover:text-accent-hover"
         >
           ← Вернуться в профиль
@@ -181,13 +184,16 @@ export default function EditListingPage() {
       
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => router.back()}
+          onClick={() => safeBack(router)}
           className="text-muted hover:text-fg transition-colors"
         >
           ←
         </button>
         <h1 className="text-[24px] font-bold tracking-tight text-fg">Редактировать</h1>
       </div>
+      {isDirty ? (
+        <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
+      ) : null}
       
       <div className="space-y-5">
         <div className="space-y-2">
@@ -237,7 +243,7 @@ export default function EditListingPage() {
         
         <button
           type="button"
-          onClick={() => router.push(`/listing/${id}`)}
+          onClick={() => safePush(router, `/listing/${id}`)}
           className="w-full min-h-[48px] rounded-card border border-line py-3 text-[15px] font-medium text-muted transition-all duration-200 hover:bg-elevated"
         >
           Отмена
