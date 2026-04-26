@@ -169,7 +169,7 @@ ${actionLink}
 `.trim();
 
       const resend = new Resend(resendKey);
-      const from = process.env.RESEND_FROM ?? "Enigma <onboarding@resend.dev>";
+      const from = "Enigma <noreply@enigma-app.online>";
       let result: Awaited<ReturnType<Resend["emails"]["send"]>>;
       try {
         result = await resend.emails.send({

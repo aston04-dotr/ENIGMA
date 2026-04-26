@@ -7,7 +7,7 @@ comment on column public.users.email_notifications is 'Если true — при 
 
 -- ─── Настройка доставки (вручную в Supabase Dashboard) ─────────────────────
 -- 1. Задеплойте функцию: supabase functions deploy notify-new-message
--- 2. Secrets (Project Settings → Edge Functions): RESEND_API_KEY, RESEND_FROM (опц.),
+-- 2. Secrets (Project Settings → Edge Functions): RESEND_API_KEY
 --    PUBLIC_APP_URL (база приложения, напр. https://ваш-домен или expo dev),
 --    CHAT_NOTIFY_SECRET (случайная строка; тот же секрет в заголовке вебхука)
 -- 3. Database → Webhooks → Create hook:
@@ -18,4 +18,4 @@ comment on column public.users.email_notifications is 'Если true — при 
 --    - URL: https://<PROJECT_REF>.supabase.co/functions/v1/notify-new-message
 --    - HTTP Headers: x-chat-notify-secret: <тот же CHAT_NOTIFY_SECRET>
 --    - HTTP Headers: Authorization: Bearer <anon или service_role>
--- 4. В Resend подтвердите домен для production «from»; для теста — onboarding@resend.dev
+-- 4. В Resend используйте верифицированный домен (напр. noreply@enigma-app.online) для production «from».

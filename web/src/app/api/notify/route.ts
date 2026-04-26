@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "to and subject required" }, { status: 400 });
     }
 
-    const from = process.env.RESEND_FROM ?? "Enigma <onboarding@resend.dev>";
+    const from = "Enigma <noreply@enigma-app.online>";
     const resend = new Resend(key);
 
     const { data, error } = await resend.emails.send({
