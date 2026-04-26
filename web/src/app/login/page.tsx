@@ -6,10 +6,8 @@ import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
 import { trackEvent } from "@/lib/analytics";
 import Link from "next/link";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const RESEND_COOLDOWN_MS = 60_000;
 
 function humanizeMagicLinkError(raw: string): string {
   const t = raw.toLowerCase();
@@ -35,8 +33,6 @@ export default function LoginPage() {
   const [sent, setSent] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [cooldownUntil, setCooldownUntil] = useState(0);
-  const [, bumpCooldownUi] = useReducer((n: number) => n + 1, 0);
   const loginSuccessTrackedRef = useRef(false);
 
   useEffect(() => {
@@ -60,12 +56,6 @@ export default function LoginPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (cooldownUntil <= Date.now()) return;
-    const id = window.setInterval(() => bumpCooldownUi(), 1000);
-    return () => window.clearInterval(id);
-  }, [cooldownUntil]);
-
   // Редирект если уже вошёл
   useEffect(() => {
     if (ready && session?.user) {
@@ -76,9 +66,6 @@ export default function LoginPage() {
       router.replace("/");
     }
   }, [ready, session, router]);
-
-  const cooldownLeftSec = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
-  const canSendNow = cooldownLeftSec === 0;
 
   async function send() {
     setErr("");
@@ -91,26 +78,14 @@ export default function LoginPage() {
       setErr("Введите корректный email");
       return;
     }
-    if (!canSendNow) return;
     setLoading(true);
     const { error } = await signInWithMagicLink(em);
     setLoading(false);
     if (error) {
-      const raw = error.message;
-      const rateLimited =
-        raw.toLowerCase().includes("security purposes") ||
-        raw.toLowerCase().includes("rate limit") ||
-        raw.toLowerCase().includes("too many");
-      if (rateLimited) {
-        setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
-        setErr("Письмо уже отправляли недавно. Проверьте почту или подождите минуту.");
-        return;
-      }
-      setErr(humanizeMagicLinkError(raw));
+      setErr(humanizeMagicLinkError(error.message));
       return;
     }
     setSent(true);
-    setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
   }
 
   function onPrimaryClick() {
@@ -171,9 +146,12 @@ export default function LoginPage() {
       />
       {err ? <p className="mt-3 text-sm font-medium text-danger">{err}</p> : null}
       {sent ? (
-        <p className="mt-6 text-sm font-medium text-accent">
-          Проверьте почту и откройте ссылку в этом браузере. Обычно письмо приходит за 5–30 секунд.
-        </p>
+        <div className="mt-6 space-y-2">
+          <p className="text-sm font-semibold text-fg">Письмо отправлено</p>
+          <p className="text-sm font-medium text-accent">
+            Проверьте почту и откройте ссылку в этом браузере. Обычно письмо приходит за 5–30 секунд.
+          </p>
+        </div>
       ) : null}
       {loading ? (
         <p className="mt-4 text-sm text-muted" aria-live="polite">
@@ -183,17 +161,13 @@ export default function LoginPage() {
       <button
         type="button"
         onClick={onPrimaryClick}
-        disabled={loading || !canSendNow || !acceptedTerms}
+        disabled={loading || !acceptedTerms}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
         {loading ? "Отправка…" : sent ? "Войти снова" : "Войти"}
       </button>
       {(sent || err) && !loading ? (
-        <p className="mt-3 text-center text-xs text-muted">
-          {canSendNow
-            ? "Можно запросить письмо ещё раз."
-            : `Повторная отправка через ${cooldownLeftSec} с (защита от спама).`}
-        </p>
+        <p className="mt-3 text-center text-xs text-muted">Можно запросить письмо ещё раз.</p>
       ) : null}
     </main>
   );

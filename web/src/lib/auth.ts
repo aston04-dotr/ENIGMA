@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { getSiteOrigin } from "./runtimeConfig";
 
 function maskEmailForLog(email: string) {
   const [local, domain] = email.split("@");
@@ -9,33 +8,17 @@ function maskEmailForLog(email: string) {
 }
 
 /**
- * Magic link only — шаблон письма в Supabase: ссылка, не OTP.
- * Новые пользователи: `shouldCreateUser: true` (аналог signUp по email).
- * Redirect URLs: production origin, /auth/callback, и при необходимости exp://…
+ * Magic link только через кастомный route `/api/auth/magic-link` (Resend + generateLink).
+ * Прямой `supabase.auth.signInWithOtp` на клиенте не используется.
  */
 export async function signIn(email: string) {
   const trimmed = email.trim().toLowerCase();
   const label = maskEmailForLog(trimmed);
   console.log("[auth] magic_link:start", { email: label });
 
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeout = setTimeout(() => controller?.abort(), 10_000);
-  const withTimeout = async <T>(promise: Promise<T>, ms = 10_000): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error("magic_link_direct_timeout")), ms)
-      ),
-    ]);
-
-  const directOtp = () =>
-    supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: {
-        emailRedirectTo: `${getSiteOrigin()}/auth/callback`,
-        shouldCreateUser: true,
-      },
-    });
+  const controller =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const t = setTimeout(() => controller?.abort(), 15_000);
 
   try {
     const res = await fetch("/api/auth/magic-link", {
@@ -45,62 +28,36 @@ export async function signIn(email: string) {
       signal: controller?.signal,
     });
 
-    let payload: { ok?: boolean; error?: string } | null = null;
-    try {
-      payload = (await res.json()) as { ok?: boolean; error?: string };
-    } catch {
-      payload = null;
-    }
-
-    if (res.ok && payload?.ok === true) {
+    const raw = await res.text();
+    if (res.ok) {
       console.log("[auth] magic_link:ok", { via: "api", email: label });
-      return { error: null };
+      return { error: null as null };
     }
 
-    console.warn("[auth] magic_link:api_not_ok", {
+    let message = raw || `HTTP ${res.status}`;
+    try {
+      const payload = JSON.parse(raw) as { error?: string; ok?: boolean };
+      if (payload?.error) message = payload.error;
+    } catch {
+      if (res.status === 400) message = "Некорректный email";
+    }
+    if (res.status === 400 && !raw) message = "Некорректный email";
+
+    console.warn("[auth] magic_link:api_error", {
       email: label,
       status: res.status,
-      payload,
+      message,
     });
-
-    const direct = await withTimeout(directOtp(), 10_000);
-    if (!direct.error) {
-      console.log("[auth] magic_link:ok", { via: "direct", email: label });
-      return { error: null };
-    }
-    console.error("[auth] magic_link:error", {
-      via: "direct",
-      email: label,
-      message: direct.error.message,
-    });
-    return {
-      error: {
-        message: payload?.error || direct.error.message || "Не удалось отправить ссылку. Попробуйте ещё раз.",
-      },
-    };
+    return { error: { message } };
   } catch (e) {
-    try {
-      const direct = await withTimeout(directOtp(), 10_000);
-      if (!direct.error) {
-        console.log("[auth] magic_link:ok", { via: "direct_after_error", email: label });
-        return { error: null };
-      }
-      console.error("[auth] magic_link:error", {
-        via: "direct_after_error",
-        email: label,
-        message: direct.error.message,
-      });
-      return { error: { message: direct.error.message } };
-    } catch {
-      const msg =
-        e instanceof Error && (e.name === "AbortError" || e.message === "magic_link_direct_timeout")
-          ? "Превышено время ожидания. Проверьте интернет и повторите."
-          : "Не удалось отправить ссылку. Проверьте интернет и повторите.";
-      console.error("[auth] magic_link:error", { email: label, message: msg, raw: String(e) });
-      return { error: { message: msg } };
-    }
+    const msg =
+      e instanceof Error && e.name === "AbortError"
+        ? "Превышено время ожидания. Проверьте интернет и повторите."
+        : "Не удалось отправить ссылку. Проверьте интернет и повторите.";
+    console.error("[auth] magic_link:error", { email: label, message: msg });
+    return { error: { message: msg } };
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(t);
   }
 }
 
