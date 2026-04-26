@@ -9,6 +9,14 @@ type MagicLinkBody = {
 
 const lastSentMap = new Map<string, number>();
 
+function markRequestWindow(normalizedEmail: string) {
+  const t = Date.now();
+  lastSentMap.set(normalizedEmail, t);
+  setTimeout(() => {
+    lastSentMap.delete(normalizedEmail);
+  }, 60_000);
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as MagicLinkBody;
@@ -35,22 +43,12 @@ export async function POST(request: Request) {
     const redirectTo = `${getSiteOrigin()}/auth/callback`;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
     const resendKey = process.env.RESEND_API_KEY?.trim() || "";
+
     const now = Date.now();
     const lastSent = lastSentMap.get(normalizedEmail);
     if (lastSent && now - lastSent < 10_000) {
-      console.warn(
-        "MAGIC LINK THROTTLED:",
-        normalizedEmail,
-        "wait:",
-        10 - Math.floor((now - lastSent) / 1000),
-        "sec",
-      );
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+      console.warn("THROTTLED BUT CONTINUE");
     }
-    lastSentMap.set(normalizedEmail, now);
-    setTimeout(() => {
-      lastSentMap.delete(normalizedEmail);
-    }, 60_000);
 
     const sendWithSupabaseFallback = async () => {
       const authPromise = supabase.auth.signInWithOtp({
@@ -70,6 +68,7 @@ export async function POST(request: Request) {
     if (!resendKey || !serviceRoleKey) {
       console.warn("MAGIC LINK FALLBACK TRIGGERED");
       await sendWithSupabaseFallback();
+      markRequestWindow(normalizedEmail);
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
@@ -90,11 +89,22 @@ export async function POST(request: Request) {
       );
       const { data, error } = await Promise.race([generatePromise, timeoutPromise]);
       if (error) {
-        throw error;
+        console.error("MAGIC LINK ERROR:", error);
+        return NextResponse.json(
+          { ok: false, error: "magic_link_generate_failed" },
+          { status: 502 },
+        );
       }
-      const actionLink = String((data as { properties?: { action_link?: string } })?.properties?.action_link ?? "").trim();
+      const actionLink = String(
+        (data as { properties?: { action_link?: string } })?.properties?.action_link ?? "",
+      ).trim();
+      console.log("ACTION LINK:", actionLink);
       if (!actionLink) {
-        throw new Error("empty_action_link");
+        console.error("MAGIC LINK ERROR:", new Error("empty_action_link"));
+        return NextResponse.json(
+          { ok: false, error: "empty_action_link" },
+          { status: 502 },
+        );
       }
 
       const html = `
@@ -160,22 +170,48 @@ ${actionLink}
 
       const resend = new Resend(resendKey);
       const from = process.env.RESEND_FROM ?? "Enigma <onboarding@resend.dev>";
-      const result = await resend.emails.send({
-        from,
-        to: normalizedEmail,
-        subject: "Вход в Enigma",
-        text,
-        html,
-      });
-      const sendError = "error" in result ? result.error : null;
+      let result: Awaited<ReturnType<Resend["emails"]["send"]>>;
+      try {
+        result = await resend.emails.send({
+          from,
+          to: normalizedEmail,
+          subject: "Вход в Enigma",
+          text,
+          html,
+        });
+      } catch (resendThrow: unknown) {
+        console.error("MAGIC LINK ERROR:", resendThrow);
+        console.warn("MAGIC LINK FALLBACK TRIGGERED");
+        await sendWithSupabaseFallback();
+        markRequestWindow(normalizedEmail);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      const sendError = result.error ?? null;
       if (sendError) {
-        throw sendError;
+        console.error("MAGIC LINK ERROR:", sendError);
+        console.warn("MAGIC LINK FALLBACK TRIGGERED");
+        await sendWithSupabaseFallback();
+        markRequestWindow(normalizedEmail);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
       }
       console.log("MAGIC LINK SENT SUCCESSFULLY");
+      markRequestWindow(normalizedEmail);
     } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "magic_link_timeout" || error.name === "AbortError")
+      ) {
+        console.error("MAGIC LINK ERROR:", error);
+        return NextResponse.json(
+          { ok: false, error: "magic_link_timeout" },
+          { status: 504 },
+        );
+      }
       console.error("MAGIC LINK ERROR:", error);
-      console.warn("MAGIC LINK FALLBACK TRIGGERED");
-      await sendWithSupabaseFallback();
+      return NextResponse.json(
+        { ok: false, error: "magic_link_unexpected" },
+        { status: 500 },
+      );
     }
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (e) {
@@ -184,4 +220,3 @@ ${actionLink}
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
-
