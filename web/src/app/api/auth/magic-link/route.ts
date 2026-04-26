@@ -67,18 +67,14 @@ export async function POST(request: Request) {
       if (error) throw error;
     };
 
-    console.log("MAGIC LINK: custom email send started");
-    console.log("MAGIC LINK EMAIL:", normalizedEmail);
-    console.log("MAGIC LINK REDIRECT:", redirectTo);
-
     if (!resendKey || !serviceRoleKey) {
-      console.warn("ENV NOT FOUND → fallback to Supabase");
-      console.warn("MAGIC LINK FALLBACK USED:", normalizedEmail);
+      console.warn("MAGIC LINK FALLBACK TRIGGERED");
       await sendWithSupabaseFallback();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
     try {
+      console.log("MAGIC LINK: USING CUSTOM EMAIL FLOW");
       const admin = createClient(url, serviceRoleKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
@@ -105,36 +101,35 @@ export async function POST(request: Request) {
 <div style="font-family: Arial, sans-serif; padding: 20px; color: #000;">
   <h2 style="margin-bottom: 10px;">Вход в Enigma</h2>
 
-  <p style="font-size: 16px;">
-    Чтобы войти в свой аккаунт Enigma, нажмите на кнопку ниже 👇
+  <p style="font-size: 16px; margin: 0 0 12px 0;">
+    Вас приветствует поддержка Enigma 👋
   </p>
 
-  <a href="${actionLink}"
-     style="
-       display:inline-block;
-       margin-top:16px;
-       padding:14px 22px;
-       background:#007AFF;
-       color:#ffffff;
-       border-radius:10px;
-       text-decoration:none;
-       font-weight:600;
-       font-size:16px;
-     ">
-     👉 Войти в Enigma
+  <p style="font-size: 16px; margin: 0 0 12px 0;">
+    Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
+  </p>
+
+  <p style="font-size: 16px; margin: 0 0 16px 0;">
+    Напишите нам здесь, и мы быстро ответим.
+  </p>
+
+  <p style="font-size: 16px; margin: 0 0 16px 0;">
+    Желаем вам удачных сделок! 🚀
+  </p>
+
+  <a href="${actionLink}" style="color:#2563eb;font-size:16px;font-weight:600;text-decoration:underline;">
+    👉 Войти в Enigma
   </a>
 
-  <p style="margin-top: 20px; font-size: 14px;">
-    Или нажмите на ссылку:
+  <p style="margin-top: 14px; font-size: 13px; color:#555;">
+    Если ссылка не нажимается, скопируйте её и вставьте в браузер.
   </p>
 
-  <p style="word-break: break-all;">
-    <a href="${actionLink}" style="color:#007AFF;">
-      ${actionLink} 👈
-    </a>
+  <p style="margin-top: 10px; font-size: 13px; color:#555; word-break: break-all;">
+    ${actionLink}
   </p>
 
-  <p style="margin-top: 20px; font-size: 13px; color:#555;">
+  <p style="margin-top: 14px; font-size: 13px; color:#555;">
     Ссылка действительна 10 минут.
   </p>
 
@@ -147,33 +142,41 @@ export async function POST(request: Request) {
       const text = `
 Вход в Enigma
 
-Чтобы войти, перейдите по ссылке:
+Вас приветствует поддержка Enigma 👋
+
+Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
+
+Напишите нам здесь, и мы быстро ответим.
+
+Желаем вам удачных сделок! 🚀
+
+👉 Войти в Enigma:
 ${actionLink}
+
+Если ссылка не нажимается, скопируйте её и вставьте в браузер.
 
 Ссылка действует 10 минут.
 `.trim();
 
       const resend = new Resend(resendKey);
       const from = process.env.RESEND_FROM ?? "Enigma <onboarding@resend.dev>";
-      const { error: sendError } = await resend.emails.send({
+      const result = await resend.emails.send({
         from,
         to: normalizedEmail,
         subject: "Вход в Enigma",
         text,
         html,
       });
+      const sendError = "error" in result ? result.error : null;
       if (sendError) {
         throw sendError;
       }
-      console.log("MAGIC LINK SENT SUCCESSFULLY:", normalizedEmail);
+      console.log("MAGIC LINK SENT SUCCESSFULLY");
     } catch (error) {
       console.error("MAGIC LINK ERROR:", error);
-      console.error("CUSTOM EMAIL FAILED → fallback", error);
-      console.warn("MAGIC LINK FALLBACK USED:", normalizedEmail);
+      console.warn("MAGIC LINK FALLBACK TRIGGERED");
       await sendWithSupabaseFallback();
     }
-
-    console.log("[api/magic-link] ok");
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "unexpected_error";
