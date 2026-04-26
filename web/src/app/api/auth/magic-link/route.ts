@@ -107,65 +107,43 @@ export async function POST(request: Request) {
         );
       }
 
+      const fontStack =
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
       const html = `
-<div style="font-family: Arial, sans-serif; padding: 20px; color: #000;">
-  <h2 style="margin-bottom: 10px;">Вход в Enigma</h2>
-
-  <p style="font-size: 16px; margin: 0 0 12px 0;">
-    Вас приветствует поддержка Enigma 👋
-  </p>
-
-  <p style="font-size: 16px; margin: 0 0 12px 0;">
-    Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
-  </p>
-
-  <p style="font-size: 16px; margin: 0 0 16px 0;">
-    Напишите нам здесь, и мы быстро ответим.
-  </p>
-
-  <p style="font-size: 16px; margin: 0 0 16px 0;">
-    Желаем вам удачных сделок! 🚀
-  </p>
-
-  <a href="${actionLink}" style="color:#2563eb;font-size:16px;font-weight:600;text-decoration:underline;">
-    👉 Войти в Enigma
-  </a>
-
-  <p style="margin-top: 14px; font-size: 13px; color:#555;">
-    Если ссылка не нажимается, скопируйте её и вставьте в браузер.
-  </p>
-
-  <p style="margin-top: 10px; font-size: 13px; color:#555; word-break: break-all;">
-    ${actionLink}
-  </p>
-
-  <p style="margin-top: 14px; font-size: 13px; color:#555;">
-    Ссылка действительна 10 минут.
-  </p>
-
-  <p style="margin-top: 10px; font-size: 13px; color:#555;">
-    Если вы не запрашивали вход — просто проигнорируйте это письмо.
-  </p>
-</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0B0B0B; margin:0; padding:24px; font-family:${fontStack};">
+  <tr>
+    <td align="center">
+      <div style="max-width:480px; margin:0 auto; background-color:#111; border-radius:12px; padding:24px; text-align:left;">
+        <h1 style="margin:0 0 8px 0; font-size:22px; font-weight:600; line-height:1.25; color:#ffffff; letter-spacing:-0.02em;">Вход в Enigma</h1>
+        <p style="margin:0 0 24px 0; font-size:16px; line-height:1.5; color:#aaaaaa;">Нажмите кнопку ниже, чтобы войти в свой аккаунт</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
+          <tr>
+            <td align="left">
+              <a href="${actionLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block; background-color:#ffffff; color:#0B0B0B; font-size:16px; font-weight:600; line-height:1.2; text-decoration:none; padding:14px 24px; border-radius:12px;">Войти в Enigma</a>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:24px 0 0 0; font-size:13px; line-height:1.5; color:#aaaaaa;">Ссылка действует ограниченное время.</p>
+        <p style="margin:20px 0 8px 0; font-size:13px; line-height:1.5; color:#aaaaaa;">Если кнопка не работает, откройте ссылку вручную:</p>
+        <p style="margin:0; font-size:12px; line-height:1.5; color:#ffffff; word-break:break-all; overflow-wrap:anywhere;">${actionLink}</p>
+        <p style="margin:24px 0 0 0; padding-top:20px; border-top:1px solid #1a1a1a; font-size:12px; line-height:1.4; color:#666666;">Enigma</p>
+      </div>
+    </td>
+  </tr>
+</table>
 `.trim();
 
-      const text = `
-Вход в Enigma
+      const text = `Вход в Enigma
 
-Вас приветствует поддержка Enigma 👋
+Нажмите кнопку ниже, чтобы войти в свой аккаунт.
 
-Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
-
-Напишите нам здесь, и мы быстро ответим.
-
-Желаем вам удачных сделок! 🚀
-
-👉 Войти в Enigma:
+Войти в Enigma (откройте в браузере):
 ${actionLink}
 
-Если ссылка не нажимается, скопируйте её и вставьте в браузер.
+Ссылка действует ограниченное время.
 
-Ссылка действует 10 минут.
+Если кнопка не работает, откройте ссылку вручную:
+${actionLink}
 `.trim();
 
       const resend = new Resend(resendKey);
@@ -175,7 +153,7 @@ ${actionLink}
         result = await resend.emails.send({
           from,
           to: normalizedEmail,
-          subject: "Вход в Enigma",
+          subject: "Вход в Enigma — подтвердите за 10 секунд",
           text,
           html,
         });
