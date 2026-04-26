@@ -583,262 +583,91 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Пакеты размещений */}
-        <div className="mt-8">
-          <p className={`text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты размещений</p>
-          <div className="mt-4 grid grid-cols-3 gap-3 items-stretch">
-            {/* SMALL */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "general", size: "small" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "general" && selectedPackage?.size === "small"
-                  ? (isDark ? "bg-white/10 border border-accent/50 shadow-md opacity-100" : "bg-gray-50 border border-[#8B5FFF]/40 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/[0.03] border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-gray-50/50 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <p className={`text-[14px] font-medium ${isDark ? "text-muted" : "text-gray-600"}`}>10</p>
-              <div className="mt-1">
-                <PriceDisplay value={1800} size="sm" />
-              </div>
-              <p className={`text-[10px] mt-1 ${isDark ? "text-muted/60" : "text-gray-400"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>180</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-
-            {/* BASE - выделенный */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "general", size: "base" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "general" && selectedPackage?.size === "base"
-                  ? (isDark ? "bg-accent/10 border-2 border-accent/50 shadow-lg opacity-100 scale-[1.02]" : "bg-[#f3f0ff] border-2 border-[#8B5FFF]/50 shadow-md opacity-100 scale-[1.02]")
-                  : (isDark ? "bg-accent/5 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]" : "bg-[#f3f0ff]/60 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-accent/80 text-white" : "bg-[#8B5FFF] text-white"}`}>Оптимальный</span>
-              <p className={`text-[16px] font-bold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>25</p>
-              <div className="mt-0.5">
-                <PriceDisplay value={4000} size="md" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/70" : "text-[#7c3aed]/80"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>160</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-
-            {/* PRO */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "general", size: "pro" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "general" && selectedPackage?.size === "pro"
-                  ? (isDark ? "bg-white/10 border border-accent/40 shadow-md opacity-100" : "bg-white border border-[#8B5FFF]/30 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/5 border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-white/80 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-white/20 text-white/90" : "bg-gray-100 text-gray-600"}`}>Максимум выгоды 🔥🔥🔥</span>
-              <p className={`text-[15px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>50</p>
-              <div className="mt-1">
-                <PriceDisplay value={7000} size="sm" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/60" : "text-[#7c3aed]/70"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>140</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
+        {/* Пакеты: 3 понятных блока без смешивания категорий */}
+        {[
+          { type: "realty", title: "Недвижимость" },
+          { type: "auto", title: "Авто" },
+          { type: "general", title: "Общие пакеты" },
+        ].map((section) => (
+          <div
+            key={section.type}
+            className={`mt-8 rounded-2xl border p-4 sm:p-5 ${
+              isDark
+                ? "border-line/70 bg-white/[0.02]"
+                : "border-gray-200 bg-white"
+            }`}
+          >
+            <h3 className={`text-[17px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>
+              {section.title}
+            </h3>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {(Object.entries(packageInfo[section.type] || {}) as [PackageSize, PackageInfo][])
+                .map(([size, info]) => {
+                  const selected =
+                    !isCustom &&
+                    selectedPackage?.type === section.type &&
+                    selectedPackage?.size === size;
+                  const isPopular = size === "base";
+                  return (
+                    <article
+                      key={`${section.type}-${size}`}
+                      className={`rounded-xl border p-4 transition-all duration-200 ${
+                        selected
+                          ? isDark
+                            ? "border-accent/60 bg-accent/10 shadow-lg"
+                            : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
+                          : isDark
+                            ? "border-line/70 bg-white/[0.03] hover:bg-white/[0.06] hover:shadow-md"
+                            : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
+                      }`}
+                    >
+                      <div className="min-h-[22px]">
+                        {isPopular ? (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isDark
+                                ? "bg-accent/85 text-white"
+                                : "bg-[#8B5FFF] text-white"
+                            }`}
+                          >
+                            Популярно
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className={`mt-1 text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
+                        {info.count} объявлений
+                      </p>
+                      <div className="mt-2">
+                        <PriceDisplay value={info.price} size={isPopular ? "md" : "sm"} />
+                      </div>
+                      <p className={`mt-1 text-[12px] ${isDark ? "text-muted/80" : "text-gray-500"}`}>
+                        Выгоднее, чем поштучно
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPackage({ type: section.type, size });
+                          setIsCustom(false);
+                          setCustomQuantity("");
+                        }}
+                        className={`pressable mt-4 min-h-[44px] w-full rounded-lg border text-[14px] font-semibold transition-all duration-200 ${
+                          selected
+                            ? isDark
+                              ? "border-accent/70 bg-accent/20 text-accent"
+                              : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
+                            : isDark
+                              ? "border-line/80 bg-white/[0.04] text-fg hover:bg-white/[0.1]"
+                              : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
+                        }`}
+                      >
+                        Выбрать
+                      </button>
+                    </article>
+                  );
+                })}
+            </div>
           </div>
-        </div>
-
-        {/* Пакеты для недвижимости */}
-        <div className="mt-8">
-          <p className={`text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты для недвижимости</p>
-          <div className="mt-4 grid grid-cols-3 gap-3 items-stretch">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "realty", size: "small" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "realty" && selectedPackage?.size === "small"
-                  ? (isDark ? "bg-white/10 border border-accent/50 shadow-md opacity-100" : "bg-gray-50 border border-[#8B5FFF]/40 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/[0.03] border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-gray-50/50 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <p className={`text-[14px] font-medium ${isDark ? "text-muted" : "text-gray-600"}`}>3</p>
-              <div className="mt-1">
-                <PriceDisplay value={4000} size="sm" />
-              </div>
-              <p className={`text-[10px] mt-1 ${isDark ? "text-muted/60" : "text-gray-400"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>1 333</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "realty", size: "base" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "realty" && selectedPackage?.size === "base"
-                  ? (isDark ? "bg-accent/10 border-2 border-accent/50 shadow-lg opacity-100 scale-[1.02]" : "bg-[#f3f0ff] border-2 border-[#8B5FFF]/50 shadow-md opacity-100 scale-[1.02]")
-                  : (isDark ? "bg-accent/5 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]" : "bg-[#f3f0ff]/60 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-accent/80 text-white" : "bg-[#8B5FFF] text-white"}`}>Оптимальный</span>
-              <p className={`text-[16px] font-bold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>7</p>
-              <div className="mt-0.5">
-                <PriceDisplay value={8500} size="md" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/70" : "text-[#7c3aed]/80"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>1 214</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "realty", size: "pro" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "realty" && selectedPackage?.size === "pro"
-                  ? (isDark ? "bg-white/10 border border-accent/40 shadow-md opacity-100" : "bg-white border border-[#8B5FFF]/30 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/5 border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-white/80 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-white/20 text-white/90" : "bg-gray-100 text-gray-600"}`}>Максимум выгоды 🔥🔥🔥</span>
-              <p className={`text-[15px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>15</p>
-              <div className="mt-1">
-                <PriceDisplay value={16500} size="sm" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/60" : "text-[#7c3aed]/70"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>1 100</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-          </div>
-        </div>
-
-        {/* Пакеты для авто */}
-        <div className="mt-8">
-          <p className={`text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты для авто</p>
-          <div className="mt-4 grid grid-cols-3 gap-3 items-stretch">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "auto", size: "small" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "auto" && selectedPackage?.size === "small"
-                  ? (isDark ? "bg-white/10 border border-accent/50 shadow-md opacity-100" : "bg-gray-50 border border-[#8B5FFF]/40 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/[0.03] border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-gray-50/50 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <p className={`text-[14px] font-medium ${isDark ? "text-muted" : "text-gray-600"}`}>3</p>
-              <div className="mt-1">
-                <PriceDisplay value={2500} size="sm" />
-              </div>
-              <p className={`text-[10px] mt-1 ${isDark ? "text-muted/60" : "text-gray-400"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>833</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "auto", size: "base" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "auto" && selectedPackage?.size === "base"
-                  ? (isDark ? "bg-accent/10 border-2 border-accent/50 shadow-lg opacity-100 scale-[1.02]" : "bg-[#f3f0ff] border-2 border-[#8B5FFF]/50 shadow-md opacity-100 scale-[1.02]")
-                  : (isDark ? "bg-accent/5 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]" : "bg-[#f3f0ff]/60 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-accent/80 text-white" : "bg-[#8B5FFF] text-white"}`}>Оптимальный</span>
-              <p className={`text-[16px] font-bold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>7</p>
-              <div className="mt-0.5">
-                <PriceDisplay value={5500} size="md" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/70" : "text-[#7c3aed]/80"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>786</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPackage({ type: "auto", size: "pro" });
-                setIsCustom(false);
-                setCustomQuantity("");
-              }}
-              className={`relative rounded-xl py-4 px-3 text-center transition-all duration-200 ${
-                !isCustom && selectedPackage?.type === "auto" && selectedPackage?.size === "pro"
-                  ? (isDark ? "bg-white/10 border border-accent/40 shadow-md opacity-100" : "bg-white border border-[#8B5FFF]/30 shadow-sm opacity-100")
-                  : (isDark ? "bg-white/5 border-0 opacity-60 hover:opacity-80 hover:scale-[1.02]" : "bg-white/80 border-0 opacity-70 hover:opacity-90 hover:scale-[1.02]")
-              }`}
-            >
-              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mb-1 ${isDark ? "bg-white/20 text-white/90" : "bg-gray-100 text-gray-600"}`}>Максимум выгоды 🔥🔥🔥</span>
-              <p className={`text-[15px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>15</p>
-              <div className="mt-1">
-                <PriceDisplay value={10500} size="sm" />
-              </div>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-accent/60" : "text-[#7c3aed]/70"}`}>
-                <span className="inline-flex items-baseline">
-                  <span>700</span>
-                  <span className="ml-0.5 opacity-60">₽</span>
-                </span>
-                <span className="opacity-50">/шт</span>
-              </p>
-            </button>
-          </div>
-        </div>
+        ))}
 
         {/* Свое количество */}
         <div className="mt-8 pt-6 border-t border-dashed border-gray-300/50 dark:border-gray-600/30">

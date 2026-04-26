@@ -200,6 +200,15 @@ const MAX_MESSAGE_ENTER_ANIM = 0;
 /** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
+const SUPPORT_WELCOME_MESSAGE_ID = "support-welcome-local";
+const SUPPORT_WELCOME_SENDER_ID = "support";
+const SUPPORT_WELCOME_TEXT = `Вас приветствует поддержка Enigma 👋
+
+Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
+
+Напишите нам здесь, и мы быстро ответим.
+
+Желаем вам удачных сделок! 🚀`;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -268,6 +277,30 @@ function PaperclipIcon({ className }: { className?: string }) {
   );
 }
 
+function SupportAvatarIcon({ className }: { className?: string }) {
+  return (
+    <div
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-line/70 bg-elevated text-accent ${className ?? ""}`}
+      aria-hidden
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-[17px] w-[17px]"
+      >
+        <path d="M4.5 12a7.5 7.5 0 1 1 15 0" />
+        <path d="M5 13.5h2a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 7 17.5H6A2 2 0 0 1 4 15.5v-1A1 1 0 0 1 5 13.5Z" />
+        <path d="M17 13.5h2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2h-1a1.5 1.5 0 0 1-1.5-1.5v-1a1.5 1.5 0 0 1 1.5-1.5Z" />
+        <path d="M10 17.5h4" />
+      </svg>
+    </div>
+  );
+}
+
 function MessageStatusTicks({
   mine,
   delivered_at,
@@ -293,6 +326,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   m,
   mine,
   isAppearing,
+  animateSupportWelcome,
   imageRetryingId,
   onOpenLightbox,
   onRetryImage,
@@ -301,6 +335,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   m: MessageRow;
   mine: boolean;
   isAppearing: boolean;
+  animateSupportWelcome: boolean;
   imageRetryingId: string | null;
   onOpenLightbox: (url: string) => void;
   onRetryImage: (id: string) => void;
@@ -311,9 +346,11 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 }) {
   const isImage = m.type === "image" && Boolean(m.image_url);
   const isOptimistic = m.id.startsWith("temp-");
+  const isSupportWelcomeMessage = m.id === SUPPORT_WELCOME_MESSAGE_ID;
+  const [welcomeVisible, setWelcomeVisible] = useState(!animateSupportWelcome);
   const messageTime = formatMessageTime(m.created_at);
   const longPressTimerRef = useRef<number | null>(null);
-  const canOpenMenu = !m.id.startsWith("temp-");
+  const canOpenMenu = !m.id.startsWith("temp-") && !isSupportWelcomeMessage;
 
   const clearLongPress = () => {
     if (typeof window === "undefined") return;
@@ -323,6 +360,15 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   };
 
   useEffect(() => clearLongPress, []);
+  useEffect(() => {
+    if (!isSupportWelcomeMessage || !animateSupportWelcome) return;
+    if (typeof window === "undefined") return;
+    setWelcomeVisible(false);
+    const raf = window.requestAnimationFrame(() => {
+      setWelcomeVisible(true);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [isSupportWelcomeMessage, animateSupportWelcome]);
 
   const openMenuAt = (x: number, y: number) => {
     if (!canOpenMenu) return;
@@ -351,10 +397,32 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
       className={`flex min-w-0 w-full ${
         isAppearing ? "animate-messageAppear" : ""
       } ${mine ? "justify-end" : "justify-start"}`}
+      style={
+        isSupportWelcomeMessage && animateSupportWelcome
+          ? {
+              opacity: welcomeVisible ? 1 : 0,
+              transform: welcomeVisible ? "translateY(0)" : "translateY(8px)",
+              transition: "opacity 250ms ease-out, transform 250ms ease-out",
+            }
+          : undefined
+      }
     >
+      {!mine && isSupportWelcomeMessage ? (
+        <div className="mr-2 mt-0.5 shrink-0">
+          <SupportAvatarIcon />
+        </div>
+      ) : null}
       <div
         className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col ${mine ? "items-end" : "items-start"}`}
       >
+        {!mine && isSupportWelcomeMessage ? (
+          <div className="mb-1 px-1">
+            <span className="block text-[11px] font-semibold tracking-wide text-muted">
+              Поддержка
+            </span>
+            <span className="block text-xs text-green-500">онлайн</span>
+          </div>
+        ) : null}
         <div
           className={`w-full min-w-0 max-w-full text-[15px] leading-[1.38] transition-colors duration-ui ${
             isImage
@@ -398,7 +466,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
             </div>
           ) : (
             <span
-              className={`block text-[15px] leading-[1.38] [overflow-wrap:anywhere] break-words [text-size-adjust:100%] ${
+              className={`block whitespace-pre-line text-[15px] leading-[1.38] [overflow-wrap:anywhere] break-words [text-size-adjust:100%] ${
                 mine ? "text-right" : "text-left"
               }`}
             >
@@ -434,6 +502,7 @@ export default function ChatRoomPage() {
   const chatId = typeof id === "string" ? id.trim() : "";
 
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [text, setText] = useState("");
@@ -503,6 +572,7 @@ export default function ChatRoomPage() {
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
+  const supportWelcomeAnimatedForChatIdRef = useRef<string | null>(null);
 
   messagesRef.current = messages;
 
@@ -512,6 +582,42 @@ export default function ChatRoomPage() {
       (m) => !m.hidden_for_user_ids?.includes(me),
     );
   }, [messages, me]);
+
+  const supportWelcomeMessage = useMemo<MessageRow>(() => {
+    return {
+      id: SUPPORT_WELCOME_MESSAGE_ID,
+      chat_id: chatId,
+      sender_id: SUPPORT_WELCOME_SENDER_ID,
+      text: SUPPORT_WELCOME_TEXT,
+      created_at: new Date().toISOString(),
+      type: "text",
+      image_url: null,
+      voice_url: null,
+      reply_to: null,
+      edited_at: null,
+      deleted: false,
+      deleted_at: null,
+      hidden_for_user_ids: [],
+      status: null,
+      delivered_at: null,
+      read_at: null,
+    };
+  }, [chatId]);
+
+  const displayMessages = useMemo(() => {
+    if (!messagesLoaded || loadErr) return visibleMessages;
+    if (visibleMessages.length > 0) return visibleMessages;
+    return [supportWelcomeMessage];
+  }, [messagesLoaded, loadErr, visibleMessages, supportWelcomeMessage]);
+  const showSupportWelcomeOnly =
+    messagesLoaded &&
+    !loadErr &&
+    visibleMessages.length === 0 &&
+    displayMessages.length === 1 &&
+    displayMessages[0]?.id === SUPPORT_WELCOME_MESSAGE_ID;
+  const shouldAnimateSupportWelcome =
+    showSupportWelcomeOnly &&
+    supportWelcomeAnimatedForChatIdRef.current !== chatId;
 
   const setPeerTypingStable = useCallback((newState: boolean) => {
     if (newState === lastPeerTypingStateRef.current) {
@@ -987,6 +1093,7 @@ export default function ChatRoomPage() {
   const loadMessages = useCallback(async () => {
     if (!chatId || !isUuid(chatId)) return;
 
+    setMessagesLoaded(false);
     setLoadErr(null);
 
     try {
@@ -1000,6 +1107,7 @@ export default function ChatRoomPage() {
         console.error("chat room load messages", error);
         setLoadErr(FETCH_ERROR_MESSAGE);
         setMessages([]);
+        setMessagesLoaded(true);
         realtimeInsertIdsRef.current.clear();
         return;
       }
@@ -1011,6 +1119,7 @@ export default function ChatRoomPage() {
       if (!mountedRef.current) return;
 
       setMessages(sortMessages(safe));
+      setMessagesLoaded(true);
       realtimeInsertIdsRef.current.clear();
       for (const row of safe) {
         if (isUuid(row.id)) realtimeInsertIdsRef.current.add(row.id);
@@ -1023,6 +1132,7 @@ export default function ChatRoomPage() {
       if (!mountedRef.current) return;
       setLoadErr(FETCH_ERROR_MESSAGE);
       setMessages([]);
+      setMessagesLoaded(true);
       realtimeInsertIdsRef.current.clear();
     }
   }, [chatId, markIncomingDeliveredBatch]);
@@ -1409,6 +1519,16 @@ export default function ChatRoomPage() {
     setRoomStatus("connecting");
     void loadMessages();
   }, [chatId, loadMessages]);
+
+  useEffect(() => {
+    if (!showSupportWelcomeOnly) return;
+    supportWelcomeAnimatedForChatIdRef.current = chatId;
+    isAtBottomRef.current = true;
+    stickBottomRef.current = true;
+    setShowScrollToNew(false);
+    setShowScrollToStart(false);
+    alignListToBottomAfterPaint();
+  }, [showSupportWelcomeOnly, chatId, alignListToBottomAfterPaint]);
 
   useEffect(() => {
     if (!messages.length) return;
@@ -2141,12 +2261,13 @@ export default function ChatRoomPage() {
           className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-1.5"
         >
           <div className="flex min-h-full flex-col justify-end gap-px">
-        {visibleMessages.map((m) => (
+        {displayMessages.map((m) => (
           <ChatListMessageRow
             key={m.id}
             m={m}
             mine={m.sender_id === me}
             isAppearing={appearingMessageIds.has(m.id)}
+            animateSupportWelcome={shouldAnimateSupportWelcome}
             imageRetryingId={imageRetryingId}
             onOpenLightbox={setLightboxUrl}
             onRetryImage={retryImageUpload}
@@ -2154,7 +2275,7 @@ export default function ChatRoomPage() {
           />
         ))}
 
-        {!visibleMessages.length && !loadErr ? (
+        {messagesLoaded && !displayMessages.length && !loadErr ? (
           <div className="rounded-xl border border-line/60 bg-elevated/80 px-3 py-3 text-center text-xs text-muted">
             Пока нет сообщений. Напишите первым.
           </div>
