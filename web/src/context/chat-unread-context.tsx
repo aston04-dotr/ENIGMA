@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
 import { useAuth } from "@/context/auth-context";
 import type { ChatListRow } from "@/lib/types";
 
@@ -46,6 +47,19 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+function isPostgresForeignKeyViolation(err: {
+  code?: string;
+  message?: string;
+}): boolean {
+  if (err.code === "23503") return true;
+  return /foreign key constraint/i.test(String(err.message ?? ""));
+}
+
+async function sessionHasAccessToken(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  return Boolean(data?.session?.access_token?.trim());
 }
 
 function normalizeChatRow(
@@ -228,6 +242,22 @@ export function ChatUnreadProvider({
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
   const presenceIntervalRef = useRef<number | null>(null);
+  /** Сбрасывается при смене userId; без спама в консоль по одной теме. */
+  const logOnceRef = useRef({
+    presenceNoToken: false,
+    presenceOnlineUpsert: false,
+    listNoToken: false,
+    markNoToken: false,
+  });
+
+  useEffect(() => {
+    logOnceRef.current = {
+      presenceNoToken: false,
+      presenceOnlineUpsert: false,
+      listNoToken: false,
+      markNoToken: false,
+    };
+  }, [userId]);
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -243,9 +273,15 @@ export function ChatUnreadProvider({
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        console.log("RPC SESSION:", sessionData.session);
         if (!sessionData?.session?.access_token) {
-          console.error("NO ACCESS TOKEN → RPC SKIPPED");
+          if (!logOnceRef.current.listNoToken) {
+            logOnceRef.current.listNoToken = true;
+            if (process.env.NODE_ENV === "development") {
+              console.warn(
+                "[list_my_chats] нет access_token, запрос пропущен (один раз за сессию)",
+              );
+            }
+          }
           if (!opts?.silent) setLoadingState(false);
           return;
         }
@@ -259,7 +295,6 @@ export function ChatUnreadProvider({
         const res = await rest.rpc("list_my_chats", {
           p_limit: 100,
         });
-        console.log("RPC RESULT:", res.data, res.error);
         if (res.error) {
           console.error("list_my_chats RPC error", {
             message: res.error.message,
@@ -328,45 +363,69 @@ export function ChatUnreadProvider({
     try {
       const visibilityState =
         document.visibilityState === "visible" ? "visible" : "hidden";
-      const active = statusRef.current.activeChatId;
+      const rawActive = statusRef.current.activeChatId;
+      const activeChatId =
+        rawActive && isUuid(String(rawActive)) ? String(rawActive) : null;
       const lastSeen = new Date().toISOString();
 
       const rest = getSupabaseRestWithSession();
       if (!rest) return;
       const { data: sPresence } = await supabase.auth.getSession();
       if (!sPresence?.session?.access_token) {
-        console.error(
-          "[online_users] нет access_token, upsert пропущен. user:",
-          userId,
-        );
+        if (!logOnceRef.current.presenceNoToken) {
+          logOnceRef.current.presenceNoToken = true;
+          if (process.env.NODE_ENV === "development") {
+            console.warn(
+              "[online_users] нет access_token, heartbeat пропущен (один раз за сессию)",
+            );
+          }
+        }
         return;
       }
 
-      const { error: upsertError } = await rest
+      const onlinePayload = {
+        user_id: userId,
+        last_seen: lastSeen,
+        visibility_state: visibilityState,
+        active_chat_id: activeChatId,
+      };
+
+      let upsertRes = await rest
         .from("online_users")
-        .upsert(
-          {
-            user_id: userId,
-            last_seen: lastSeen,
-            visibility_state: visibilityState,
-            active_chat_id: active,
-          },
-          { onConflict: "user_id" },
-        );
+        .upsert(onlinePayload, { onConflict: "user_id" });
 
-      if (upsertError) {
-        console.error("online_users upsert", upsertError);
+      if (
+        upsertRes.error &&
+        activeChatId &&
+        isPostgresForeignKeyViolation(upsertRes.error)
+      ) {
+        upsertRes = await rest
+          .from("online_users")
+          .upsert(
+            { ...onlinePayload, active_chat_id: null },
+            { onConflict: "user_id" },
+          );
       }
 
-      const { error: touchPushError } = await rest
-        .from("push_tokens")
-        .update({ last_seen_at: lastSeen })
-        .eq("user_id", userId)
-        .eq("provider", "webpush");
-
-      if (touchPushError && process.env.NODE_ENV === "development") {
-        console.warn("push_tokens touch", touchPushError);
+      if (upsertRes.error) {
+        if (!logOnceRef.current.presenceOnlineUpsert) {
+          logOnceRef.current.presenceOnlineUpsert = true;
+          console.error("online_users upsert", upsertRes.error);
+        }
       }
+
+      await withPostgrestBackoff({
+        checkSession: sessionHasAccessToken,
+        checkHealth: isSupabaseReachable,
+        logLabel: "push_tokens last_seen",
+        run: (signal) =>
+          rest
+            .from("push_tokens")
+            .update({ last_seen_at: lastSeen })
+            .eq("user_id", userId)
+            .eq("provider", "webpush")
+            .abortSignal(signal),
+      });
     } catch (e) {
       console.error("presence heartbeat", e);
     } finally {
@@ -391,12 +450,15 @@ export function ChatUnreadProvider({
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        console.log("mark_chat_read RPC SESSION:", sessionData.session);
         if (!sessionData?.session?.access_token) {
-          console.error(
-            "[mark_chat_read] нет access_token, RPC не вызываем. user:",
-            sessionData.session?.user?.id ?? null,
-          );
+          if (!logOnceRef.current.markNoToken) {
+            logOnceRef.current.markNoToken = true;
+            if (process.env.NODE_ENV === "development") {
+              console.warn(
+                "[mark_chat_read] нет access_token, RPC пропущен (один раз за сессию)",
+              );
+            }
+          }
           return;
         }
         const rest = getSupabaseRestWithSession();

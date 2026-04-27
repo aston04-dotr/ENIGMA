@@ -1,7 +1,12 @@
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { supabase } from "./supabase";
+import {
+  isBackoffSkipped,
+  isSupabaseReachable,
+  withPostgrestBackoff,
+} from "./supabaseHealth";
+import { isSupabaseConfigured, supabase } from "./supabase";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -31,21 +36,40 @@ export async function registerPushTokenForUser(userId: string): Promise<void> {
     if (finalStatus !== "granted") return;
 
     const projectId =
-      (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ??
+      (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)
+        ?.eas?.projectId ??
       (Constants as { easConfig?: { projectId?: string } }).easConfig?.projectId;
 
     const tokenData = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined
+      projectId ? { projectId } : undefined,
     );
-    const token = tokenData.data;
+    const token = String(tokenData.data ?? "").trim();
     if (!token) return;
 
-    const { error } = await supabase.from("push_tokens").upsert(
-      { user_id: userId, token },
-      { onConflict: "user_id,token" }
-    );
-    if (error && __DEV__) console.warn("push_tokens upsert", error.message);
-  } catch (e) {
-    if (__DEV__) console.warn("registerPushTokenForUser", e);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "";
+    if (!isSupabaseConfigured) return;
+
+    const out = await withPostgrestBackoff({
+      checkSession: async () => {
+        const { data } = await supabase.auth.getSession();
+        return Boolean(data?.session?.access_token?.trim());
+      },
+      checkHealth: () => isSupabaseReachable(supabaseUrl, anonKey),
+      logLabel: "expo push_tokens upsert",
+      run: (signal) =>
+        supabase
+          .from("push_tokens")
+          .upsert(
+            { user_id: userId, token, provider: "expo" },
+            { onConflict: "user_id,token" },
+          )
+          .abortSignal(signal),
+    });
+    if (isBackoffSkipped(out) || out.result.error) {
+      // prod: тихо; dev: логи в withPostgrestBackoff
+    }
+  } catch {
+    // тихо
   }
 }

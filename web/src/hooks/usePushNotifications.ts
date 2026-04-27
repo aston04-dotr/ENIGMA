@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import {
+  isBackoffSkipped,
+  isSupabaseReachable,
+  withPostgrestBackoff,
+} from "@/lib/supabaseHealth";
 import type { Json } from "@/lib/supabase.types";
 
 type UsePushNotificationsOptions = {
@@ -64,65 +69,83 @@ function safeJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+async function hasValidAccessToken(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  return Boolean(data?.session?.access_token?.trim());
+}
+
 async function upsertWebPushSubscription(
   userId: string,
   subscription: PushSubscription,
-): Promise<void> {
+): Promise<boolean> {
   const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session?.user?.id) {
-    console.warn("no user, skip push_tokens upsert");
-    return;
-  }
-  if (sessionData.session.user.id !== userId) {
-    console.warn("push_tokens upsert: session user mismatch");
-    return;
+  if (!sessionData?.session?.user?.id || sessionData.session.user.id !== userId) {
+    return false;
   }
 
   const endpoint = subscription.endpoint?.trim();
-  if (!endpoint) {
-    throw new Error("Push subscription endpoint is empty");
-  }
+  if (!endpoint) return false;
+
+  const rest = getSupabaseRestWithSession();
+  if (!rest) return false;
 
   const payload = {
     user_id: userId,
     token: endpoint,
-    provider: "webpush",
+    provider: "webpush" as const,
     subscription: safeJson(subscription.toJSON()) as Json,
     user_agent:
       typeof navigator !== "undefined" ? (navigator.userAgent ?? null) : null,
     last_seen_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("push_tokens").upsert(payload, {
-    onConflict: "user_id,token",
+  const out = await withPostgrestBackoff({
+    checkSession: hasValidAccessToken,
+    checkHealth: isSupabaseReachable,
+    logLabel: "web push upsert",
+    run: (signal) =>
+      rest
+        .from("push_tokens")
+        .upsert(payload, { onConflict: "user_id,token" })
+        .abortSignal(signal),
   });
-
-  if (error) {
-    throw error;
-  }
+  if (isBackoffSkipped(out)) return false;
+  return !out.result.error;
 }
 
 async function removeWebPushSubscription(
   userId: string,
   endpoint: string,
 ): Promise<void> {
+  const trimmed = endpoint?.trim() ?? "";
+  if (!trimmed) return;
+
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData?.session?.user?.id) {
-    console.warn("no user, skip push_tokens delete");
     return;
   }
   if (sessionData.session.user.id !== userId) {
     return;
   }
-  const { error } = await supabase
-    .from("push_tokens")
-    .delete()
-    .eq("user_id", userId)
-    .eq("token", endpoint)
-    .eq("provider", "webpush");
 
-  if (error) {
-    throw error;
+  const rest = getSupabaseRestWithSession();
+  if (!rest) return;
+
+  const out = await withPostgrestBackoff({
+    checkSession: hasValidAccessToken,
+    checkHealth: isSupabaseReachable,
+    logLabel: "web push delete",
+    run: (signal) =>
+      rest
+        .from("push_tokens")
+        .delete()
+        .eq("user_id", userId)
+        .eq("token", trimmed)
+        .eq("provider", "webpush")
+        .abortSignal(signal),
+  });
+  if (isBackoffSkipped(out) || out.result.error) {
+    // prod: тихо
   }
 }
 
@@ -183,7 +206,14 @@ export function usePushNotifications({
       return;
     }
 
-    await upsertWebPushSubscription(userId, existing);
+    const synced = await upsertWebPushSubscription(userId, existing);
+    if (!synced) {
+      if (mountedRef.current) {
+        setSubscribed(false);
+        setState("idle");
+      }
+      return;
+    }
 
     if (!mountedRef.current) return;
     setSubscribed(true);
@@ -236,7 +266,13 @@ export function usePushNotifications({
       });
     }
 
-    await upsertWebPushSubscription(userId, subscription);
+    const registered = await upsertWebPushSubscription(userId, subscription);
+    if (!registered) {
+      if (!mountedRef.current) return;
+      setSubscribed(false);
+      setState("idle");
+      return;
+    }
 
     if (!mountedRef.current) return;
     setSubscribed(true);
@@ -294,11 +330,11 @@ export function usePushNotifications({
 
         touchPromptAttempt();
         await subscribeInternal();
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
+      } catch {
         if (!mountedRef.current) return;
-        setState("error");
-        setError(message || "Push bootstrap failed");
+        setState("idle");
+        setError(null);
+        setSubscribed(false);
       } finally {
         inflightRef.current = null;
       }
@@ -329,7 +365,7 @@ export function usePushNotifications({
         }
 
         if (!unsubscribed) {
-          throw new Error("Browser refused to unsubscribe push subscription");
+          // локальный отказ браузера — тоже без error UI для пушей
         }
       }
 
@@ -337,11 +373,11 @@ export function usePushNotifications({
       setSubscribed(false);
       setState(Notification.permission === "denied" ? "denied" : "idle");
       setError(null);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+    } catch {
       if (!mountedRef.current) return;
-      setState("error");
-      setError(message || "Failed to unsubscribe web push");
+      setSubscribed(false);
+      setState("idle");
+      setError(null);
     }
   }, [userId]);
 

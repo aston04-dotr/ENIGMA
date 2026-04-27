@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { buildEnigmaConfirmUrlFromActionLink } from "@/lib/magicLinkPublicUrl";
 import { getSiteOrigin, getSupabasePublicConfig } from "@/lib/runtimeConfig";
 
 type MagicLinkBody = {
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
     const supabase = createClient(url, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const redirectTo = `${getSiteOrigin()}/auth/callback`;
+    const siteOrigin = getSiteOrigin();
+    const redirectTo = `${siteOrigin}/auth/confirm`;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
     const resendKey = process.env.RESEND_API_KEY?.trim() || "";
 
@@ -98,11 +100,25 @@ export async function POST(request: Request) {
       const actionLink = String(
         (data as { properties?: { action_link?: string } })?.properties?.action_link ?? "",
       ).trim();
-      console.log("ACTION LINK:", actionLink);
+      console.log("ACTION LINK (supabase):", actionLink);
       if (!actionLink) {
         console.error("MAGIC LINK ERROR:", new Error("empty_action_link"));
         return NextResponse.json(
           { ok: false, error: "empty_action_link" },
+          { status: 502 },
+        );
+      }
+
+      const publicLink = buildEnigmaConfirmUrlFromActionLink(
+        actionLink,
+        siteOrigin,
+        normalizedEmail,
+      );
+      console.log("PUBLIC CONFIRM LINK:", publicLink);
+      if (!publicLink) {
+        console.error("MAGIC LINK ERROR:", new Error("public_confirm_link_parse_failed"));
+        return NextResponse.json(
+          { ok: false, error: "public_confirm_link_parse_failed" },
           { status: 502 },
         );
       }
@@ -119,13 +135,13 @@ export async function POST(request: Request) {
         <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
           <tr>
             <td align="left">
-              <a href="${actionLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block; background-color:#ffffff; color:#0B0B0B; font-size:16px; font-weight:600; line-height:1.2; text-decoration:none; padding:14px 24px; border-radius:12px;">Войти в Enigma</a>
+              <a href="${publicLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block; background-color:#ffffff; color:#0B0B0B; font-size:16px; font-weight:600; line-height:1.2; text-decoration:none; padding:14px 24px; border-radius:12px;">Войти в Enigma</a>
             </td>
           </tr>
         </table>
         <p style="margin:24px 0 0 0; font-size:13px; line-height:1.5; color:#aaaaaa;">Ссылка действует ограниченное время.</p>
         <p style="margin:20px 0 8px 0; font-size:13px; line-height:1.5; color:#aaaaaa;">Если кнопка не работает, откройте ссылку вручную:</p>
-        <p style="margin:0; font-size:12px; line-height:1.5; color:#ffffff; word-break:break-all; overflow-wrap:anywhere;">${actionLink}</p>
+        <p style="margin:0; font-size:12px; line-height:1.5; color:#ffffff; word-break:break-all; overflow-wrap:anywhere;">${publicLink}</p>
         <p style="margin:24px 0 0 0; padding-top:20px; border-top:1px solid #1a1a1a; font-size:12px; line-height:1.4; color:#666666;">Enigma</p>
       </div>
     </td>
@@ -138,12 +154,12 @@ export async function POST(request: Request) {
 Нажмите кнопку ниже, чтобы войти в свой аккаунт.
 
 Войти в Enigma (откройте в браузере):
-${actionLink}
+${publicLink}
 
 Ссылка действует ограниченное время.
 
 Если кнопка не работает, откройте ссылку вручную:
-${actionLink}
+${publicLink}
 `.trim();
 
       const resend = new Resend(resendKey);
