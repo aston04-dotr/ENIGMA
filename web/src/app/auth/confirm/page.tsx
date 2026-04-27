@@ -7,6 +7,9 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 
 const CHAT_PATH = "/chat";
 
+/** Последняя страховка от двойного verify при HMR/Fast Refresh; сбрасывается только full reload. */
+let globalAuthConfirmLock = false;
+
 const SUPABASE_EMAIL_OTP_TYPES = new Set<EmailOtpType>([
   "signup",
   "invite",
@@ -24,13 +27,22 @@ export default function AuthConfirmPage() {
   const authOnceRef = useRef(false);
   const successRef = useRef(false);
 
+  const AUTH_START_DELAY_MS = 500;
+  const SESSION_SETTLE_MS = 200;
+
   useEffect(() => {
-    if (authOnceRef.current) {
+    if (typeof window === "undefined") {
       return;
     }
-    authOnceRef.current = true;
+
+    const loc = new URL(window.location.href);
+    const tokenHash = loc.searchParams.get("token_hash");
+    const type = loc.searchParams.get("type");
+    const email = loc.searchParams.get("email");
+    console.log("[DEBUG AUTH]", { tokenHash, type, email });
 
     let active = true;
+    let runDelayTimer: ReturnType<typeof setTimeout> | null = null;
     let successTimer: ReturnType<typeof setTimeout> | null = null;
 
     const finishSuccess = () => {
@@ -56,8 +68,19 @@ export default function AuthConfirmPage() {
     };
 
     const run = async () => {
-      const { data: pre } = await supabase.auth.getSession();
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      await new Promise((r) => setTimeout(r, SESSION_SETTLE_MS));
+      let { data: pre } = await supabase.auth.getSession();
       if (pre.session?.user?.id) {
+        finishSuccess();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, SESSION_SETTLE_MS));
+      const { data: preAgain } = await supabase.auth.getSession();
+      if (preAgain.session?.user?.id) {
         finishSuccess();
         return;
       }
@@ -85,6 +108,13 @@ export default function AuthConfirmPage() {
       }
 
       try {
+        await new Promise((r) => setTimeout(r, 100));
+        const { data: beforeExchange } = await supabase.auth.getSession();
+        if (beforeExchange.session?.user?.id) {
+          finishSuccess();
+          return;
+        }
+
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
@@ -191,9 +221,27 @@ export default function AuthConfirmPage() {
       }
     };
 
-    void run();
+    runDelayTimer = setTimeout(() => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      if (globalAuthConfirmLock) {
+        return;
+      }
+      if (authOnceRef.current) {
+        return;
+      }
+      authOnceRef.current = true;
+      globalAuthConfirmLock = true;
+      void run();
+    }, AUTH_START_DELAY_MS);
+
     return () => {
       active = false;
+      if (runDelayTimer) {
+        clearTimeout(runDelayTimer);
+        runDelayTimer = null;
+      }
       if (successTimer) {
         clearTimeout(successTimer);
         successTimer = null;
