@@ -27,8 +27,10 @@ export default function AuthConfirmPage() {
   const authOnceRef = useRef(false);
   const successRef = useRef(false);
 
-  const AUTH_START_DELAY_MS = 500;
-  const SESSION_SETTLE_MS = 200;
+  const AUTH_START_DELAY_MS = 400;
+  /** Время, за которое GoTrue успевает обработать URL при detectSessionInUrl: true (без второго verify). */
+  const URL_AUTH_POLL_MS = 4_000;
+  const URL_AUTH_POLL_STEP_MS = 200;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -39,7 +41,9 @@ export default function AuthConfirmPage() {
     const tokenHash = loc.searchParams.get("token_hash");
     const type = loc.searchParams.get("type");
     const email = loc.searchParams.get("email");
-    console.log("[DEBUG AUTH]", { tokenHash, type, email });
+    if (process.env.NODE_ENV === "development") {
+      console.log("[DEBUG AUTH]", { tokenHash, type, email });
+    }
 
     let active = true;
     let runDelayTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,15 +76,8 @@ export default function AuthConfirmPage() {
         return;
       }
 
-      await new Promise((r) => setTimeout(r, SESSION_SETTLE_MS));
-      let { data: pre } = await supabase.auth.getSession();
-      if (pre.session?.user?.id) {
-        finishSuccess();
-        return;
-      }
-      await new Promise((r) => setTimeout(r, SESSION_SETTLE_MS));
-      const { data: preAgain } = await supabase.auth.getSession();
-      if (preAgain.session?.user?.id) {
+      const readSession = async () => (await supabase.auth.getSession()).data.session;
+      if ((await readSession())?.user?.id) {
         finishSuccess();
         return;
       }
@@ -108,13 +105,6 @@ export default function AuthConfirmPage() {
       }
 
       try {
-        await new Promise((r) => setTimeout(r, 100));
-        const { data: beforeExchange } = await supabase.auth.getSession();
-        if (beforeExchange.session?.user?.id) {
-          finishSuccess();
-          return;
-        }
-
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
@@ -125,7 +115,29 @@ export default function AuthConfirmPage() {
               return;
             }
           }
-        } else if (tokenHash && rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)) {
+        } else {
+          const needsOtpInUrl = Boolean(
+            (tokenHash && rawType) || token || (accessToken && refreshToken),
+          );
+          if (needsOtpInUrl) {
+            const until = Date.now() + URL_AUTH_POLL_MS;
+            while (Date.now() < until) {
+              if ((await readSession())?.user?.id) {
+                try {
+                  if (typeof sessionStorage !== "undefined") {
+                    sessionStorage.setItem(idemKey, "1");
+                  }
+                } catch {
+                  /* ignore */
+                }
+                finishSuccess();
+                return;
+              }
+              await new Promise((r) => setTimeout(r, URL_AUTH_POLL_STEP_MS));
+            }
+          }
+
+        if (tokenHash && rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)) {
           const { error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: rawType as EmailOtpType,
@@ -145,20 +157,12 @@ export default function AuthConfirmPage() {
             null;
 
           if (emailFromQuery) {
-            let res = await supabase.auth.verifyOtp({
+            const res = await supabase.auth.verifyOtp({
               type: otpType,
               token,
               email: emailFromQuery,
             });
             error = res.error;
-            if (error && otpType !== "email") {
-              res = await supabase.auth.verifyOtp({
-                type: "email",
-                token,
-                email: emailFromQuery,
-              });
-              error = res.error;
-            }
           } else {
             if (otpType === "email") {
               console.warn("[auth/confirm] type=email requires email in query");
@@ -191,6 +195,7 @@ export default function AuthConfirmPage() {
           console.warn("[auth/confirm] no code, token, or hash");
           finishError();
           return;
+        }
         }
 
         let { data } = await supabase.auth.getSession();
