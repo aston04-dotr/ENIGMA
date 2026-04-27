@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
+
+const CHAT_PATH = "/chat";
 
 const SUPABASE_EMAIL_OTP_TYPES = new Set<EmailOtpType>([
   "signup",
@@ -19,23 +21,37 @@ type Phase = "loading" | "success" | "error";
 export default function AuthConfirmPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
+  const authOnceRef = useRef(false);
+  const successRef = useRef(false);
 
   useEffect(() => {
+    if (authOnceRef.current) {
+      return;
+    }
+    authOnceRef.current = true;
+
     let active = true;
     let successTimer: ReturnType<typeof setTimeout> | null = null;
 
     const finishSuccess = () => {
-      if (!active) return;
+      if (successRef.current) {
+        return;
+      }
+      successRef.current = true;
       setPhase("success");
       successTimer = setTimeout(() => {
-        if (!active) return;
-        router.replace("/");
+        router.replace(CHAT_PATH);
         router.refresh();
       }, 1000);
     };
 
     const finishError = () => {
-      if (!active) return;
+      if (successRef.current) {
+        return;
+      }
+      if (!active) {
+        return;
+      }
       setPhase("error");
     };
 
@@ -94,16 +110,38 @@ export default function AuthConfirmPage() {
             rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)
               ? (rawType as EmailOtpType)
               : "email";
-          const withEmail = emailFromQuery
-            ? ({ type: otpType, token, email: emailFromQuery } as const)
-            : ({ type: otpType, token } as const);
-          let { error } = await supabase.auth.verifyOtp(withEmail);
-          if (error && otpType !== "email") {
-            const retry = emailFromQuery
-              ? ({ type: "email" as const, token, email: emailFromQuery } as const)
-              : ({ type: "email" as const, token } as const);
-            ({ error } = await supabase.auth.verifyOtp(retry));
+
+          let error: Awaited<ReturnType<typeof supabase.auth.verifyOtp>>["error"] =
+            null;
+
+          if (emailFromQuery) {
+            let res = await supabase.auth.verifyOtp({
+              type: otpType,
+              token,
+              email: emailFromQuery,
+            });
+            error = res.error;
+            if (error && otpType !== "email") {
+              res = await supabase.auth.verifyOtp({
+                type: "email",
+                token,
+                email: emailFromQuery,
+              });
+              error = res.error;
+            }
+          } else {
+            if (otpType === "email") {
+              console.warn("[auth/confirm] type=email requires email in query");
+              finishError();
+              return;
+            }
+            const res = await supabase.auth.verifyOtp({
+              type: otpType,
+              token,
+            } as Parameters<typeof supabase.auth.verifyOtp>[0]);
+            error = res.error;
           }
+
           if (error) {
             console.error("[auth/confirm] verifyOtp (token)", error);
             finishError();
@@ -156,7 +194,10 @@ export default function AuthConfirmPage() {
     void run();
     return () => {
       active = false;
-      if (successTimer) clearTimeout(successTimer);
+      if (successTimer) {
+        clearTimeout(successTimer);
+        successTimer = null;
+      }
     };
   }, [router]);
 
