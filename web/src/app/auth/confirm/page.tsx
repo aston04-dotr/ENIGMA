@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Один вход: либо PKCE (?code=), либо email OTP (?token=&type=). Без повторных вызовов и без polling.
+ * Один вход: либо PKCE (?code=), либо email OTP (?token_hash|token + type). Без polling.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -12,31 +12,41 @@ type Phase = "loading" | "success" | "error";
 
 export default function AuthConfirmPage() {
   const [phase, setPhase] = useState<Phase>("loading");
-
-  const ranOnceRef = useRef(false);
+  const didRunRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (ranOnceRef.current) return;
-    ranOnceRef.current = true;
+    if (didRunRef.current) return;
+    didRunRef.current = true;
 
     const run = async () => {
       const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
-      const otpToken = url.searchParams.get("token");
-      const otpType = url.searchParams.get("type");
-      const emailParam = url.searchParams.get("email");
+      const code = url.searchParams.get("code")?.trim();
+      const otpTokenHash = url.searchParams.get("token_hash")?.trim();
+      const otpToken = url.searchParams.get("token")?.trim();
+      const otpType = url.searchParams.get("type")?.trim();
+      const emailParam = url.searchParams.get("email")?.trim();
 
-      if (code?.trim()) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code.trim());
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
           setPhase("error");
           return;
         }
-      } else if (otpToken?.trim() && otpType?.trim()) {
+      } else if (otpTokenHash && otpType) {
         const { error } = await supabase.auth.verifyOtp({
-          token: otpToken.trim(),
-          type: otpType.trim() as EmailOtpType,
+          token_hash: otpTokenHash,
+          type: otpType as EmailOtpType,
+        } as Parameters<typeof supabase.auth.verifyOtp>[0]);
+
+        if (error) {
+          setPhase("error");
+          return;
+        }
+      } else if (otpToken && otpType) {
+        const { error } = await supabase.auth.verifyOtp({
+          token: otpToken,
+          type: otpType as EmailOtpType,
           ...(emailParam ? { email: emailParam } : {}),
         } as Parameters<typeof supabase.auth.verifyOtp>[0]);
 
