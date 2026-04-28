@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
-const CHAT_PATH = "/chat";
-
-/** Последняя страховка от двойного verify при HMR/Fast Refresh; сбрасывается только full reload. */
-let globalAuthConfirmLock = false;
+const HOME_PATH = "/";
 
 const SUPABASE_EMAIL_OTP_TYPES = new Set<EmailOtpType>([
   "signup",
@@ -24,164 +21,214 @@ type Phase = "loading" | "success" | "error";
 export default function AuthConfirmPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
-  const authOnceRef = useRef(false);
+
+  const calledRef = useRef(false);
+  /** Пока идёт async verify — второй вход в verify() недопустим. */
+  const runningRef = useRef(false);
+
   const successRef = useRef(false);
 
-  const AUTH_START_DELAY_MS = 400;
-  /** Время, за которое GoTrue успевает обработать URL при detectSessionInUrl: true (без второго verify). */
-  const URL_AUTH_POLL_MS = 4_000;
-  const URL_AUTH_POLL_STEP_MS = 200;
+  const SESSION_POLL_MS = 3_500;
+  const SESSION_POLL_STEP_MS = 250;
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    const loc = new URL(window.location.href);
-    const tokenHash = loc.searchParams.get("token_hash");
-    const type = loc.searchParams.get("type");
-    const email = loc.searchParams.get("email");
-    if (process.env.NODE_ENV === "development") {
-      console.log("[DEBUG AUTH]", { tokenHash, type, email });
+    if (calledRef.current) {
+      return;
     }
+    calledRef.current = true;
 
-    let active = true;
-    let runDelayTimer: ReturnType<typeof setTimeout> | null = null;
     let successTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    const finishSuccess = () => {
-      if (successRef.current) {
-        return;
-      }
-      successRef.current = true;
-      setPhase("success");
-      successTimer = setTimeout(() => {
-        router.replace(CHAT_PATH);
-        router.refresh();
-      }, 1000);
-    };
-
-    const finishError = () => {
-      if (successRef.current) {
-        return;
-      }
-      if (!active) {
-        return;
-      }
-      setPhase("error");
-    };
-
-    const run = async () => {
-      if (typeof window === "undefined") {
-        return;
-      }
-
-      const readSession = async () => (await supabase.auth.getSession()).data.session;
-      if ((await readSession())?.user?.id) {
-        finishSuccess();
-        return;
-      }
-
-      const href = window.location.href;
-      const url = new URL(href);
-      const code = url.searchParams.get("code");
-      const token = url.searchParams.get("token");
-      const emailFromQuery = url.searchParams.get("email");
-      const tokenHash = url.searchParams.get("token_hash");
-      const rawType = url.searchParams.get("type");
-      const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-      const hashParams = new URLSearchParams(hash);
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-
-      const idemKey = `enigma_auth_confirm:${code ?? ""}:${tokenHash ?? ""}:${token?.slice(0, 12) ?? ""}:${accessToken?.slice(0, 12) ?? ""}`;
+    function trySetIdem(key: string) {
       try {
-        if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(idemKey) === "1") {
-          finishSuccess();
-          return;
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.setItem(key, "1");
         }
       } catch {
         /* ignore */
       }
+    }
+
+    async function settleSessionThenFinish(
+      idemKey: string,
+      onOk: () => void,
+      onFail: () => void,
+    ) {
+      let { data } = await supabase.auth.getSession();
+      if (!data.session?.user?.id) {
+        await new Promise((r) => setTimeout(r, 250));
+        data = (await supabase.auth.getSession()).data;
+      }
+      if (!data.session?.user?.id) {
+        await new Promise((r) => setTimeout(r, 450));
+        data = (await supabase.auth.getSession()).data;
+      }
+
+      if (data.session?.user?.id) {
+        trySetIdem(idemKey);
+        onOk();
+        return;
+      }
+      onFail();
+    }
+
+    function scheduleRedirectHome() {
+      successTimer = setTimeout(() => {
+        router.replace(HOME_PATH);
+        router.refresh();
+      }, 1000);
+    }
+
+    function finishSuccess() {
+      if (successRef.current || cancelled) return;
+      successRef.current = true;
+      setPhase("success");
+      scheduleRedirectHome();
+    }
+
+    function finishError() {
+      if (successRef.current || cancelled) return;
+      setPhase("error");
+      runningRef.current = false;
+    }
+
+    async function verify() {
+      if (runningRef.current) return;
+      runningRef.current = true;
+
+      const readSession = async () =>
+        (await supabase.auth.getSession()).data.session ?? null;
 
       try {
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            const retry = await supabase.auth.getSession();
-            if (!retry.data.session?.user) {
-              console.error("[auth/confirm] exchangeCodeForSession", error);
-              finishError();
-              return;
-            }
+        if ((await readSession())?.user?.id) {
+          finishSuccess();
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+        const token = url.searchParams.get("token");
+        const typeParam = url.searchParams.get("type");
+        const emailParam = url.searchParams.get("email");
+        const tokenHashParam = url.searchParams.get("token_hash");
+
+        const hx = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+        const hashParams = new URLSearchParams(hx);
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+
+        const idemKey = `enigma_auth_confirm:${code ?? ""}:${tokenHashParam ?? ""}:${token?.slice(0, 12) ?? ""}:${accessToken?.slice(0, 12) ?? ""}`;
+
+        try {
+          if (
+            typeof sessionStorage !== "undefined" &&
+            sessionStorage.getItem(idemKey) === "1"
+          ) {
+            finishSuccess();
+            return;
           }
-        } else {
-          const needsOtpInUrl = Boolean(
-            (tokenHash && rawType) || token || (accessToken && refreshToken),
-          );
-          if (needsOtpInUrl) {
-            const until = Date.now() + URL_AUTH_POLL_MS;
-            while (Date.now() < until) {
-              if ((await readSession())?.user?.id) {
-                try {
-                  if (typeof sessionStorage !== "undefined") {
-                    sessionStorage.setItem(idemKey, "1");
-                  }
-                } catch {
-                  /* ignore */
-                }
-                finishSuccess();
-                return;
-              }
-              await new Promise((r) => setTimeout(r, URL_AUTH_POLL_STEP_MS));
-            }
+        } catch {
+          /* ignore */
+        }
+
+        if (code?.trim()) {
+          console.log("VERIFY START", {
+            branch: "code",
+            token: null,
+            type: null,
+            email: null,
+          });
+
+          const { error } = await supabase.auth.exchangeCodeForSession(code.trim());
+          if (error && !(await readSession())?.user) {
+            console.error("[auth/confirm] exchangeCodeForSession", error);
+            finishError();
+            return;
           }
 
-        if (tokenHash && rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)) {
+          await settleSessionThenFinish(idemKey, finishSuccess, finishError);
+          return;
+        }
+
+        /* Ниже — только magic-link / OTP: без PKCE code (взаимоисключение). */
+        const until = Date.now() + SESSION_POLL_MS;
+        while (Date.now() < until) {
+          if ((await readSession())?.user?.id) {
+            trySetIdem(idemKey);
+            finishSuccess();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, SESSION_POLL_STEP_MS));
+        }
+
+        console.log("VERIFY START", {
+          token: token ?? null,
+          type: typeParam ?? null,
+          email: emailParam ?? null,
+        });
+
+        if (
+          tokenHashParam &&
+          typeParam &&
+          SUPABASE_EMAIL_OTP_TYPES.has(typeParam as EmailOtpType)
+        ) {
           const { error } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: rawType as EmailOtpType,
+            token_hash: tokenHashParam,
+            type: typeParam as EmailOtpType,
           });
           if (error) {
             console.error("[auth/confirm] verifyOtp (token_hash)", error);
             finishError();
             return;
           }
-        } else if (token) {
+
+          await settleSessionThenFinish(idemKey, finishSuccess, finishError);
+          return;
+        }
+
+        if (token?.trim()) {
           const otpType: EmailOtpType =
-            rawType && SUPABASE_EMAIL_OTP_TYPES.has(rawType as EmailOtpType)
-              ? (rawType as EmailOtpType)
+            typeParam && SUPABASE_EMAIL_OTP_TYPES.has(typeParam as EmailOtpType)
+              ? (typeParam as EmailOtpType)
               : "email";
 
-          let error: Awaited<ReturnType<typeof supabase.auth.verifyOtp>>["error"] =
-            null;
-
-          if (emailFromQuery) {
-            const res = await supabase.auth.verifyOtp({
+          if (emailParam) {
+            const { error } = await supabase.auth.verifyOtp({
               type: otpType,
-              token,
-              email: emailFromQuery,
+              token: token.trim(),
+              email: emailParam,
             });
-            error = res.error;
-          } else {
-            if (otpType === "email") {
-              console.warn("[auth/confirm] type=email requires email in query");
+            if (error) {
+              console.error("[auth/confirm] verifyOtp", error);
               finishError();
               return;
             }
-            const res = await supabase.auth.verifyOtp({
+          } else if (otpType === "email") {
+            finishError();
+            console.warn("[auth/confirm] type=email needs email query param");
+            return;
+          } else {
+            const { error } = await supabase.auth.verifyOtp({
               type: otpType,
-              token,
+              token: token.trim(),
             } as Parameters<typeof supabase.auth.verifyOtp>[0]);
-            error = res.error;
+            if (error) {
+              console.error("[auth/confirm] verifyOtp", error);
+              finishError();
+              return;
+            }
           }
 
-          if (error) {
-            console.error("[auth/confirm] verifyOtp (token)", error);
-            finishError();
-            return;
-          }
-        } else if (accessToken && refreshToken) {
+          await settleSessionThenFinish(idemKey, finishSuccess, finishError);
+          return;
+        }
+
+        if (accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
@@ -191,62 +238,24 @@ export default function AuthConfirmPage() {
             finishError();
             return;
           }
-        } else {
-          console.warn("[auth/confirm] no code, token, or hash");
-          finishError();
+          await settleSessionThenFinish(idemKey, finishSuccess, finishError);
           return;
         }
-        }
 
-        let { data } = await supabase.auth.getSession();
-        if (!data.session?.user?.id) {
-          await new Promise((r) => setTimeout(r, 200));
-          const second = await supabase.auth.getSession();
-          data = second.data;
-        }
-        if (!data.session?.user?.id) {
-          await new Promise((r) => setTimeout(r, 400));
-          const third = await supabase.auth.getSession();
-          data = third.data;
-        }
-
-        if (data.session?.user?.id) {
-          try {
-            if (typeof sessionStorage !== "undefined") sessionStorage.setItem(idemKey, "1");
-          } catch {
-            /* ignore */
-          }
-          finishSuccess();
-          return;
-        }
+        console.warn("[auth/confirm] no valid auth params in URL");
         finishError();
       } catch (e) {
         console.error("[auth/confirm]", e);
         finishError();
+      } finally {
+        runningRef.current = false;
       }
-    };
+    }
 
-    runDelayTimer = setTimeout(() => {
-      if (typeof window === "undefined") {
-        return;
-      }
-      if (globalAuthConfirmLock) {
-        return;
-      }
-      if (authOnceRef.current) {
-        return;
-      }
-      authOnceRef.current = true;
-      globalAuthConfirmLock = true;
-      void run();
-    }, AUTH_START_DELAY_MS);
+    void verify();
 
     return () => {
-      active = false;
-      if (runDelayTimer) {
-        clearTimeout(runDelayTimer);
-        runDelayTimer = null;
-      }
+      cancelled = true;
       if (successTimer) {
         clearTimeout(successTimer);
         successTimer = null;
@@ -270,11 +279,15 @@ export default function AuthConfirmPage() {
               }}
               aria-hidden
             />
-            <p className="mt-6 text-[15px] font-medium text-white/90">Входим в аккаунт…</p>
+            <p className="mt-6 text-[15px] font-medium text-white/90">
+              Входим в аккаунт…
+            </p>
           </>
         ) : null}
         {phase === "success" ? (
-          <p className="text-[17px] font-semibold tracking-tight text-white">Добро пожаловать в Enigma</p>
+          <p className="text-[17px] font-semibold tracking-tight text-white">
+            Добро пожаловать в Enigma
+          </p>
         ) : null}
         {phase === "error" ? (
           <p className="text-[15px] leading-relaxed text-white/50">
