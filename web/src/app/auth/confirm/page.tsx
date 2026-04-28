@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * Только PKCE: `?code=` → exchangeCodeForSession. Без verifyOtp/token/token_hash/hash tokens.
+ * Один вход: либо PKCE (?code=), либо email OTP (?token=&type=). Без повторных вызовов и без polling.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import type { EmailOtpType } from "@supabase/supabase-js";
 
 type Phase = "loading" | "success" | "error";
 
@@ -22,15 +23,28 @@ export default function AuthConfirmPage() {
     const run = async () => {
       const url = new URL(window.location.href);
       const code = url.searchParams.get("code");
+      const otpToken = url.searchParams.get("token");
+      const otpType = url.searchParams.get("type");
+      const emailParam = url.searchParams.get("email");
 
-      if (!code) {
-        setPhase("error");
-        return;
-      }
+      if (code?.trim()) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code.trim());
+        if (error) {
+          setPhase("error");
+          return;
+        }
+      } else if (otpToken?.trim() && otpType?.trim()) {
+        const { error } = await supabase.auth.verifyOtp({
+          token: otpToken.trim(),
+          type: otpType.trim() as EmailOtpType,
+          ...(emailParam ? { email: emailParam } : {}),
+        } as Parameters<typeof supabase.auth.verifyOtp>[0]);
 
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-      if (error) {
+        if (error) {
+          setPhase("error");
+          return;
+        }
+      } else {
         setPhase("error");
         return;
       }
