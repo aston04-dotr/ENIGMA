@@ -8,8 +8,8 @@ function maskEmailForLog(email: string) {
 }
 
 /**
- * Magic link только через кастомный route `/api/auth/magic-link` (Resend + generateLink).
- * Прямой `supabase.auth.signInWithOtp` на клиенте не используется.
+ * Magic link через POST `/api/auth/magic-link`: сервер вызывает только
+ * `signInWithOtp` (PKCE, письмо шлёт Supabase, redirect на `/auth/confirm?code=...`).
  */
 export async function signIn(email: string) {
   const trimmed = email.trim().toLowerCase();
