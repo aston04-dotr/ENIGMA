@@ -493,23 +493,23 @@ export default function ProfilePage() {
       </section>
       </div>
 
-      <div className="mt-6 space-y-6 lg:mt-0">
+      <div className="mt-6 space-y-6 lg:sticky lg:top-20 lg:mt-0 lg:max-h-[calc(100vh-96px)] lg:self-start lg:overflow-y-auto lg:pr-1">
       {/* МОЙ СТАТУС */}
       <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
           ? "bg-elevated/75 border-line/20" 
           : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
-        <p className={`text-[15px] font-bold mb-3 ${isDark ? "text-fg" : "text-[#111]"}`}>Мой статус</p>
+        <p className={`mb-3 text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Мой статус</p>
         <div className="space-y-2">
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">🔥</span>
-              <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>Boost</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>Boost</span>
             </div>
-            <span className={`text-[13px] font-semibold transition-colors duration-200 ${
+            <span className={`text-[12px] font-medium transition-colors duration-200 ${
               isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
             }`}>АКТИВЕН</span>
           </div>
@@ -518,10 +518,10 @@ export default function ProfilePage() {
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">💎</span>
-              <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>VIP</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>VIP</span>
             </div>
-            <span className={`text-[13px] font-semibold transition-colors duration-200 ${
-              isDark ? "text-muted hover:text-fg/70" : "text-[#9ca3af] hover:text-[#6b7280]"
+            <span className={`text-[12px] font-medium transition-colors duration-200 ${
+              isDark ? "text-muted/80 hover:text-fg/70" : "text-[#9ca3af] hover:text-[#6b7280]"
             }`}>не активен</span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
@@ -529,9 +529,9 @@ export default function ProfilePage() {
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">🚀</span>
-              <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>TOP</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>TOP</span>
             </div>
-            <span className={`text-[13px] font-semibold transition-colors duration-200 ${
+            <span className={`text-[12px] font-medium transition-colors duration-200 ${
               isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
             }`}>АКТИВЕН</span>
           </div>
@@ -544,25 +544,25 @@ export default function ProfilePage() {
           ? "bg-elevated/75 border-line/20" 
           : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
-        <p className={`text-[15px] font-bold mb-3 ${isDark ? "text-fg" : "text-[#111]"}`}>Мои пакеты</p>
+        <p className={`mb-3 text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Мои пакеты</p>
         <div className="space-y-2">
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>Поднятий</span>
-            <span className={`text-[20px] font-bold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>3</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>Поднятий</span>
+            <span className={`text-[18px] font-semibold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>3</span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>VIP дней</span>
-            <span className={`text-[20px] font-bold ${isDark ? "text-muted" : "text-[#9ca3af]"}`}>0</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>VIP дней</span>
+            <span className={`text-[18px] font-semibold ${isDark ? "text-muted/80" : "text-[#9ca3af]"}`}>0</span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[15px] ${isDark ? "text-fg" : "text-[#111]"}`}>TOP размещений</span>
-            <span className={`text-[20px] font-bold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>1</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>TOP размещений</span>
+            <span className={`text-[18px] font-semibold ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>1</span>
           </div>
         </div>
       </div>
@@ -573,33 +573,33 @@ export default function ProfilePage() {
           ? "bg-elevated/75 border-line/20"
           : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
-        <p className={`text-[17px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты и размещение</p>
+        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты и размещение</p>
 
         {/* Бесплатные размещения */}
-        <div className={`mt-6 rounded-xl p-4 ${isDark ? "bg-white/5" : "bg-[#f8fafc]"}`}>
-          <p className={`text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
+        <div className={`mt-4 rounded-xl p-4 ${isDark ? "bg-white/5" : "bg-[#f8fafc]"}`}>
+          <p className={`text-[14px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
             Бесплатные размещения
           </p>
-          <p className={`text-[14px] mt-2 ${isDark ? "text-muted" : "text-gray-600"}`}>
+          <p className={`mt-2 text-[13px] ${isDark ? "text-muted/80" : "text-gray-600/85"}`}>
             До 2 объявлений бесплатно во всех категориях, кроме Авто и Недвижимости.
           </p>
-          <p className={`text-[14px] mt-2 ${isDark ? "text-muted" : "text-gray-600"}`}>
+          <p className={`mt-2 text-[13px] ${isDark ? "text-muted/80" : "text-gray-600/85"}`}>
             В Авто и Недвижимости - по 1 бесплатному объявлению.
           </p>
-          <p className={`text-[13px] mt-3 ${isDark ? "text-accent" : "text-[#7c3aed]"}`}>
+          <p className={`mt-3 text-[12px] ${isDark ? "text-accent/90" : "text-[#7c3aed]/90"}`}>
             Следующее бесплатное в недвижимости - через 3 месяца.
           </p>
         </div>
 
         {/* Якорь цены */}
-        <div className={`mt-6 rounded-xl p-3 border-l-4 ${isDark ? "bg-white/5 border-l-accent/50" : "bg-gray-50 border-l-[#8B5FFF]/50"}`}>
-          <p className={`text-[13px] ${isDark ? "text-muted" : "text-gray-500"}`}>Размещение по одному</p>
+        <div className={`mt-4 rounded-xl border-l-4 p-3 ${isDark ? "bg-white/5 border-l-accent/50" : "bg-gray-50 border-l-[#8B5FFF]/50"}`}>
+          <p className={`text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>Размещение по одному</p>
           <div className="mt-1">
-            <span className={`inline-flex items-baseline text-[20px] font-bold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>
+            <span className={`inline-flex items-baseline text-[18px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>
               <span>200</span>
               <span className="text-[14px] ml-1 opacity-60">₽</span>
             </span>
-            <span className={`text-[13px] ml-1 ${isDark ? "text-muted" : "text-gray-500"}`}>/ объявление</span>
+            <span className={`ml-1 text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>/ объявление</span>
           </div>
         </div>
 
@@ -611,16 +611,16 @@ export default function ProfilePage() {
         ].map((section) => (
           <div
             key={section.type}
-            className={`mt-8 rounded-2xl border p-4 sm:p-5 ${
+            className={`mt-6 rounded-2xl border p-4 ${
               isDark
-                ? "border-line/70 bg-white/[0.02]"
-                : "border-gray-200 bg-white"
+                ? "border-line/45 bg-white/[0.02]"
+                : "border-gray-200/80 bg-white"
             }`}
           >
-            <h3 className={`text-[17px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>
+            <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>
               {section.title}
             </h3>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
               {(Object.entries(packageInfo[section.type] || {}) as [PackageSize, PackageInfo][])
                 .map(([size, info]) => {
                   const selected =
@@ -654,13 +654,13 @@ export default function ProfilePage() {
                           </span>
                         ) : null}
                       </div>
-                      <p className={`mt-1 text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
+                      <p className={`mt-1 text-[14px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
                         {info.count} объявлений
                       </p>
                       <div className="mt-2">
                         <PriceDisplay value={info.price} size={isPopular ? "md" : "sm"} />
                       </div>
-                      <p className={`mt-1 text-[12px] ${isDark ? "text-muted/80" : "text-gray-500"}`}>
+                      <p className={`mt-1 text-[12px] ${isDark ? "text-muted/70" : "text-gray-500/85"}`}>
                         Выгоднее, чем поштучно
                       </p>
                       <button
@@ -670,7 +670,7 @@ export default function ProfilePage() {
                           setIsCustom(false);
                           setCustomQuantity("");
                         }}
-                        className={`pressable mt-4 min-h-[44px] w-full rounded-lg border text-[14px] font-semibold transition-all duration-200 ${
+                        className={`pressable mt-4 min-h-[42px] w-full rounded-lg border text-[14px] font-medium transition-all duration-200 ${
                           selected
                             ? isDark
                               ? "border-accent/70 bg-accent/20 text-accent"
@@ -690,8 +690,8 @@ export default function ProfilePage() {
         ))}
 
         {/* Свое количество */}
-        <div className="mt-8 pt-6 border-t border-dashed border-gray-300/50 dark:border-gray-600/30">
-          <p className={`text-[15px] font-semibold mb-4 ${isDark ? "text-fg" : "text-[#111]"}`}>Свое количество</p>
+        <div className="mt-6 border-t border-dashed border-gray-300/50 pt-5 dark:border-gray-600/30">
+          <p className={`mb-4 text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>Свое количество</p>
           
           {/* Тип категории */}
           <div className="flex gap-2 mb-3">
@@ -787,7 +787,7 @@ export default function ProfilePage() {
               );
             }
           }}
-          className={`mt-8 w-full min-h-[56px] rounded-xl text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
+          className={`mt-6 w-full min-h-[52px] rounded-xl text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
             (selectedPackage || (isCustom && customQuantity && parseInt(customQuantity) > 0))
               ? (isDark
                   ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-lg shadow-purple-500/25"
