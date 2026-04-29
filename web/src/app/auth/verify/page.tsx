@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
 
@@ -10,6 +10,7 @@ const RESEND_SECONDS = 60;
 
 export default function VerifyPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,14 +21,25 @@ export default function VerifyPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    const queryEmail = searchParams.get("email")?.trim().toLowerCase() ?? "";
+    const queryCode = (searchParams.get("code") ?? "")
+      .replace(/\D/g, "")
+      .slice(0, 8);
+
     const savedEmail = localStorage.getItem("auth_email")?.trim().toLowerCase() ?? "";
-    if (!savedEmail) {
+    const resolvedEmail = savedEmail || queryEmail;
+    if (!resolvedEmail) {
       router.replace("/login");
       return;
     }
-    setEmail(savedEmail);
+
+    if (queryCode) {
+      setCode(queryCode);
+    }
+    setEmail(resolvedEmail);
     setReady(true);
-  }, [router]);
+  }, [router, searchParams]);
 
   useEffect(() => {
     if (!ready || secondsLeft <= 0) return;
