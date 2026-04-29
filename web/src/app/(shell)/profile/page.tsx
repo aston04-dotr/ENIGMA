@@ -655,13 +655,13 @@ export default function ProfilePage() {
                   return (
                     <article
                       key={`${section.type}-${size}`}
-                      className={`rounded-xl border p-2.5 transition-all duration-200 ${
+                      className={`rounded-xl border p-2.5 transition-all duration-200 ease-in-out hover:scale-[1.01] ${
                         selected
                           ? isDark
                             ? "border-[rgba(139,95,255,0.4)] bg-[rgba(139,95,255,0.12)] shadow-[0_0_20px_rgba(139,95,255,0.2)]"
                             : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
                           : isDark
-                            ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:shadow-none"
+                            ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/90 hover:border-[rgba(255,255,255,0.18)] hover:bg-[rgba(255,255,255,0.08)] hover:shadow-none"
                             : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
                       }`}
                     >
