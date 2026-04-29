@@ -36,7 +36,7 @@ function PriceDisplay({ value, size = "md" }: { value: number; size?: "sm" | "md
     lg: { num: "text-[18px]", rub: "text-[13px]" },
   };
   return (
-    <span className={`inline-flex items-baseline ${sizeClasses[size].num} font-semibold tracking-tight`}>
+    <span className={`inline-flex items-baseline ${sizeClasses[size].num} font-semibold tracking-[-0.3px]`}>
       <span>{formatPrice(value)}</span>
       <span className={`${sizeClasses[size].rub} ml-1 opacity-60`}>₽</span>
     </span>
@@ -497,6 +497,14 @@ export default function ProfilePage() {
         className={`mt-6 space-y-3 transition-all duration-200 ease-in-out lg:sticky lg:top-24 lg:mt-0 lg:self-start lg:-translate-y-[2px] ${
           isDark ? "lg:rounded-[20px] lg:bg-[#0f1115] lg:p-3" : ""
         }`}
+        style={
+          isDark
+            ? {
+                background:
+                  "radial-gradient(circle at 50% 0%, rgba(255,255,255,0.04), transparent 60%), #0a0a0f",
+              }
+            : undefined
+        }
       >
       <div
         className={`rounded-[16px] border p-4 transition-all duration-200 ease-in-out ${
@@ -628,90 +636,99 @@ export default function ProfilePage() {
         </div>
 
         {/* Пакеты: 3 понятных блока без смешивания категорий */}
-        {[
-          { type: "realty", title: "Недвижимость" },
-          { type: "auto", title: "Авто" },
-          { type: "general", title: "Общие пакеты" },
-        ].map((section) => (
-          <div
-            key={section.type}
-            className={`mt-5 rounded-2xl border p-3 ${
-              isDark
-                ? "border-white/10 bg-white/[0.05]"
-                : "border-gray-200/60 bg-white"
-            }`}
-          >
-            <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
-              {section.title}
-            </h3>
-            <div className="mt-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
-              {(Object.entries(packageInfo[section.type] || {}) as [PackageSize, PackageInfo][])
-                .map(([size, info]) => {
-                  const selected =
-                    !isCustom &&
-                    selectedPackage?.type === section.type &&
-                    selectedPackage?.size === size;
-                  const isPopular = size === "base";
-                  return (
-                    <article
-                      key={`${section.type}-${size}`}
-                      className={`rounded-xl border p-2.5 transition-all duration-200 ease-in-out hover:scale-[1.01] ${
-                        selected
-                          ? isDark
-                            ? "border-[rgba(139,95,255,0.4)] bg-[rgba(139,95,255,0.12)] shadow-[0_0_20px_rgba(139,95,255,0.2)]"
-                            : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
-                          : isDark
-                            ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/90 hover:border-[rgba(255,255,255,0.18)] hover:bg-[rgba(255,255,255,0.08)] hover:shadow-none"
-                            : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
-                      }`}
-                    >
-                      <div className="min-h-[22px]">
-                        {isPopular ? (
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              isDark
-                                ? "bg-accent/85 text-white"
-                                : "bg-[#8B5FFF] text-white"
-                            }`}
-                          >
-                            Популярно
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
-                        {info.count} объявлений
-                      </p>
-                      <div className={`mt-2 ${isDark ? "text-white/95" : ""}`}>
-                        <PriceDisplay value={info.price} size={isPopular ? "lg" : "md"} />
-                      </div>
-                      <p className={`mt-1 text-[12px] ${isDark ? "text-white/70" : "text-gray-500/85"}`}>
-                        Выгоднее, чем поштучно
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPackage({ type: section.type, size });
-                          setIsCustom(false);
-                          setCustomQuantity("");
-                        }}
-                        className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-110 active:scale-[0.97] ${
+        <div
+          className={`mt-5 rounded-2xl border p-4 ${
+            isDark ? "border-white/6 bg-white/[0.02]" : "border-gray-200/60 bg-white"
+          }`}
+        >
+          {[
+            { type: "realty", title: "Недвижимость" },
+            { type: "auto", title: "Авто" },
+            { type: "general", title: "Общие пакеты" },
+          ].map((section) => (
+            <div
+              key={section.type}
+              className={`rounded-2xl border p-3 ${isDark ? "border-white/8 bg-transparent" : "border-gray-200/60 bg-white"} ${section.type === "realty" ? "" : "mt-5"}`}
+            >
+              <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
+                {section.title}
+              </h3>
+              <div className="mt-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
+                {(Object.entries(packageInfo[section.type] || {}) as [PackageSize, PackageInfo][])
+                  .map(([size, info]) => {
+                    const selected =
+                      !isCustom &&
+                      selectedPackage?.type === section.type &&
+                      selectedPackage?.size === size;
+                    return (
+                      <article
+                        key={`${section.type}-${size}`}
+                        className={`relative overflow-hidden rounded-xl border p-2.5 backdrop-blur-[6px] transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
                           selected
                             ? isDark
-                              ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.16)] text-white shadow-[0_0_14px_rgba(139,95,255,0.22)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.20)] hover:shadow-[0_0_20px_rgba(139,95,255,0.30)]"
-                              : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
+                              ? "border-[rgba(139,95,255,0.4)] bg-[rgba(139,95,255,0.12)] shadow-[0_0_20px_rgba(139,95,255,0.2)]"
+                              : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
                             : isDark
-                              ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.10)] text-white/95 shadow-[0_0_12px_rgba(139,95,255,0.18)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.16)] hover:shadow-[0_0_18px_rgba(139,95,255,0.28)]"
-                              : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
+                              ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/90 hover:border-[rgba(139,95,255,0.35)] hover:bg-[rgba(255,255,255,0.08)]"
+                              : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
                         }`}
+                        style={
+                          isDark
+                            ? {
+                                backgroundImage: selected
+                                  ? "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))"
+                                  : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+                                boxShadow: selected
+                                  ? "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(139,95,255,0.06)"
+                                  : "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(139,95,255,0.06)",
+                              }
+                            : undefined
+                        }
                       >
-                        Выбрать
-                      </button>
-                    </article>
-                  );
-                })}
+                        {isDark ? (
+                          <div
+                            className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-30"
+                            style={{
+                              background:
+                                "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)",
+                            }}
+                          />
+                        ) : null}
+                        <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
+                          {info.count} объявлений
+                        </p>
+                        <div className={`mt-2 ${isDark ? "text-white/95" : ""}`}>
+                          <PriceDisplay value={info.price} size="lg" />
+                        </div>
+                        <p className={`mt-1 text-[12px] ${isDark ? "text-white/70" : "text-gray-500/85"}`}>
+                          Выгоднее, чем поштучно
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPackage({ type: section.type, size });
+                            setIsCustom(false);
+                            setCustomQuantity("");
+                          }}
+                          className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-110 active:scale-[0.97] ${
+                            selected
+                              ? isDark
+                                ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.16)] text-white shadow-[0_0_14px_rgba(139,95,255,0.22)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.20)] hover:shadow-[0_0_20px_rgba(139,95,255,0.30)]"
+                                : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
+                              : isDark
+                                ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.10)] text-white/95 shadow-[0_0_12px_rgba(139,95,255,0.18)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.16)] hover:shadow-[0_0_18px_rgba(139,95,255,0.28)]"
+                                : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
+                          }`}
+                        >
+                          Выбрать
+                        </button>
+                      </article>
+                    );
+                  })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
 
         {/* Свое количество */}
         <div className="mt-5 border-t border-dashed border-gray-300/50 pt-4 dark:border-gray-600/30">
