@@ -638,7 +638,7 @@ export default function ProfilePage() {
         {/* Пакеты: 3 понятных блока без смешивания категорий */}
         <div
           className={`mt-5 rounded-2xl border p-4 ${
-            isDark ? "border-white/6 bg-white/[0.02]" : "border-gray-200/60 bg-white"
+            isDark ? "border-white/12 bg-white/[0.03]" : "border-gray-300/80 bg-white"
           }`}
         >
           {[
@@ -648,7 +648,7 @@ export default function ProfilePage() {
           ].map((section) => (
             <div
               key={section.type}
-              className={`rounded-2xl border p-3 ${isDark ? "border-white/8 bg-transparent" : "border-gray-200/60 bg-white"} ${section.type === "realty" ? "" : "mt-5"}`}
+              className={`rounded-2xl border p-3 ${isDark ? "border-white/14 bg-transparent" : "border-gray-300/80 bg-white"} ${section.type === "realty" ? "" : "mt-5"}`}
             >
               <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
                 {section.title}
@@ -678,10 +678,10 @@ export default function ProfilePage() {
                             ? {
                               background: selected
                                 ? "linear-gradient(#0b0b0f, #0b0b0f) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box"
-                                : "linear-gradient(180deg, rgba(255,255,255,0.06), transparent 40%) padding-box, linear-gradient(180deg, rgba(20,20,30,0.9), rgba(10,10,15,0.95)) padding-box, linear-gradient(135deg, rgba(139,95,255,0.6), rgba(110,231,255,0.6)) border-box",
+                                : "linear-gradient(180deg, rgba(255,255,255,0.07), transparent 40%) padding-box, linear-gradient(180deg, rgba(20,20,30,0.9), rgba(10,10,15,0.95)) padding-box, linear-gradient(135deg, rgba(139,95,255,0.82), rgba(110,231,255,0.82)) border-box",
                                 boxShadow: selected
                                 ? "0 0 0 1px rgba(139,95,255,0.4), 0 12px 40px rgba(139,95,255,0.25)"
-                                : "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -8px 20px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.35)",
+                                  : "inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -8px 20px rgba(0,0,0,0.4), 0 12px 32px rgba(0,0,0,0.38)",
                               }
                             : {
                                 background: selected
@@ -718,10 +718,10 @@ export default function ProfilePage() {
                             setIsCustom(false);
                             setCustomQuantity("");
                           }}
-                          className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] ${
+                          className={`pressable mt-3 min-h-[42px] w-full rounded-lg border text-[13px] font-semibold transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] ${
                             selected
                               ? isDark
-                                ? "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.15)] text-[#c4b5fd] hover:bg-[rgba(139,95,255,0.18)]"
+                                ? "border-[rgba(139,95,255,0.5)] bg-[rgba(139,95,255,0.2)] text-[#ddd6fe] hover:bg-[rgba(139,95,255,0.25)]"
                                 : "border-[#8B5FFF]/35 bg-[#ede7ff] text-[#7c3aed] hover:bg-[#e7e0ff]"
                               : "border-transparent text-white hover:shadow-[0_6px_22px_rgba(139,95,255,0.35)]"
                           }`}
@@ -730,7 +730,7 @@ export default function ProfilePage() {
                               ? undefined
                               : {
                                   background: "linear-gradient(135deg, #8B5FFF, #6EE7FF)",
-                                  boxShadow: "0 4px 16px rgba(139,95,255,0.25)",
+                                  boxShadow: "0 8px 24px rgba(139,95,255,0.38)",
                                 }
                           }
                         >
