@@ -368,3 +368,21 @@ html {
 .feed-card-enter {
   animation: feed-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+@keyframes enigmaGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 8px 30px rgba(139, 95, 255, 0.3),
+      0 0 40px rgba(110, 231, 255, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 10px 36px rgba(139, 95, 255, 0.45),
+      0 0 40px rgba(110, 231, 255, 0.12);
+  }
+}
+
+.enigma-final-cta {
+  animation: enigmaGlow 3s ease-in-out infinite;
+}

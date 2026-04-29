@@ -36,7 +36,7 @@ function PriceDisplay({ value, size = "md" }: { value: number; size?: "sm" | "md
     lg: { num: "text-[18px]", rub: "text-[13px]" },
   };
   return (
-    <span className={`inline-flex items-baseline ${sizeClasses[size].num} font-semibold tracking-[-0.3px]`}>
+    <span className={`inline-flex items-baseline ${sizeClasses[size].num} font-semibold tracking-[-0.4px]`}>
       <span>{formatPrice(value)}</span>
       <span className={`${sizeClasses[size].rub} ml-1 opacity-60`}>₽</span>
     </span>
@@ -501,7 +501,7 @@ export default function ProfilePage() {
           isDark
             ? {
                 background:
-                  "radial-gradient(circle at 50% 0%, rgba(255,255,255,0.04), transparent 60%), #0a0a0f",
+                  "radial-gradient(circle at 70% 20%, rgba(139,95,255,0.12), transparent 40%), radial-gradient(circle at 30% 80%, rgba(110,231,255,0.08), transparent 50%), #0a0a0f",
               }
             : undefined
         }
@@ -660,29 +660,37 @@ export default function ProfilePage() {
                       !isCustom &&
                       selectedPackage?.type === section.type &&
                       selectedPackage?.size === size;
+                    const hasAnySelected = !isCustom && Boolean(selectedPackage);
                     return (
                       <article
                         key={`${section.type}-${size}`}
                         className={`relative overflow-hidden rounded-xl border p-2.5 backdrop-blur-[6px] transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
                           selected
                             ? isDark
-                              ? "border-[rgba(139,95,255,0.4)] bg-[rgba(139,95,255,0.12)] shadow-[0_0_20px_rgba(139,95,255,0.2)]"
-                              : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
+                              ? "scale-[1.015] border-transparent opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.4),0_12px_40px_rgba(139,95,255,0.25)]"
+                              : "scale-[1.015] border-transparent opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.24),0_10px_24px_rgba(139,95,255,0.16)]"
                             : isDark
-                              ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/90 hover:border-[rgba(139,95,255,0.35)] hover:bg-[rgba(255,255,255,0.08)]"
-                              : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
+                              ? `border-transparent text-white/90 ${hasAnySelected ? "opacity-60" : "opacity-100"}`
+                              : `border-transparent text-[#111] hover:shadow-sm ${hasAnySelected ? "opacity-60" : "opacity-100"}`
                         }`}
                         style={
                           isDark
                             ? {
-                                backgroundImage: selected
-                                  ? "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))"
-                                  : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+                              background: selected
+                                ? "linear-gradient(#0b0b0f, #0b0b0f) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box"
+                                : "linear-gradient(180deg, rgba(255,255,255,0.06), transparent 40%) padding-box, linear-gradient(180deg, rgba(20,20,30,0.9), rgba(10,10,15,0.95)) padding-box, linear-gradient(135deg, rgba(139,95,255,0.6), rgba(110,231,255,0.6)) border-box",
                                 boxShadow: selected
-                                  ? "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(139,95,255,0.06)"
-                                  : "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(139,95,255,0.06)",
+                                ? "0 0 0 1px rgba(139,95,255,0.4), 0 12px 40px rgba(139,95,255,0.25)"
+                                : "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -8px 20px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.35)",
                               }
-                            : undefined
+                            : {
+                                background: selected
+                                  ? "linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box"
+                                  : "linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box",
+                                boxShadow: selected
+                                  ? "inset 0 1px 0 rgba(255,255,255,0.7), 0 8px 20px rgba(139,95,255,0.16)"
+                                  : "inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 16px rgba(139,95,255,0.12)",
+                              }
                         }
                       >
                         {isDark ? (
@@ -710,17 +718,30 @@ export default function ProfilePage() {
                             setIsCustom(false);
                             setCustomQuantity("");
                           }}
-                          className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-110 active:scale-[0.97] ${
+                          className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] ${
                             selected
                               ? isDark
-                                ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.16)] text-white shadow-[0_0_14px_rgba(139,95,255,0.22)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.20)] hover:shadow-[0_0_20px_rgba(139,95,255,0.30)]"
-                                : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
-                              : isDark
-                                ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.10)] text-white/95 shadow-[0_0_12px_rgba(139,95,255,0.18)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.16)] hover:shadow-[0_0_18px_rgba(139,95,255,0.28)]"
-                                : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
+                                ? "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.15)] text-[#c4b5fd] hover:bg-[rgba(139,95,255,0.18)]"
+                                : "border-[#8B5FFF]/35 bg-[#ede7ff] text-[#7c3aed] hover:bg-[#e7e0ff]"
+                              : "border-transparent text-white hover:shadow-[0_6px_22px_rgba(139,95,255,0.35)]"
                           }`}
+                          style={
+                            selected
+                              ? undefined
+                              : {
+                                  background: "linear-gradient(135deg, #8B5FFF, #6EE7FF)",
+                                  boxShadow: "0 4px 16px rgba(139,95,255,0.25)",
+                                }
+                          }
                         >
-                          Выбрать
+                          {selected ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span aria-hidden>✔</span>
+                              <span>Выбрано</span>
+                            </span>
+                          ) : (
+                            "Выбрать"
+                          )}
                         </button>
                       </article>
                     );
@@ -828,10 +849,10 @@ export default function ProfilePage() {
               );
             }
           }}
-          className={`mt-5 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
+          className={`enigma-final-cta mt-5 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
             (selectedPackage || (isCustom && customQuantity && parseInt(customQuantity) > 0))
               ? (isDark
-                  ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_10px_40px_rgba(139,95,255,0.45)]"
+                  ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_8px_30px_rgba(139,95,255,0.35),0_0_40px_rgba(110,231,255,0.12)]"
                   : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/20")
               : (isDark
                   ? "bg-white/10 text-muted hover:bg-white/15 border border-line/30"

@@ -235,7 +235,7 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-xl px-3 py-2.5 text-white transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
+            className={`enigma-final-cta block rounded-xl px-3 py-2.5 text-white transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
               theme === "dark"
                 ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-lg shadow-purple-500/25"
                 : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-md shadow-purple-500/20"
