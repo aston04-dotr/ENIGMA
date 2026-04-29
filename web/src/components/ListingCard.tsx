@@ -165,9 +165,19 @@ export function ListingCard({ item, index = 0 }: Props) {
         </div>
         <div className="space-y-2 p-4 sm:p-[14px]">
           <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">{itemTitle}</p>
-          <p className="flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] text-[#f6f1e8]">
+          <p
+            className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${
+              theme === "light" ? "text-[#0f172a]" : "text-white"
+            }`}
+          >
             <span>{formatPriceNumber(numericPrice)}</span>
-            <span className="text-[18px] font-semibold tracking-normal text-[#e7dcc8]/70">₽</span>
+            <span
+              className={`text-[18px] font-semibold tracking-normal ${
+                theme === "light" ? "text-[#0f172a]/65" : "text-white/70"
+              }`}
+            >
+              ₽
+            </span>
           </p>
           <ListingMetricsRow
             views={views}
@@ -219,17 +229,17 @@ export function ListingCard({ item, index = 0 }: Props) {
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className="block rounded-xl border border-line/80 bg-gradient-to-r from-accent/12 via-accent/8 to-transparent px-3.5 py-2.5 transition-all duration-200 hover:bg-accent/12 active:scale-[0.98]"
+            className="block rounded-xl border border-accent/35 bg-gradient-to-r from-[#4da3ff] via-[#3f8ef2] to-[#2f7fe5] px-3.5 py-2.5 transition-all duration-200 hover:brightness-105 active:scale-[0.98]"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[13px] font-semibold text-fg">
+              <span className="text-[13px] font-semibold text-white">
                 Поднять объявление
               </span>
-              <span className="text-[13px] font-semibold text-fg">
+              <span className="text-[13px] font-semibold text-white">
                 {priceRub} ₽
               </span>
             </div>
-            <div className="mt-1 text-[12px] text-muted">
+            <div className="mt-1 text-[12px] text-white/85">
               Больше просмотров и откликов
             </div>
           </Link>
