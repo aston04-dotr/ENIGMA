@@ -8,8 +8,7 @@ function maskEmailForLog(email: string) {
 }
 
 /**
- * Magic link через POST `/api/auth/magic-link`: сервер вызывает только
- * `signInWithOtp` (PKCE, письмо шлёт Supabase, redirect на `/auth/confirm?code=...`).
+ * Email OTP через POST `/api/auth/magic-link`: сервер отправляет код на почту.
  */
 export async function signIn(email: string) {
   const trimmed = email.trim().toLowerCase();
@@ -53,7 +52,7 @@ export async function signIn(email: string) {
     const msg =
       e instanceof Error && e.name === "AbortError"
         ? "Превышено время ожидания. Проверьте интернет и повторите."
-        : "Не удалось отправить ссылку. Проверьте интернет и повторите.";
+        : "Не удалось отправить код. Проверьте интернет и повторите.";
     console.error("[auth] magic_link:error", { email: label, message: msg });
     return { error: { message: msg } };
   } finally {

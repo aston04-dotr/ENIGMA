@@ -12,15 +12,15 @@ import { useRouter } from "next/navigation";
 function humanizeMagicLinkError(raw: string): string {
   const t = raw.toLowerCase();
   if (t.includes("security purposes") || t.includes("rate limit") || t.includes("too many")) {
-    return "Слишком частые запросы. Подождите минуту и нажмите «Отправить снова».";
+    return "Слишком частые запросы. Подождите минуту и попробуйте снова.";
   }
   if (t.includes("invalid") && t.includes("email")) {
     return "Проверьте адрес почты и попробуйте снова.";
   }
-  if (raw === "magic_link_timeout" || t.includes("timeout") || t.includes("network")) {
+  if (t.includes("timeout") || t.includes("network")) {
     return "Не дождались ответа сервера. Проверьте интернет и повторите.";
   }
-  return raw.length > 200 ? "Не удалось отправить письмо. Попробуйте ещё раз." : raw;
+  return raw.length > 200 ? "Не удалось отправить код. Попробуйте ещё раз." : raw;
 }
 
 export default function LoginPage() {
@@ -86,6 +86,8 @@ export default function LoginPage() {
       return;
     }
     setSent(true);
+    localStorage.setItem("auth_email", em);
+    router.push("/auth/verify");
   }
 
   function onPrimaryClick() {
@@ -104,10 +106,7 @@ export default function LoginPage() {
       ) : null}
       <h1 className="text-[28px] font-bold tracking-tight text-fg">Вход</h1>
       <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
-        Отправим ссылку на почту. Перейдите по ней - войдёте автоматически.
-      </p>
-      <p className="mt-2 max-w-[320px] text-[13px] leading-relaxed text-muted">
-        Открывайте ссылку в том же браузере и на том же устройстве, где запрашивали вход.
+        Отправим 6-значный код на почту. Введите его на следующем шаге.
       </p>
       <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
         <input
@@ -120,7 +119,7 @@ export default function LoginPage() {
           className="mt-0.5 h-4 w-4 rounded border-line bg-elevated text-accent focus:ring-accent/40"
         />
         <span>
-          Нажимая «Войти», вы соглашаетесь с{" "}
+          Нажимая «Получить код», вы соглашаетесь с{" "}
           <Link
             href="/legal/terms"
             target="_blank"
@@ -147,15 +146,12 @@ export default function LoginPage() {
       {err ? <p className="mt-3 text-sm font-medium text-danger">{err}</p> : null}
       {sent ? (
         <div className="mt-6 space-y-2">
-          <p className="text-sm font-semibold text-fg">Письмо отправлено</p>
-          <p className="text-sm font-medium text-accent">
-            Проверьте почту и откройте ссылку в этом браузере. Обычно письмо приходит за 5–30 секунд.
-          </p>
+          <p className="text-sm font-semibold text-fg">Код отправлен</p>
         </div>
       ) : null}
       {loading ? (
         <p className="mt-4 text-sm text-muted" aria-live="polite">
-          Отправляем письмо… Поле email можно исправить до следующей попытки.
+          Отправляем код…
         </p>
       ) : null}
       <button
@@ -164,10 +160,10 @@ export default function LoginPage() {
         disabled={loading || !acceptedTerms}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "Отправка…" : sent ? "Войти снова" : "Войти"}
+        {loading ? "Отправка…" : "Получить код"}
       </button>
       {(sent || err) && !loading ? (
-        <p className="mt-3 text-center text-xs text-muted">Можно запросить письмо ещё раз.</p>
+        <p className="mt-3 text-center text-xs text-muted">Можно запросить код ещё раз.</p>
       ) : null}
     </main>
   );
