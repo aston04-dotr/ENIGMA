@@ -15,15 +15,34 @@ import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { useEffect, useState } from "react";
 
-function formatPrice(n: number) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);
+function formatPriceNumber(n: number) {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }
 
 type Props = {
   item?: ListingRow | null;
+  index?: number;
 };
 
-export function ListingCard({ item }: Props) {
+function LocationTinyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3.5 w-3.5" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11Z" />
+      <circle cx="12" cy="10" r="2.2" />
+    </svg>
+  );
+}
+
+function EyeTinyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3.5 w-3.5" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="2.2" />
+    </svg>
+  );
+}
+
+export function ListingCard({ item, index = 0 }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
@@ -86,8 +105,20 @@ export function ListingCard({ item }: Props) {
     return `/payment?${webTopPaymentQuery(lid, viewerId)}`;
   }
 
+  const numericPrice = Number(item?.price ?? 0);
+
   return (
-    <div className="pressable mb-5 overflow-hidden rounded-card border border-line bg-elevated shadow-soft transition-shadow duration-ui hover:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+    <div
+      className="feed-card-enter group mb-4 overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:mb-5 md:hover:-translate-y-[3px]"
+      style={{
+        borderColor: "rgba(255,255,255,0.06)",
+        backgroundImage:
+          "radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 45%), linear-gradient(180deg, rgba(255,255,255,0.032) 0%, rgba(255,255,255,0.008) 100%)",
+        boxShadow:
+          "0 1px 0 rgba(255,255,255,0.03) inset, 0 10px 22px rgba(0,0,0,0.14), 0 30px 48px rgba(0,0,0,0.22)",
+        animationDelay: `${Math.min(index, 10) * 35}ms`,
+      }}
+    >
       <Link
         href={`/listing/${lid}`}
         prefetch
@@ -100,14 +131,27 @@ export function ListingCard({ item }: Props) {
           })
         }
       >
-        <div className="relative aspect-[4/3] w-full bg-elev-2">
+        <div className="relative h-[190px] w-full overflow-hidden rounded-t-[16px] bg-elev-2 sm:h-[210px] lg:h-[220px]">
           {uri ? (
-            <Image src={uri} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 32rem" unoptimized />
+            <Image
+              src={uri}
+              alt=""
+              fill
+              className="object-cover saturate-[1.06] contrast-[1.04] transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04]"
+              sizes="(max-width: 768px) 100vw, 32rem"
+              unoptimized
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-[11px] font-semibold tracking-[0.2em] text-muted">
               ENIGMA
             </div>
           )}
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 opacity-80 transition-opacity duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100"
+            style={{
+              background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 100%)",
+            }}
+          />
           {partner ? (
             <span className="absolute left-3 top-3 rounded-lg border border-line bg-elevated/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-fg backdrop-blur-sm">
               Партнёр
@@ -119,9 +163,12 @@ export function ListingCard({ item }: Props) {
             </span>
           ) : null}
         </div>
-        <div className="space-y-2 p-4">
-          <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-fg">{itemTitle}</p>
-          <p className="text-xl font-bold tracking-tight text-fg">{formatPrice(Number(item?.price ?? 0))}</p>
+        <div className="space-y-2 p-4 sm:p-[14px]">
+          <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">{itemTitle}</p>
+          <p className="flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] text-[#f6f1e8]">
+            <span>{formatPriceNumber(numericPrice)}</span>
+            <span className="text-[18px] font-semibold tracking-normal text-[#e7dcc8]/70">₽</span>
+          </p>
           <ListingMetricsRow
             views={views}
             favorites={favoriteCountLocal}
@@ -152,28 +199,37 @@ export function ListingCard({ item }: Props) {
               }).finally(() => setFavoriteBusy(false));
             }}
           />
-          <p className="text-xs text-muted">
-            {itemCity} · {categoryLabel(item?.category)}
-          </p>
+          <div className="flex items-center gap-2.5 text-[13px] text-muted/80">
+            <span className="inline-flex items-center gap-1 text-muted/80">
+              <LocationTinyIcon />
+              <span>{itemCity}</span>
+            </span>
+            <span className="text-muted/60">·</span>
+            <span className="inline-flex items-center gap-1 tabular-nums text-muted/80">
+              <EyeTinyIcon />
+              <span>{views}</span>
+            </span>
+            <span className="truncate text-muted/65">· {categoryLabel(item?.category)}</span>
+          </div>
         </div>
       </Link>
       {isOwn && !partner ? (
-        <div className="px-4 py-3 space-y-3">
+        <div className="space-y-2.5 px-[14px] pb-[14px] pt-1">
           {/* 1. Boost - Базовый */}
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className="block rounded-2xl bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] p-4 transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+            className="block rounded-xl border border-line/80 bg-gradient-to-r from-accent/12 via-accent/8 to-transparent px-3.5 py-2.5 transition-all duration-200 hover:bg-accent/12 active:scale-[0.98]"
           >
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
+              <span className="text-[13px] font-semibold text-fg">
                 Поднять объявление
               </span>
-              <span className="text-sm font-semibold text-white">
+              <span className="text-[13px] font-semibold text-fg">
                 {priceRub} ₽
               </span>
             </div>
-            <div className="mt-1 text-xs text-white/80">
+            <div className="mt-1 text-[12px] text-muted">
               Больше просмотров и откликов
             </div>
           </Link>

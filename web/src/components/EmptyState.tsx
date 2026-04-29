@@ -1,33 +1,33 @@
 "use client";
 
+import Link from "next/link";
+
 type Props = {
   title: string;
   subtitle?: string;
+  actionLabel?: string;
+  actionHref?: string;
 };
 
-export function EmptyState({ title, subtitle }: Props) {
+export function EmptyState({ title, subtitle, actionLabel, actionHref }: Props) {
   return (
     <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
       <div
-        className="mb-8 flex h-[72px] w-[72px] items-center justify-center rounded-card border border-line bg-elevated shadow-soft"
+        className="mb-6 flex h-[70px] w-[70px] items-center justify-center rounded-2xl border border-line/80 bg-elevated/95 shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
         aria-hidden
       >
-        <svg
-          className="h-9 w-9 text-muted"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.25}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M7.05 7.05 5.636 5.636m12.728 12.728-1.414-1.414M7.05 16.95l-1.414 1.414M16.95 7.05l1.414-1.414M7.05 7.05 5.636 5.636"
-          />
-        </svg>
+        <span className="text-[28px]">🗂️</span>
       </div>
-      <p className="text-lg font-semibold tracking-tight text-fg">{title}</p>
-      {subtitle ? <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted">{subtitle}</p> : null}
+      <p className="text-xl font-semibold tracking-tight text-fg">{title}</p>
+      {subtitle ? <p className="mt-2 max-w-[320px] text-sm leading-relaxed text-muted">{subtitle}</p> : null}
+      {actionLabel && actionHref ? (
+        <Link
+          href={actionHref}
+          className="pressable mt-6 inline-flex min-h-[42px] items-center justify-center rounded-xl border border-line/80 bg-elevated px-4 py-2 text-sm font-semibold text-fg transition-all duration-200 ease-out hover:bg-elev-2"
+        >
+          {actionLabel}
+        </Link>
+      ) : null}
     </div>
   );
 }

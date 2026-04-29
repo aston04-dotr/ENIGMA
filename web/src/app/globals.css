@@ -353,3 +353,18 @@ html {
 .animate-skeleton {
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
+
+@keyframes feed-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.feed-card-enter {
+  animation: feed-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

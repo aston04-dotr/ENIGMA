@@ -379,102 +379,111 @@ function FeedPage({ session }: { session: Session }) {
 
   return (
     <main className="safe-pt min-h-screen bg-main">
-      <header className="border-b border-line bg-main px-5 py-5">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
-              Enigma
-            </h1>
+      <header className="border-b border-line bg-main">
+        <div className="mx-auto w-full max-w-[720px] px-4 py-5 sm:px-5">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
+                Enigma
+              </h1>
+            </div>
           </div>
-        </div>
-        <div className="mt-6 space-y-2.5">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setCitySheetOpen(true)}
-              className={filterRowClass}
-            >
-              <span className="text-sm text-fg">Город: {city}</span>
-              <span className="text-sm font-semibold text-muted">{">"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCategorySheetOpen(true)}
-              className={filterRowClass}
-            >
-              <span className="text-sm text-fg">Категория: {categoryTitle}</span>
-              <span className="text-sm font-semibold text-muted">{">"}</span>
-            </button>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-gray-500">Найдено: {foundCountLabel} объявлений</p>
-            {hasActiveFilters ? (
+          <div className="mt-6 space-y-2.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={resetFilters}
-                className="pressable text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+                onClick={() => setCitySheetOpen(true)}
+                className={filterRowClass}
               >
-                Сбросить
+                <span className="text-sm text-fg">Город: {city}</span>
+                <span className="text-sm font-semibold text-muted">{">"}</span>
               </button>
-            ) : null}
-          </div>
-          <div className="-mx-0.5 flex gap-2 overflow-x-auto pb-1 pt-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button
-              type="button"
-              onClick={() => {
-                trackEvent("category_quick_select", { category: ALL_CATEGORY });
-                setSelectedCategory(ALL_CATEGORY);
-              }}
-              className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                selectedCategory === ALL_CATEGORY
-                  ? "border-accent/40 bg-accent/10 text-accent"
-                  : "border-line bg-elevated text-fg hover:bg-elev-2"
-              }`}
-            >
-              Все
-            </button>
-            {quickCategories.map((cat) => (
               <button
-                key={cat.id}
                 type="button"
-                  onClick={() => {
-                    trackEvent("category_quick_select", { category: cat.id });
-                    setSelectedCategory(cat.id);
-                  }}
+                onClick={() => setCategorySheetOpen(true)}
+                className={filterRowClass}
+              >
+                <span className="text-sm text-fg">Категория: {categoryTitle}</span>
+                <span className="text-sm font-semibold text-muted">{">"}</span>
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-gray-500">Найдено: {foundCountLabel} объявлений</p>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="pressable text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+                >
+                  Сбросить
+                </button>
+              ) : null}
+            </div>
+            <div className="-mx-0.5 flex gap-2 overflow-x-auto pb-1 pt-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  trackEvent("category_quick_select", { category: ALL_CATEGORY });
+                  setSelectedCategory(ALL_CATEGORY);
+                }}
                 className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                  selectedCategory === cat.id
+                  selectedCategory === ALL_CATEGORY
                     ? "border-accent/40 bg-accent/10 text-accent"
                     : "border-line bg-elevated text-fg hover:bg-elev-2"
                 }`}
               >
-                {cat.label}
+                Все
               </button>
-            ))}
+              {quickCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    trackEvent("category_quick_select", { category: cat.id });
+                    setSelectedCategory(cat.id);
+                  }}
+                  className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                    selectedCategory === cat.id
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : "border-line bg-elevated text-fg hover:bg-elev-2"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
       {feedNotice ? (
-        <div className="border-b border-line bg-elev-2/80 px-5 py-3">
-          <p className="text-xs font-medium text-muted">{feedNotice}</p>
+        <div className="border-b border-line bg-elev-2/80">
+          <div className="mx-auto w-full max-w-[720px] px-4 py-3 sm:px-5">
+            <p className="text-xs font-medium text-muted">{feedNotice}</p>
+          </div>
         </div>
       ) : null}
       {feedError ? (
-        <div className="px-5 pt-4">
+        <div className="mx-auto w-full max-w-[720px] px-4 pt-4 sm:px-5">
           <ErrorUi text={feedError} />
         </div>
       ) : null}
 
       <div
-        className={`relative px-5 pb-6 pt-2 transition-opacity duration-200 ${
+        className={`relative mx-auto w-full max-w-[720px] scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-5 ${
           isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
         }`}
       >
-        {filtered.map((item) => (
-          <ListingCard key={item.id} item={item} />
+        {filtered.map((item, idx) => (
+          <ListingCard key={item.id} item={item} index={idx} />
         ))}
         {filtered.length === 0 ? (
-          <EmptyState title="Пока нет объявлений. Будь первым 🔥" />
+          <EmptyState
+            title="Пока пусто. Создай первое объявление."
+            subtitle="Запусти ленту первым - это займёт меньше минуты."
+            actionLabel="Создать"
+            actionHref="/create"
+          />
         ) : null}
         {isFeedRefreshing ? (
           <div className="pointer-events-none absolute inset-0 z-10 px-1 pt-2">

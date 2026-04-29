@@ -3,38 +3,98 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
     <title>Код для входа в Enigma</title>
+    <style>
+      .mail-bg {
+        background: #f3f5fa !important;
+      }
+      .mail-card {
+        background: #ffffff !important;
+        border-color: #e6eaf2 !important;
+      }
+      .muted {
+        color: #5f6b7a !important;
+      }
+      .title {
+        color: #151b2c !important;
+      }
+      .code-wrap {
+        background: linear-gradient(180deg, #f8faff 0%, #f2f5fb 100%) !important;
+        border-color: #dbe3f1 !important;
+      }
+      .code-text {
+        color: #1a2233 !important;
+      }
+      .copy-hint {
+        color: #7b8698 !important;
+      }
+      .copy-cta {
+        background: linear-gradient(180deg, #2f3e5e 0%, #273552 100%) !important;
+        color: #eff4ff !important;
+      }
+      @media (prefers-color-scheme: dark) {
+        .mail-bg {
+          background: #0d1118 !important;
+        }
+        .mail-card {
+          background: #121925 !important;
+          border-color: #253044 !important;
+        }
+        .muted {
+          color: #a5b1c3 !important;
+        }
+        .title {
+          color: #eef3ff !important;
+        }
+        .code-wrap {
+          background: linear-gradient(180deg, #192235 0%, #141d2d 100%) !important;
+          border-color: #2d3c57 !important;
+        }
+        .code-text {
+          color: #f2f6ff !important;
+        }
+        .copy-hint {
+          color: #93a4bf !important;
+        }
+        .copy-cta {
+          background: linear-gradient(180deg, #d9e4ff 0%, #bfcef7 100%) !important;
+          color: #17233b !important;
+        }
+      }
+    </style>
   </head>
-  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Inter,Arial,sans-serif;color:#0f172a;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7fb;padding:24px 12px;">
+  <body class="mail-bg" style="margin:0;padding:0;background:#f3f5fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Arial,sans-serif;color:#151b2c;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;" class="mail-bg">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8ebf3;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="mail-card" style="max-width:560px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e6eaf2;">
             <tr>
-              <td style="padding:28px 24px 8px 24px;">
-                <p style="margin:0 0 8px 0;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#6d28d9;font-weight:700;">
+              <td style="padding:30px 28px 10px 28px;">
+                <p style="margin:0 0 10px 0;font-size:11px;letter-spacing:0.19em;text-transform:uppercase;color:#6b7ea4;font-weight:700;">
                   ENIGMA
                 </p>
-                <h1 style="margin:0;font-size:28px;line-height:1.2;color:#111827;font-weight:800;">
+                <h1 class="title" style="margin:0;font-size:30px;line-height:1.2;color:#151b2c;font-weight:700;">
                   Код для входа в Enigma
                 </h1>
               </td>
             </tr>
 
             <tr>
-              <td style="padding:20px 24px 6px 24px;">
-                <p style="margin:0;font-size:16px;line-height:1.6;color:#374151;">
+              <td style="padding:12px 28px 6px 28px;">
+                <p class="muted" style="margin:0;font-size:16px;line-height:1.65;color:#5f6b7a;">
                   Скопируйте этот код и вставьте его в Enigma.
                 </p>
               </td>
             </tr>
 
             <tr>
-              <td style="padding:14px 24px 6px 24px;">
+              <td style="padding:18px 28px 8px 28px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td align="center" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:14px;padding:18px;">
-                      <div style="font-size:40px;line-height:1;letter-spacing:0.28em;font-weight:800;color:#111827;user-select:all;">
+                    <td class="code-wrap" align="center" style="background:#f4f7fc;border:1px solid #dbe3f1;border-radius:16px;padding:20px 14px;">
+                      <div class="code-text" style="font-size:38px;line-height:1;letter-spacing:0.32em;font-weight:700;color:#1a2233;user-select:all;">
                         {{ .Token }}
                       </div>
                     </td>
@@ -44,20 +104,17 @@
             </tr>
 
             <tr>
-              <td style="padding:12px 24px 0 24px;">
-                <div
-                  style="display:block;width:100%;box-sizing:border-box;text-align:center;background:#6d28d9;color:#ffffff;font-size:17px;font-weight:700;line-height:1;padding:16px;border-radius:12px;user-select:none;"
-                >
-                  Скопировать код
+              <td style="padding:14px 28px 0 28px;">
+                <div class="copy-cta" style="display:block;width:100%;box-sizing:border-box;text-align:center;background:#2f3e5e;color:#eff4ff;font-size:16px;font-weight:600;line-height:1;padding:15px;border-radius:14px;">
+                  Скопируйте код и вставьте в Enigma
                 </div>
               </td>
             </tr>
 
             <tr>
-              <td style="padding:18px 24px 26px 24px;">
-                <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
-                  Кнопка выше сделана для удобства чтения. В почтовых клиентах JavaScript обычно отключен, поэтому
-                  копирование делается вручную: выделите код и скопируйте.
+              <td style="padding:14px 28px 30px 28px;">
+                <p class="copy-hint" style="margin:0;font-size:13px;line-height:1.65;color:#7b8698;">
+                  Нажмите и удерживайте код, чтобы скопировать.
                 </p>
               </td>
             </tr>
