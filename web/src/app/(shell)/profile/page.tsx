@@ -493,16 +493,20 @@ export default function ProfilePage() {
       </section>
       </div>
 
-      <div className="mt-6 space-y-3 transition-all duration-200 ease-in-out lg:sticky lg:top-24 lg:mt-0 lg:self-start lg:-translate-y-[2px]">
+      <div
+        className={`mt-6 space-y-3 transition-all duration-200 ease-in-out lg:sticky lg:top-24 lg:mt-0 lg:self-start lg:-translate-y-[2px] ${
+          isDark ? "lg:rounded-[20px] lg:bg-[#0f1115] lg:p-3" : ""
+        }`}
+      >
       <div
         className={`rounded-[16px] border p-4 transition-all duration-200 ease-in-out ${
           isDark
-            ? "border-line/10 bg-elevated/60 shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
+            ? "border-white/10 bg-white/5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
             : "border-[rgba(15,23,42,0.05)] bg-[#fcfdff] shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
         }`}
       >
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Увеличьте просмотры</p>
-        <p className={`mt-1 text-[13px] leading-[1.35] ${isDark ? "text-muted/75" : "text-gray-600/80"}`}>
+        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Увеличьте просмотры</p>
+        <p className={`mt-1 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
           Продвигайте объявления и получайте больше откликов
         </p>
         <Link
@@ -516,17 +520,17 @@ export default function ProfilePage() {
       {/* ПАНЕЛЬ: МОЙ СТАТУС + МОИ ПАКЕТЫ */}
       <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
-          ? "bg-elevated/60 border-line/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]" 
+          ? "bg-white/5 border-white/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]" 
           : "bg-[#fbfcfe] border-[rgba(0,0,0,0.04)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]"
       }`}>
-        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Мой статус</p>
+        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Мой статус</p>
         <div className="space-y-1.5">
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">🔥</span>
-              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>Boost</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>Boost</span>
             </div>
             <span className={`text-[12px] font-medium transition-colors duration-200 ${
               isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
@@ -537,7 +541,7 @@ export default function ProfilePage() {
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">💎</span>
-              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>VIP</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>VIP</span>
             </div>
             <span className={`text-[12px] font-medium transition-colors duration-200 ${
               isDark ? "text-muted/80 hover:text-fg/70" : "text-[#9ca3af] hover:text-[#6b7280]"
@@ -548,32 +552,32 @@ export default function ProfilePage() {
           }`}>
             <div className="flex items-center gap-3">
               <span className="text-[18px]">🚀</span>
-              <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>TOP</span>
+              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>TOP</span>
             </div>
             <span className={`text-[12px] font-medium transition-colors duration-200 ${
               isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
             }`}>АКТИВЕН</span>
           </div>
         </div>
-        <div className={`my-3 h-px ${isDark ? "bg-white/[0.06]" : "bg-black/[0.05]"}`} />
-        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Мои пакеты</p>
+        <div className={`my-3 h-px ${isDark ? "bg-white/[0.08]" : "bg-black/[0.05]"}`} />
+        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Мои пакеты</p>
         <div className="space-y-1.5">
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>Поднятий</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>Поднятий</span>
             <span className={`text-[18px] font-medium ${isDark ? "text-accent/95" : "text-[#6f56cf]"}`}>3</span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>VIP дней</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>VIP дней</span>
             <span className={`text-[18px] font-medium ${isDark ? "text-muted/85" : "text-[#94a3b8]"}`}>0</span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-fg" : "text-[#111]"}`}>TOP размещений</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>TOP размещений</span>
             <span className={`text-[18px] font-medium ${isDark ? "text-accent/95" : "text-[#6f56cf]"}`}>1</span>
           </div>
         </div>
@@ -582,21 +586,21 @@ export default function ProfilePage() {
       {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
       <div className={`rounded-[18px] border p-4 card-animate ${
         isDark
-          ? "bg-elevated/60 border-line/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]"
+          ? "bg-white/5 border-white/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]"
           : "bg-[#fbfcfe] border-[rgba(0,0,0,0.04)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]"
       }`}>
         <div id="packages-panel" />
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты и размещение</p>
+        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Пакеты и размещение</p>
 
         {/* Бесплатные размещения */}
         <div className={`mt-3.5 rounded-xl p-3.5 ${isDark ? "bg-white/5" : "bg-[#f8fafc]"}`}>
-          <p className={`text-[14px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
+          <p className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
             Бесплатные размещения
           </p>
-          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/75" : "text-gray-600/80"}`}>
+          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
             До 2 объявлений бесплатно во всех категориях, кроме Авто и Недвижимости.
           </p>
-          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/75" : "text-gray-600/80"}`}>
+          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
             В Авто и Недвижимости - по 1 бесплатному объявлению.
           </p>
           <p className={`mt-3 text-[12px] ${isDark ? "text-accent/90" : "text-[#7c3aed]/90"}`}>
@@ -608,7 +612,7 @@ export default function ProfilePage() {
         <div className={`mt-3.5 rounded-xl border-l-4 p-3 ${isDark ? "bg-white/5 border-l-accent/50" : "bg-gray-50 border-l-[#8B5FFF]/50"}`}>
           <p className={`text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>Размещение по одному</p>
           <div className="mt-1">
-            <span className={`inline-flex items-baseline text-[18px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>
+            <span className={`inline-flex items-baseline text-[18px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
               <span>200</span>
               <span className="text-[14px] ml-1 opacity-60">₽</span>
             </span>
@@ -626,11 +630,11 @@ export default function ProfilePage() {
             key={section.type}
             className={`mt-5 rounded-2xl border p-3 ${
               isDark
-                ? "border-line/30 bg-white/[0.02]"
+                ? "border-white/10 bg-white/[0.05]"
                 : "border-gray-200/60 bg-white"
             }`}
           >
-            <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-fg" : "text-[#111]"}`}>
+            <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
               {section.title}
             </h3>
             <div className="mt-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
@@ -647,10 +651,10 @@ export default function ProfilePage() {
                       className={`rounded-xl border p-2.5 transition-all duration-200 ${
                         selected
                           ? isDark
-                            ? "border-accent/60 bg-accent/10 shadow-lg"
+                            ? "border-white/20 bg-white/[0.10] shadow-none"
                             : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
                           : isDark
-                            ? "border-line/70 bg-white/[0.03] hover:bg-white/[0.06] hover:shadow-md"
+                            ? "border-white/10 bg-white/[0.05] hover:bg-white/[0.08] hover:shadow-none"
                             : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
                       }`}
                     >
@@ -667,13 +671,13 @@ export default function ProfilePage() {
                           </span>
                         ) : null}
                       </div>
-                      <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
+                      <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
                         {info.count} объявлений
                       </p>
                       <div className="mt-2">
                         <PriceDisplay value={info.price} size={isPopular ? "md" : "sm"} />
                       </div>
-                      <p className={`mt-1 text-[12px] ${isDark ? "text-muted/70" : "text-gray-500/85"}`}>
+                      <p className={`mt-1 text-[12px] ${isDark ? "text-white/70" : "text-gray-500/85"}`}>
                         Выгоднее, чем поштучно
                       </p>
                       <button
@@ -686,10 +690,10 @@ export default function ProfilePage() {
                         className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
                           selected
                             ? isDark
-                              ? "border-accent/70 bg-accent/20 text-accent"
+                              ? "border-white/20 bg-white/10 text-white hover:bg-white/[0.12]"
                               : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
                             : isDark
-                              ? "border-line/80 bg-white/[0.04] text-fg hover:bg-white/[0.1]"
+                              ? "border-white/20 bg-white/[0.04] text-white hover:bg-white/10"
                               : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
                         }`}
                       >
@@ -756,7 +760,7 @@ export default function ProfilePage() {
               placeholder="Введите количество"
               className={`h-[46px] w-full rounded-xl px-4 text-[14px] font-medium outline-none transition-all duration-200 ${
                 isDark
-                  ? "bg-white/5 border border-white/10 text-fg placeholder:text-muted/50 focus:border-accent/50 focus:bg-white/[0.07]"
+                  ? "bg-white/5 border border-white/10 text-white placeholder:text-muted/80 focus:border-accent/50 focus:bg-white/[0.07]"
                   : "bg-gray-50 border border-gray-200 text-[#111] placeholder:text-gray-400 focus:border-[#8B5FFF]/40 focus:bg-white"
               }`}
             />
