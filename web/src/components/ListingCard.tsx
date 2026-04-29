@@ -235,12 +235,11 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className="block rounded-xl border px-3 py-2.5 transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98]"
-            style={{
-              borderColor: "rgba(119, 130, 182, 0.32)",
-              background:
-                "linear-gradient(100deg, rgba(121,116,181,0.92) 0%, rgba(112,131,191,0.9) 52%, rgba(100,162,185,0.9) 100%)",
-            }}
+            className={`block rounded-xl px-3 py-2.5 text-white transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
+              theme === "dark"
+                ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-lg shadow-purple-500/25"
+                : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-md shadow-purple-500/20"
+            }`}
           >
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-semibold text-white">

@@ -382,10 +382,10 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void saveName()}
           disabled={nameSaving}
-          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98] ${
             isDark
-              ? "border-line bg-white/5 text-fg hover:bg-white/10"
-              : "border-[rgba(15,23,42,0.08)] bg-[#f4f6fa] text-[#0f172a] hover:bg-[#edf1f7]"
+              ? "border-[#2f8d6a] bg-[#236f53] text-[#ecfff5] hover:bg-[#2b7d5d]"
+              : "border-[#2f996f] bg-[#39a877] text-white hover:bg-[#32996b]"
           } disabled:opacity-50`}
         >
           {nameSaving ? "Сохранение..." : "Сохранить"}
@@ -417,10 +417,10 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void savePhone()}
           disabled={phoneSaving}
-          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98] ${
             isDark
-              ? "border-line bg-white/5 text-fg hover:bg-white/10"
-              : "border-[rgba(15,23,42,0.08)] bg-[#f4f6fa] text-[#0f172a] hover:bg-[#edf1f7]"
+              ? "border-[#2f8d6a] bg-[#236f53] text-[#ecfff5] hover:bg-[#2b7d5d]"
+              : "border-[#2f996f] bg-[#39a877] text-white hover:bg-[#32996b]"
           } disabled:opacity-50`}
         >
           {phoneSaving ? "Сохранение..." : "Сохранить"}
