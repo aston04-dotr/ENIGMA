@@ -22,6 +22,7 @@ function formatPriceNumber(n: number) {
 type Props = {
   item?: ListingRow | null;
   index?: number;
+  compact?: boolean;
 };
 
 function LocationTinyIcon() {
@@ -42,7 +43,7 @@ function EyeTinyIcon() {
   );
 }
 
-export function ListingCard({ item, index = 0 }: Props) {
+export function ListingCard({ item, index = 0, compact = false }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
@@ -107,15 +108,20 @@ export function ListingCard({ item, index = 0 }: Props) {
 
   const numericPrice = Number(item?.price ?? 0);
 
+  const imageHeightClass = compact
+    ? "h-[146px] sm:h-[156px] lg:h-[166px]"
+    : "h-[190px] sm:h-[210px] lg:h-[220px]";
+  const contentSpacingClass = compact ? "space-y-1.5 p-3 sm:p-3.5" : "space-y-2 p-4 sm:p-[14px]";
+
   return (
     <div
       className="feed-card-enter group mb-4 overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:mb-5 md:hover:-translate-y-[3px]"
       style={{
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: "rgba(255,255,255,0.04)",
         backgroundImage:
-          "radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 45%), linear-gradient(180deg, rgba(255,255,255,0.032) 0%, rgba(255,255,255,0.008) 100%)",
+          "radial-gradient(110% 72% at 0% 0%, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 44%), linear-gradient(180deg, rgba(255,255,255,0.024) 0%, rgba(255,255,255,0.008) 100%)",
         boxShadow:
-          "0 1px 0 rgba(255,255,255,0.03) inset, 0 10px 22px rgba(0,0,0,0.14), 0 30px 48px rgba(0,0,0,0.22)",
+          "0 1px 0 rgba(255,255,255,0.02) inset, 0 8px 18px rgba(0,0,0,0.1), 0 20px 34px rgba(0,0,0,0.14)",
         animationDelay: `${Math.min(index, 10) * 35}ms`,
       }}
     >
@@ -131,7 +137,7 @@ export function ListingCard({ item, index = 0 }: Props) {
           })
         }
       >
-        <div className="relative h-[190px] w-full overflow-hidden rounded-t-[16px] bg-elev-2 sm:h-[210px] lg:h-[220px]">
+        <div className={`relative w-full overflow-hidden rounded-t-[16px] bg-elev-2 ${imageHeightClass}`}>
           {uri ? (
             <Image
               src={uri}
@@ -163,7 +169,7 @@ export function ListingCard({ item, index = 0 }: Props) {
             </span>
           ) : null}
         </div>
-        <div className="space-y-2 p-4 sm:p-[14px]">
+        <div className={contentSpacingClass}>
           <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">{itemTitle}</p>
           <p
             className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${
@@ -209,13 +215,13 @@ export function ListingCard({ item, index = 0 }: Props) {
               }).finally(() => setFavoriteBusy(false));
             }}
           />
-          <div className="flex items-center gap-2.5 text-[13px] text-muted/80">
-            <span className="inline-flex items-center gap-1 text-muted/80">
+          <div className="flex items-center gap-2.5 text-[13px] text-muted/70">
+            <span className="inline-flex items-center gap-1 text-muted/70">
               <LocationTinyIcon />
               <span>{itemCity}</span>
             </span>
             <span className="text-muted/60">·</span>
-            <span className="inline-flex items-center gap-1 tabular-nums text-muted/80">
+            <span className="inline-flex items-center gap-1 tabular-nums text-muted/70">
               <EyeTinyIcon />
               <span>{views}</span>
             </span>
@@ -229,7 +235,12 @@ export function ListingCard({ item, index = 0 }: Props) {
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className="block rounded-xl border border-accent/35 bg-gradient-to-r from-[#4da3ff] via-[#3f8ef2] to-[#2f7fe5] px-3.5 py-2.5 transition-all duration-200 hover:brightness-105 active:scale-[0.98]"
+            className="block rounded-xl border px-3 py-2.5 transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98]"
+            style={{
+              borderColor: "rgba(119, 130, 182, 0.32)",
+              background:
+                "linear-gradient(100deg, rgba(121,116,181,0.92) 0%, rgba(112,131,191,0.9) 52%, rgba(100,162,185,0.9) 100%)",
+            }}
           >
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-semibold text-white">

@@ -347,22 +347,26 @@ export default function ProfilePage() {
 
   return (
     <>
-      <main className="safe-pt space-y-2 bg-main px-5 pb-8 pt-8">
-      <h1 className="text-[26px] font-bold tracking-tight text-fg">Профиль</h1>
-      {isDirty ? (
-        <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
-      ) : null}
-      <p className="text-sm text-muted">{session.user?.email}</p>
-      {profile?.name ? <p className="text-lg font-semibold text-fg">{profile.name}</p> : null}
-      {profile?.public_id ? <p className="text-xs text-muted">ID: {profile.public_id}</p> : null}
-      {profile?.trust_score != null ? (
-        <p className="text-sm text-muted">Доверие: {profile.trust_score}</p>
-      ) : null}
+      <main className="safe-pt mx-auto w-full max-w-[760px] space-y-6 bg-main px-4 pb-10 pt-10 sm:px-5">
+      <section className="space-y-1.5 pb-2">
+        <h1 className="text-[28px] font-semibold tracking-tight text-fg">Профиль</h1>
+        {isDirty ? (
+          <div className="text-xs text-orange-500">Есть несохранённые изменения</div>
+        ) : null}
+        {profile?.name ? <p className="text-[20px] font-semibold tracking-tight text-fg">{profile.name}</p> : null}
+        <p className="text-sm text-muted/85">{session.user?.email}</p>
+        <div className="flex items-center gap-3 text-xs text-muted/80">
+          {profile?.public_id ? <p>ID: {profile.public_id}</p> : null}
+          {profile?.trust_score != null ? (
+            <p>Доверие: {profile.trust_score}</p>
+          ) : null}
+        </div>
+      </section>
 
-      <div className={`mt-4 rounded-[16px] p-4 border ${
+      <div className={`rounded-[16px] border p-4 ${
         !profile?.name
-          ? (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
-          : (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
+          ? (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
+          : (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
       }`}>
         <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Имя</p>
         <input
@@ -378,7 +382,11 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void saveName()}
           disabled={nameSaving}
-          className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-[14px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
+          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+            isDark
+              ? "border-line bg-white/5 text-fg hover:bg-white/10"
+              : "border-[rgba(15,23,42,0.08)] bg-[#f4f6fa] text-[#0f172a] hover:bg-[#edf1f7]"
+          } disabled:opacity-50`}
         >
           {nameSaving ? "Сохранение..." : "Сохранить"}
         </button>
@@ -390,10 +398,10 @@ export default function ProfilePage() {
       </div>
 
       {/* Phone block */}
-      <div className={`mt-4 rounded-[16px] p-4 border ${
+      <div className={`rounded-[16px] border p-4 ${
         !profile?.phone 
           ? (isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200")
-          : (isDark ? "bg-elevated border-line/30" : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]")
+          : (isDark ? "bg-elevated/72 border-line/20" : "bg-[#f9fbfd] border-[rgba(15,23,42,0.05)]")
       }`}>
         <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Номер телефона</p>
         <input
@@ -409,7 +417,11 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void savePhone()}
           disabled={phoneSaving}
-          className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-[14px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
+          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+            isDark
+              ? "border-line bg-white/5 text-fg hover:bg-white/10"
+              : "border-[rgba(15,23,42,0.08)] bg-[#f4f6fa] text-[#0f172a] hover:bg-[#edf1f7]"
+          } disabled:opacity-50`}
         >
           {phoneSaving ? "Сохранение..." : "Сохранить"}
         </button>
@@ -421,12 +433,16 @@ export default function ProfilePage() {
       </div>
 
       {/* Мои объявления */}
-      <section className="mt-6">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-[20px] font-bold tracking-tight text-fg">Мои объявления</h2>
+      <section className="pt-0.5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-[20px] font-semibold tracking-tight text-fg">Мои объявления</h2>
           <Link
             href="/create"
-            className="inline-flex min-h-[40px] items-center rounded-card bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-accent-hover"
+            className={`inline-flex min-h-[42px] items-center rounded-[12px] border px-3 py-1.5 text-sm font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+              isDark
+                ? "border-line bg-elevated text-fg hover:bg-elev-2"
+                : "border-[rgba(15,23,42,0.12)] bg-white text-[#0f172a] hover:bg-[#f8fafc]"
+            }`}
           >
             Создать объявление
           </Link>
@@ -439,7 +455,7 @@ export default function ProfilePage() {
         ) : (myListings || []).length === 0 ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {(myListings || [])
               .filter(
                 (listing) =>
@@ -448,20 +464,20 @@ export default function ProfilePage() {
               .map((safeListing) => {
               const isOwner = safeListing.user_id === session?.user?.id;
               return (
-                <div key={safeListing.id} className="rounded-card border border-line/40 transition-all duration-200 hover:border-line hover:shadow-soft">
-                  <ListingCard item={safeListing} />
+                <div key={safeListing.id} className="rounded-[16px] bg-elevated/28 p-1.5 transition-all duration-200">
+                  <ListingCard item={safeListing} compact />
                   {isOwner ? (
-                    <div className="flex gap-2 p-3 pt-0">
+                    <div className="flex gap-2 p-2.5 pt-0">
                       <Link
                         href={`/listing/edit/${safeListing.id}`}
-                        className="flex min-h-[42px] flex-1 items-center justify-center rounded-card border border-line bg-elevated px-3 text-sm font-medium text-fg transition-colors duration-200 hover:bg-elev-2"
+                        className="flex min-h-[42px] flex-1 items-center justify-center rounded-[12px] border border-line/50 bg-elevated px-3 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
                       >
                         Редактировать
                       </Link>
                       <button
                         type="button"
                         onClick={() => void handleDelete(safeListing.id)}
-                        className="min-h-[42px] rounded-card border border-danger/40 bg-danger/5 px-4 text-sm font-semibold text-danger transition-colors duration-200 hover:bg-danger/10"
+                        className="min-h-[42px] rounded-[12px] border border-danger/35 bg-danger/5 px-3.5 text-sm font-medium text-danger transition-all duration-200 hover:bg-danger/10 active:scale-[0.98]"
                       >
                         Удалить
                       </button>
@@ -475,10 +491,10 @@ export default function ProfilePage() {
       </section>
 
       {/* МОЙ СТАТУС */}
-      <div className={`mt-6 rounded-[20px] p-[18px] border card-animate ${
+      <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
-          ? "bg-gradient-to-br from-[#1a1f2e] to-[#0f1419] border-line/30" 
-          : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
+          ? "bg-elevated/75 border-line/20" 
+          : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
         <p className={`text-[15px] font-bold mb-3 ${isDark ? "text-fg" : "text-[#111]"}`}>Мой статус</p>
         <div className="space-y-2">
@@ -519,10 +535,10 @@ export default function ProfilePage() {
       </div>
 
       {/* МОИ ПАКЕТЫ */}
-      <div className={`mt-4 rounded-[20px] p-[18px] border card-animate ${
+      <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
-          ? "bg-elevated border-line/30" 
-          : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
+          ? "bg-elevated/75 border-line/20" 
+          : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
         <p className={`text-[15px] font-bold mb-3 ${isDark ? "text-fg" : "text-[#111]"}`}>Мои пакеты</p>
         <div className="space-y-2">
@@ -548,10 +564,10 @@ export default function ProfilePage() {
       </div>
 
       {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
-      <div className={`mt-6 rounded-[20px] p-6 border card-animate ${
+      <div className={`rounded-[18px] border p-4 card-animate ${
         isDark
-          ? "bg-elevated border-line/30"
-          : "bg-white border-[rgba(0,0,0,0.06)] shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
+          ? "bg-elevated/75 border-line/20"
+          : "bg-white border-[rgba(0,0,0,0.05)]"
       }`}>
         <p className={`text-[17px] font-bold ${isDark ? "text-fg" : "text-[#111]"}`}>Пакеты и размещение</p>
 
