@@ -697,10 +697,10 @@ export default function ProfilePage() {
                         className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-110 active:scale-[0.97] ${
                           selected
                             ? isDark
-                              ? "border-white/15 bg-white/[0.10] text-white hover:bg-white/[0.14]"
+                              ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.16)] text-white shadow-[0_0_14px_rgba(139,95,255,0.22)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.20)] hover:shadow-[0_0_20px_rgba(139,95,255,0.30)]"
                               : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
                             : isDark
-                              ? "border-white/20 bg-transparent text-white/90 hover:bg-white/10"
+                              ? "border-[rgba(139,95,255,0.55)] bg-[rgba(139,95,255,0.10)] text-white/95 shadow-[0_0_12px_rgba(139,95,255,0.18)] hover:border-[rgba(139,95,255,0.72)] hover:bg-[rgba(139,95,255,0.16)] hover:shadow-[0_0_18px_rgba(139,95,255,0.28)]"
                               : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
                         }`}
                       >
