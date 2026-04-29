@@ -511,8 +511,15 @@ export default function ProfilePage() {
         </p>
         <Link
           href="#packages-panel"
-          className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-[13px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] px-3 text-[14px] font-semibold text-white transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98]"
+          className={`mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-[13px] border px-3 text-[14px] font-medium transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
+            isDark
+              ? "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.12)] text-white hover:bg-[rgba(139,95,255,0.18)]"
+              : "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.10)] text-[#2d2159] hover:bg-[rgba(139,95,255,0.16)]"
+          }`}
         >
+          <span className="mr-1" aria-hidden>
+            ⚡
+          </span>
           Продвинуть объявление
         </Link>
       </div>
@@ -651,10 +658,10 @@ export default function ProfilePage() {
                       className={`rounded-xl border p-2.5 transition-all duration-200 ${
                         selected
                           ? isDark
-                            ? "border-white/20 bg-white/[0.10] shadow-none"
+                            ? "border-[rgba(139,95,255,0.4)] bg-[rgba(139,95,255,0.12)] shadow-[0_0_20px_rgba(139,95,255,0.2)]"
                             : "border-[#8B5FFF]/45 bg-[#f3f0ff]"
                           : isDark
-                            ? "border-white/10 bg-white/[0.05] hover:bg-white/[0.08] hover:shadow-none"
+                            ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:shadow-none"
                             : "border-gray-200 bg-gray-50/70 hover:bg-white hover:shadow-sm"
                       }`}
                     >
@@ -674,8 +681,8 @@ export default function ProfilePage() {
                       <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
                         {info.count} объявлений
                       </p>
-                      <div className="mt-2">
-                        <PriceDisplay value={info.price} size={isPopular ? "md" : "sm"} />
+                      <div className={`mt-2 ${isDark ? "text-white/95" : ""}`}>
+                        <PriceDisplay value={info.price} size={isPopular ? "lg" : "md"} />
                       </div>
                       <p className={`mt-1 text-[12px] ${isDark ? "text-white/70" : "text-gray-500/85"}`}>
                         Выгоднее, чем поштучно
@@ -687,13 +694,13 @@ export default function ProfilePage() {
                           setIsCustom(false);
                           setCustomQuantity("");
                         }}
-                        className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
+                        className={`pressable mt-3 min-h-[40px] w-full rounded-lg border text-[13px] font-medium transition-all duration-200 hover:brightness-110 active:scale-[0.97] ${
                           selected
                             ? isDark
-                              ? "border-white/20 bg-white/10 text-white hover:bg-white/[0.12]"
+                              ? "border-white/15 bg-white/[0.10] text-white hover:bg-white/[0.14]"
                               : "border-[#8B5FFF]/45 bg-[#ede7ff] text-[#7c3aed]"
                             : isDark
-                              ? "border-white/20 bg-white/[0.04] text-white hover:bg-white/10"
+                              ? "border-white/20 bg-transparent text-white/90 hover:bg-white/10"
                               : "border-gray-200 bg-white text-[#111] hover:bg-gray-100"
                         }`}
                       >
@@ -807,7 +814,7 @@ export default function ProfilePage() {
           className={`mt-5 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
             (selectedPackage || (isCustom && customQuantity && parseInt(customQuantity) > 0))
               ? (isDark
-                  ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-lg shadow-purple-500/25"
+                  ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_10px_40px_rgba(139,95,255,0.45)]"
                   : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/20")
               : (isDark
                   ? "bg-white/10 text-muted hover:bg-white/15 border border-line/30"
