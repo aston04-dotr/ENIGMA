@@ -106,7 +106,7 @@ export default function LoginPage() {
       ) : null}
       <h1 className="text-[28px] font-bold tracking-tight text-fg">Вход</h1>
       <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
-        Отправим 6-значный код на почту. Введите его на следующем шаге.
+        Отправим 8-значный код на почту. Введите его на следующем шаге.
       </p>
       <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
         <input

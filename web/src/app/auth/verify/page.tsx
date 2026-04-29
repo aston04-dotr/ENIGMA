@@ -38,13 +38,13 @@ export default function VerifyPage() {
   }, [ready, secondsLeft]);
 
   const onCodeChange = (value: string) => {
-    const digitsOnly = value.replace(/\D/g, "").slice(0, 6);
+    const digitsOnly = value.replace(/\D/g, "").slice(0, 8);
     setCode(digitsOnly);
     if (error) setError("");
   };
 
   const onSubmit = async () => {
-    if (code.length < 6 || !email) return;
+    if (code.length !== 8 || !email) return;
     setLoading(true);
     setError("");
 
@@ -97,7 +97,7 @@ export default function VerifyPage() {
 
       <h1 className="text-[28px] font-bold tracking-tight text-fg">Введите код</h1>
       <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
-        Отправили 6-значный код на {email}.
+        Отправили 8-значный код на {email}.
       </p>
 
       <label className="mt-10 block text-[11px] font-semibold uppercase tracking-wider text-muted">Код</label>
@@ -109,8 +109,9 @@ export default function VerifyPage() {
         autoFocus
         value={code}
         onChange={(e) => onCodeChange(e.target.value)}
+        maxLength={8}
         className="mt-2 w-full min-h-[52px] rounded-card border border-line bg-elevated px-4 text-base tracking-[0.2em] text-fg placeholder:text-muted/70 transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/35"
-        placeholder="000000"
+        placeholder="00000000"
       />
 
       {error ? <p className="mt-3 text-sm font-medium text-danger">{error}</p> : null}
@@ -124,7 +125,7 @@ export default function VerifyPage() {
       <button
         type="button"
         onClick={() => void onSubmit()}
-        disabled={loading || resendLoading || code.length < 6}
+        disabled={loading || resendLoading || code.length !== 8}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
         {loading ? "Входим…" : "Войти"}
