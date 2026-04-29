@@ -347,7 +347,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <main className="safe-pt mx-auto w-full max-w-[760px] space-y-6 bg-main px-4 pb-10 pt-10 sm:px-5">
+      <main className="safe-pt mx-auto w-full max-w-[1240px] space-y-6 bg-main px-4 pb-10 pt-10 sm:px-6 lg:px-8">
       <section className="space-y-1.5 pb-2">
         <h1 className="text-[28px] font-semibold tracking-tight text-fg">Профиль</h1>
         {isDirty ? (
@@ -363,6 +363,8 @@ export default function ProfilePage() {
         </div>
       </section>
 
+      <div className="lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] lg:gap-6">
+      <div className="space-y-6">
       <div className={`rounded-[16px] border p-4 ${
         !profile?.name
           ? (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
@@ -489,7 +491,9 @@ export default function ProfilePage() {
           </div>
         )}
       </section>
+      </div>
 
+      <div className="mt-6 space-y-6 lg:mt-0">
       {/* МОЙ СТАТУС */}
       <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
@@ -812,7 +816,7 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      <div className="pt-6">
+      <div className="pt-1">
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">Настройки</p>
         <ThemeToggle />
         <Link
@@ -843,6 +847,8 @@ export default function ProfilePage() {
       >
         Выйти
       </button>
+      </div>
+      </div>
 
       {confirmOpen ? (
         <div
