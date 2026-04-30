@@ -154,16 +154,12 @@ export default function ListingDetailPage() {
 
   const openChat = useCallback(
     async (ownerId: string) => {
-      console.log("SELLER ID:", ownerId);
-
       if (!ownerId) {
         setToast({ message: "Объявление без владельца", type: "error" });
         return;
       }
 
       const uid = session?.user?.id;
-      console.log("USER:", uid);
-
       if (!uid) {
         router.push("/login");
         return;
@@ -177,9 +173,6 @@ export default function ListingDetailPage() {
       setIsChatLoading(true);
       const chatRes = await getOrCreateChat(ownerId);
       setIsChatLoading(false);
-
-      console.log("CHAT RESULT:", chatRes);
-      console.log("ERROR:", chatRes.ok ? null : chatRes.error);
 
       if (!chatRes.ok) {
         setToast({ message: "Не удалось открыть чат", type: "error" });

@@ -321,6 +321,19 @@ export default function CreatePage() {
     };
   }, []);
 
+  const resetCreateFormState = useCallback(() => {
+    const defaultCity = safeCitiesRef.current[0] ?? ALLOWED_LISTING_CITIES[0];
+    setTitle("");
+    setDescription("");
+    setPrice("");
+    setCity(defaultCity);
+    setCategory("other");
+    setFiles([]);
+    setErr("");
+    setSaveStatus("idle");
+    lastSavedRef.current = buildDraftPayloadKey("", "", "", defaultCity, "other");
+  }, []);
+
   const publish = useCallback(async () => {
     if (!uid) {
       safePush(router, "/login");
@@ -440,12 +453,9 @@ export default function CreatePage() {
           /* ignore */
         }
       }
-      // Сбрасываем dirty-поля до редиректа, чтобы guard не сработал.
-      setTitle("");
-      setDescription("");
-      setPrice("");
+      resetCreateFormState();
       await refreshProfile();
-      safePush(router, `/listing/${lid}`);
+      router.push(`/listing/${lid}`);
     } catch (e: unknown) {
       const message = parseUnknownError(e);
       console.error("FETCH ERROR", message);
@@ -454,7 +464,19 @@ export default function CreatePage() {
       setBusy(false);
       setPublishStage("idle");
     }
-  }, [uid, profile, title, description, price, selectedCity, category, files, safePush, router, refreshProfile]);
+  }, [
+    uid,
+    profile,
+    title,
+    description,
+    price,
+    selectedCity,
+    category,
+    files,
+    router,
+    refreshProfile,
+    resetCreateFormState,
+  ]);
 
   if (!session) {
     return (
