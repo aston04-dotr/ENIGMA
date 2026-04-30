@@ -530,6 +530,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     const base = {
       user_id: effectiveUserId,
+      owner_id: effectiveUserId,
       title: payload.title.trim(),
       description: payload.description.trim(),
       price: priceNum,

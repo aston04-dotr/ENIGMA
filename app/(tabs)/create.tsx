@@ -78,6 +78,7 @@ export default function CreateListingScreen() {
 
     const res = await insertListingRow({
       user_id: uid,
+      owner_id: uid,
       title: title.trim(),
       description: description.trim(),
       price: priceNum,

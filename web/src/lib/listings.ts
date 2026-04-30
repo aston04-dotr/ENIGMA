@@ -820,24 +820,22 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
   console.log("CREATE LISTING START");
   
   try {
-    // 1. GUARANTEE USER AUTHENTICATION
-    const {
-      data: { session },
-      error: authErr,
-    } = await supabase.auth.getSession();
-    
-    if (authErr) {
-      console.error("AUTH ERROR:", authErr.message);
-      return { error: "Ошибка авторизации" };
+    // 1. GUARANTEE USER AUTHENTICATION (anti-race после свежего входа)
+    let { data: userData, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !userData?.user) {
+      await supabase.auth.refreshSession();
+      const retry = await supabase.auth.getUser();
+      userData = retry.data;
+      authErr = retry.error;
     }
-    
-    const user = session?.user;
-    if (!user) {
-      console.error("NO USER");
+
+    if (authErr || !userData?.user) {
+      console.error("AUTH ERROR:", authErr?.message);
       return { error: "Вы не авторизованы" };
     }
-    
-    console.log("CURRENT USER:", user.id);
+
+    const effectiveUserId = userData.user.id;
+    console.log("CURRENT USER:", effectiveUserId);
     
     // 2. FORM CLEAN PAYLOAD
     const priceNum = Number(payload.price);
@@ -848,8 +846,8 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     const insertPayload = {
-      user_id: payload.user_id,
-      owner_id: payload.owner_id,
+      user_id: payload.user_id || effectiveUserId,
+      owner_id: payload.owner_id || effectiveUserId,
       title: payload.title?.trim() || "",
       description: payload.description?.trim() || "",
       price: priceNum,

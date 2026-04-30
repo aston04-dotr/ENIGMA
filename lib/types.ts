@@ -23,6 +23,7 @@ export type UserRow = {
 /** INSERT в `public.listings`: без `id` (default gen_random_uuid). В БД колонка `city`, не `location`; поля `status` нет. */
 export type ListingInsertPayload = {
   user_id: string;
+  owner_id: string;
   title: string;
   description: string;
   price: number;
