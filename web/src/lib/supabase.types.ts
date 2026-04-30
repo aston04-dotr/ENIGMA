@@ -196,6 +196,7 @@ export type Database = {
           is_partner_ad: boolean | null
           is_top: boolean | null
           is_vip: boolean | null
+          owner_id: string | null
           price: number | null
           title: string | null
           top_until: string | null
@@ -217,6 +218,7 @@ export type Database = {
           is_partner_ad?: boolean | null
           is_top?: boolean | null
           is_vip?: boolean | null
+          owner_id?: string | null
           price?: number | null
           title?: string | null
           top_until?: string | null
@@ -238,6 +240,7 @@ export type Database = {
           is_partner_ad?: boolean | null
           is_top?: boolean | null
           is_vip?: boolean | null
+          owner_id?: string | null
           price?: number | null
           title?: string | null
           top_until?: string | null

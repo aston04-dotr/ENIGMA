@@ -848,7 +848,8 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     const insertPayload = {
-      user_id: user.id,
+      user_id: payload.user_id,
+      owner_id: payload.owner_id,
       title: payload.title?.trim() || "",
       description: payload.description?.trim() || "",
       price: priceNum,

@@ -399,6 +399,8 @@ export default function CreatePage() {
         price: priceNum,
         category,
         city: selectedCity.trim(),
+        user_id: uid,
+        owner_id: uid,
         contact_phone: profile?.phone || null,
       });
       console.log("CREATE LISTING RESULT", res);

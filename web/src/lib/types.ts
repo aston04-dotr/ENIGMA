@@ -26,6 +26,8 @@ export type ListingInsertPayload = {
   price: number;
   category: string;
   city: string;
+  user_id: string;
+  owner_id: string;
   /** Контактный телефон продавца (копируется из profiles.phone). */
   contact_phone?: string | null;
 };
