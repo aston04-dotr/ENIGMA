@@ -637,8 +637,8 @@ export default function ProfilePage() {
 
         {/* Пакеты: 3 понятных блока без смешивания категорий */}
         <div
-          className={`mt-5 rounded-2xl border p-4 ${
-            isDark ? "border-white/12 bg-white/[0.03]" : "border-gray-300/80 bg-white"
+          className={`mt-5 rounded-2xl p-4 ${
+            isDark ? "bg-white/[0.03]" : "bg-white"
           }`}
         >
           {[

@@ -313,12 +313,29 @@ function MessageStatusTicks({
   if (!mine) return null;
   const isDelivered = Boolean(delivered_at);
   const isRead = Boolean(read_at);
-  const ticks = isDelivered ? "✓✓" : "✓";
+  const dotsCount = isRead ? 3 : isDelivered ? 2 : 1;
+  const statusLabel = isRead
+    ? "прочитано"
+    : isDelivered
+      ? "доставлено"
+      : "отправлено";
   const colorClass = isRead
     ? "text-sky-500 dark:text-sky-400"
     : "text-fg/40 dark:text-fg/35";
   return (
-    <span className={`text-[11px] leading-none ${colorClass}`}>{ticks}</span>
+    <span
+      className={`inline-flex items-center gap-1 leading-none ${colorClass}`}
+      aria-label={statusLabel}
+      title={statusLabel}
+    >
+      {Array.from({ length: dotsCount }).map((_, idx) => (
+        <span
+          key={idx}
+          className="inline-block h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+          aria-hidden
+        />
+      ))}
+    </span>
   );
 }
 
