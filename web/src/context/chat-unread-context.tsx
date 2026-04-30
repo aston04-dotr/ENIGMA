@@ -324,7 +324,50 @@ export function ChatUnreadProvider({
           )
           .filter((row) => isUuid(row.chat_id));
 
-        setRows(sortByLastMessageDesc(nextRows));
+        const missingNameUserIds = Array.from(
+          new Set(
+            nextRows
+              .filter(
+                (row) =>
+                  !row.is_group &&
+                  !String(row.other_name ?? "").trim() &&
+                  isUuid(String(row.other_user_id ?? "")),
+              )
+              .map((row) => String(row.other_user_id)),
+          ),
+        );
+
+        let enrichedRows = nextRows;
+        if (missingNameUserIds.length > 0) {
+          const profileRes = await (rest.from("profiles") as any)
+            .select("id,display_name,name")
+            .in("id", missingNameUserIds);
+          if (!profileRes.error && Array.isArray(profileRes.data)) {
+            const namesById = new Map<string, string>();
+            for (const profile of profileRes.data as Array<Record<string, unknown>>) {
+              const id = String(profile.id ?? "").trim();
+              if (!id) continue;
+              const displayName = String(profile.display_name ?? "").trim();
+              const name = String(profile.name ?? "").trim();
+              const resolved = displayName || name;
+              if (resolved) {
+                namesById.set(id, resolved);
+              }
+            }
+            enrichedRows = nextRows.map((row) => {
+              if (row.is_group || String(row.other_name ?? "").trim()) {
+                return row;
+              }
+              const otherId = String(row.other_user_id ?? "").trim();
+              if (!otherId) return row;
+              const resolved = namesById.get(otherId);
+              if (!resolved) return row;
+              return { ...row, other_name: resolved };
+            });
+          }
+        }
+
+        setRows(sortByLastMessageDesc(enrichedRows));
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");

@@ -180,6 +180,24 @@ function formatMessageTime(iso: string): string {
   }
 }
 
+function extractPresenceLastSeenAt(stateSlice: unknown[] | undefined): string | null {
+  if (!Array.isArray(stateSlice) || stateSlice.length === 0) return null;
+  let latestTs = 0;
+  let latestIso: string | null = null;
+  for (const meta of stateSlice) {
+    const raw = (meta as { online_at?: unknown } | null)?.online_at;
+    const iso = typeof raw === "string" ? raw : "";
+    if (!iso) continue;
+    const ts = Date.parse(iso);
+    if (Number.isNaN(ts)) continue;
+    if (ts >= latestTs) {
+      latestTs = ts;
+      latestIso = iso;
+    }
+  }
+  return latestIso;
+}
+
 /** Throttle исходящих typing:true (мс) — мгновенно только первый символ. */
 const TYPING_SEND_THROTTLE_MS = 250;
 /** После паузы ввода — typing:false (broadcast) и сброс локального флага. */
@@ -188,8 +206,7 @@ const TYPING_LOCAL_IDLE_MS = 1200;
 const TYPING_PEER_TTL_MS = 1500;
 const PEER_TYPING_CHECK_INTERVAL_MS = 300;
 const MIN_TYPING_VISIBLE_MS = 600;
-/** Не считать peer офлайн сразу (реконнект / краткий сбой presence). */
-const PRESENCE_OFFLINE_DELAY_MS = 3000;
+const RECONNECT_MAX_ATTEMPTS = 6;
 /** Ниже этой дистанции — «у низа» (автоскролл при новом сообщении). */
 const SCROLL_AT_BOTTOM_PX = 80;
 const NEAR_BOTTOM_PX = 72;
@@ -313,25 +330,28 @@ function MessageStatusTicks({
   if (!mine) return null;
   const isDelivered = Boolean(delivered_at);
   const isRead = Boolean(read_at);
-  const dotsCount = isRead ? 3 : isDelivered ? 2 : 1;
+  const activeDots = isRead ? 3 : isDelivered ? 2 : 1;
   const statusLabel = isRead
     ? "прочитано"
     : isDelivered
       ? "доставлено"
       : "отправлено";
-  const colorClass = isRead
-    ? "text-sky-500 dark:text-sky-400"
-    : "text-fg/40 dark:text-fg/35";
+  const activeDotClass = isRead
+    ? "bg-sky-500 dark:bg-sky-400"
+    : "bg-fg/40 dark:bg-fg/35";
+  const inactiveDotClass = "bg-fg/22 dark:bg-fg/20";
   return (
     <span
-      className={`inline-flex items-center gap-1 leading-none ${colorClass}`}
+      className="inline-flex items-center gap-1 leading-none"
       aria-label={statusLabel}
       title={statusLabel}
     >
-      {Array.from({ length: dotsCount }).map((_, idx) => (
+      {Array.from({ length: 3 }).map((_, idx) => (
         <span
           key={idx}
-          className="inline-block h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+          className={`inline-block h-1.5 w-1.5 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${
+            idx < activeDots ? activeDotClass : inactiveDotClass
+          }`}
           aria-hidden
         />
       ))}
@@ -571,6 +591,7 @@ export default function ChatRoomPage() {
   const markReadDebounceRef = useRef<number | null>(null);
   const peerUserIdRef = useRef<string | null>(null);
   const peerWasOnlineRef = useRef(false);
+  const peerLastPresenceAtRef = useRef<string | null>(null);
   const typingLocalStopTimerRef = useRef<number | null>(null);
   const lastTypingPulseRef = useRef(0);
   const peerTypingAtRef = useRef(0);
@@ -730,6 +751,7 @@ export default function ChatRoomPage() {
   useEffect(() => {
     setPeerOnline(false);
     setPeerLastSeenAt(null);
+    peerLastPresenceAtRef.current = null;
     setShowScrollToStart(false);
     setShowScrollToNew(false);
     setMessageMenu(null);
@@ -884,7 +906,7 @@ export default function ChatRoomPage() {
     if (roomStatus === "connecting")
       return { kind: "muted" as const, text: "Подключение…" };
     if (roomStatus === "error")
-      return { kind: "muted" as const, text: "Ошибка соединения" };
+      return { kind: "muted" as const, text: "Offline" };
     if (currentChat?.is_group) return { kind: "empty" as const, text: "" };
     const peerId = currentChat?.other_user_id;
     if (peerId && !peerOnline && peerLastSeenAt) {
@@ -892,6 +914,9 @@ export default function ChatRoomPage() {
       return t
         ? { kind: "muted" as const, text: `был(а) в ${t}` }
         : { kind: "empty" as const, text: "" };
+    }
+    if (peerId && !peerOnline) {
+      return { kind: "muted" as const, text: "Offline" };
     }
     return { kind: "empty" as const, text: "" };
   }, [
@@ -1303,6 +1328,10 @@ export default function ChatRoomPage() {
         const state = ch.presenceState() as Record<string, unknown[] | undefined>;
         const slice = state[peerId];
         const online = Array.isArray(slice) && slice.length > 0;
+        const presenceSeenAt = extractPresenceLastSeenAt(slice);
+        if (presenceSeenAt) {
+          peerLastPresenceAtRef.current = presenceSeenAt;
+        }
 
         if (online) {
           clearPeerOfflineTimer();
@@ -1316,14 +1345,11 @@ export default function ChatRoomPage() {
           setPeerOnline(false);
           return;
         }
-
-        peerOfflineTimerRef.current = window.setTimeout(() => {
-          peerOfflineTimerRef.current = null;
-          if (!mountedRef.current) return;
-          setPeerLastSeenAt(new Date().toISOString());
-          setPeerOnline(false);
-          peerWasOnlineRef.current = false;
-        }, PRESENCE_OFFLINE_DELAY_MS);
+        setPeerLastSeenAt(
+          peerLastPresenceAtRef.current ?? new Date().toISOString(),
+        );
+        setPeerOnline(false);
+        peerWasOnlineRef.current = false;
       };
 
       /** Один канал на чат: postgres (messages) + presence + broadcast("typing") — без записи в БД для «печатает…». */
@@ -1478,9 +1504,30 @@ export default function ChatRoomPage() {
           reconnectingTypingResetPendingRef.current = true;
           setPeerTypingStable(false);
           peerTypingAtRef.current = 0;
-          setRoomStatus("reconnecting");
-          const nextAttempt = Math.min(reconnectAttemptRef.current + 1, 6);
+          if (typeof navigator !== "undefined" && !navigator.onLine) {
+            setRoomStatus("error");
+            clearReconnect();
+            if (typeof window !== "undefined") {
+              const handleOnline = () => {
+                window.removeEventListener("online", handleOnline);
+                reconnectAttemptRef.current = 0;
+                if (!cancelled) connect();
+              };
+              window.addEventListener("online", handleOnline, { once: true });
+            }
+            return;
+          }
+          const nextAttempt = Math.min(
+            reconnectAttemptRef.current + 1,
+            RECONNECT_MAX_ATTEMPTS,
+          );
           reconnectAttemptRef.current = nextAttempt;
+          if (nextAttempt >= RECONNECT_MAX_ATTEMPTS) {
+            setRoomStatus("error");
+            clearReconnect();
+            return;
+          }
+          setRoomStatus("reconnecting");
 
           clearReconnect();
           if (typeof window !== "undefined") {

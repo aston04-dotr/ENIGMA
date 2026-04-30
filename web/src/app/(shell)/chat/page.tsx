@@ -57,7 +57,7 @@ function buildDisplayName(row: {
   }
   const n = row.other_name?.trim() || row.other_public_id?.trim();
   if (n) return n;
-  return `Чат #${row.chat_id.slice(0, 6)}`;
+  return `Chat №${row.chat_id.slice(0, 6)}`;
 }
 
 function formatUnreadCount(value: number): string {
