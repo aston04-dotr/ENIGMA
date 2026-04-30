@@ -180,6 +180,12 @@ function formatMessageTime(iso: string): string {
   }
 }
 
+function hasValidTimestamp(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const ts = Date.parse(value);
+  return Number.isFinite(ts);
+}
+
 function extractPresenceLastSeenAt(stateSlice: unknown[] | undefined): string | null {
   if (!Array.isArray(stateSlice) || stateSlice.length === 0) return null;
   let latestTs = 0;
@@ -320,22 +326,31 @@ function SupportAvatarIcon({ className }: { className?: string }) {
 
 function MessageStatusTicks({
   mine,
+  optimistic,
+  pendingUpload,
+  uploadFailed,
   delivered_at,
   read_at,
 }: {
   mine: boolean;
+  optimistic?: boolean;
+  pendingUpload?: boolean;
+  uploadFailed?: boolean;
   delivered_at?: string | null;
   read_at?: string | null;
 }) {
   if (!mine) return null;
-  const isDelivered = Boolean(delivered_at);
-  const isRead = Boolean(read_at);
-  const activeDots = isRead ? 3 : isDelivered ? 2 : 1;
+  const isDelivered = hasValidTimestamp(delivered_at);
+  const isRead = hasValidTimestamp(read_at) && isDelivered;
+  const isServerAccepted = !optimistic && !pendingUpload && !uploadFailed;
+  const activeDots = isRead ? 3 : isDelivered ? 2 : isServerAccepted ? 1 : 0;
   const statusLabel = isRead
     ? "прочитано"
     : isDelivered
       ? "доставлено"
-      : "отправлено";
+      : isServerAccepted
+        ? "отправлено"
+        : "отправка";
   const activeDotClass = isRead
     ? "bg-sky-500 dark:bg-sky-400"
     : "bg-fg/40 dark:bg-fg/35";
@@ -517,6 +532,9 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
             {mine ? (
               <MessageStatusTicks
                 mine
+                optimistic={isOptimistic}
+                pendingUpload={m.pendingUpload}
+                uploadFailed={m.imageUploadFailed}
                 delivered_at={m.delivered_at}
                 read_at={m.read_at}
               />
