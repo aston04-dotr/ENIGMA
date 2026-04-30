@@ -380,7 +380,7 @@ function FeedPage({ session }: { session: Session }) {
   return (
     <main className="safe-pt min-h-screen bg-main">
       <header className="border-b border-line bg-main">
-        <div className="mx-auto w-full max-w-[720px] px-4 py-5 sm:px-5">
+        <div className="mx-auto w-full max-w-none px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4">
             <div>
               <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
@@ -458,19 +458,19 @@ function FeedPage({ session }: { session: Session }) {
 
       {feedNotice ? (
         <div className="border-b border-line bg-elev-2/80">
-          <div className="mx-auto w-full max-w-[720px] px-4 py-3 sm:px-5">
+          <div className="mx-auto w-full max-w-none px-4 py-3 sm:px-6 lg:px-8">
             <p className="text-xs font-medium text-muted">{feedNotice}</p>
           </div>
         </div>
       ) : null}
       {feedError ? (
-        <div className="mx-auto w-full max-w-[720px] px-4 pt-4 sm:px-5">
+        <div className="mx-auto w-full max-w-none px-4 pt-4 sm:px-6 lg:px-8">
           <ErrorUi text={feedError} />
         </div>
       ) : null}
 
       <div
-        className={`relative mx-auto w-full max-w-[720px] scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-5 ${
+        className={`relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-6 lg:px-8 ${
           isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
         }`}
       >

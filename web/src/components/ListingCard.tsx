@@ -110,7 +110,7 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
 
   const imageHeightClass = compact
     ? "h-[146px] sm:h-[156px] lg:h-[166px]"
-    : "h-[190px] sm:h-[210px] lg:h-[220px]";
+    : "h-[210px] sm:h-[230px] lg:h-[240px]";
   const contentSpacingClass = compact ? "space-y-1.5 p-3 sm:p-3.5" : "space-y-2 p-4 sm:p-[14px]";
 
   return (

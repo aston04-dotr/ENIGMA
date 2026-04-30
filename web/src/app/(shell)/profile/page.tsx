@@ -347,7 +347,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <main className="safe-pt mx-auto w-full max-w-[1200px] space-y-6 bg-main px-6 pb-10 pt-10 lg:px-8">
+      <main className="safe-pt mx-auto w-full max-w-none space-y-6 bg-main px-4 pb-10 pt-10 sm:px-6 lg:px-8">
       <section className="space-y-1.5 pb-2">
         <h1 className="text-[28px] font-semibold tracking-tight text-fg">Профиль</h1>
         {isDirty ? (
@@ -660,33 +660,30 @@ export default function ProfilePage() {
                       !isCustom &&
                       selectedPackage?.type === section.type &&
                       selectedPackage?.size === size;
-                    const hasAnySelected = !isCustom && Boolean(selectedPackage);
                     return (
                       <article
                         key={`${section.type}-${size}`}
-                        className={`relative overflow-hidden rounded-xl border p-2.5 backdrop-blur-[6px] transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
+                        className={`relative overflow-hidden rounded-xl border p-2.5 backdrop-blur-[1px] transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
                           selected
                             ? isDark
-                              ? "scale-[1.015] border-transparent opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.4),0_12px_40px_rgba(139,95,255,0.25)]"
+                              ? "scale-[1.015] border-[rgba(139,95,255,0.6)] opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.4),0_12px_40px_rgba(139,95,255,0.25)]"
                               : "scale-[1.015] border-transparent opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.24),0_10px_24px_rgba(139,95,255,0.16)]"
                             : isDark
-                              ? `border-transparent text-white/90 ${hasAnySelected ? "opacity-60" : "opacity-100"}`
-                              : `border-transparent text-[#111] hover:shadow-sm ${hasAnySelected ? "opacity-60" : "opacity-100"}`
+                              ? "border-[rgba(255,255,255,0.12)] text-white/90 opacity-100"
+                              : "border-transparent text-[#111] opacity-100 hover:shadow-sm"
                         }`}
                         style={
                           isDark
                             ? {
                               background: selected
-                                ? "linear-gradient(#0b0b0f, #0b0b0f) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box"
-                                : "linear-gradient(180deg, rgba(255,255,255,0.07), transparent 40%) padding-box, linear-gradient(180deg, rgba(20,20,30,0.9), rgba(10,10,15,0.95)) padding-box, linear-gradient(135deg, rgba(139,95,255,0.82), rgba(110,231,255,0.82)) border-box",
+                                ? "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.45) 100%), #0F1117"
+                                : "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.4) 100%), #0F1117",
                                 boxShadow: selected
-                                ? "0 0 0 1px rgba(139,95,255,0.4), 0 12px 40px rgba(139,95,255,0.25)"
-                                  : "inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -8px 20px rgba(0,0,0,0.4), 0 12px 32px rgba(0,0,0,0.38)",
+                                ? "0 0 0 1px rgba(139,95,255,0.4), 0 12px 40px rgba(139,95,255,0.25), 0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)"
+                                  : "0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)",
                               }
                             : {
-                                background: selected
-                                  ? "linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box"
-                                  : "linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(135deg, #8B5FFF, #6EE7FF) border-box",
+                                background: "#ffffff",
                                 boxShadow: selected
                                   ? "inset 0 1px 0 rgba(255,255,255,0.7), 0 8px 20px rgba(139,95,255,0.16)"
                                   : "inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 16px rgba(139,95,255,0.12)",
