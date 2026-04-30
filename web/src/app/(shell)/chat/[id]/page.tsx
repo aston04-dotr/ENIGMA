@@ -605,8 +605,6 @@ export default function ChatRoomPage() {
   const lastReadMarkedMessageIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const messagesRef = useRef<MessageRow[]>([]);
-  const lastVisibleMessageIdRef = useRef<string | null>(null);
-  const markReadDebounceRef = useRef<number | null>(null);
   const peerUserIdRef = useRef<string | null>(null);
   const peerWasOnlineRef = useRef(false);
   const peerLastPresenceAtRef = useRef<string | null>(null);
@@ -865,30 +863,6 @@ export default function ChatRoomPage() {
         !m.delivered_at &&
         isUuid(m.id)
           ? { ...m, delivered_at: nowIso }
-          : m,
-      ),
-    );
-  }, [chatId, me]);
-
-  const markMessagesAsRead = useCallback(async () => {
-    if (!chatId || !me || !isUuid(chatId)) return;
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from("messages")
-      .update({ read_at: nowIso })
-      .eq("chat_id", chatId)
-      .neq("sender_id", me)
-      .is("read_at", null);
-
-    if (error) {
-      console.error("messages read_at (batch)", error);
-      return;
-    }
-
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.chat_id === chatId && m.sender_id !== me && !m.read_at
-          ? { ...m, read_at: nowIso }
           : m,
       ),
     );
@@ -1208,17 +1182,9 @@ export default function ChatRoomPage() {
   const markVisibleRoomRead = useCallback(
     async (explicitMessageId?: string | null) => {
       if (!chatId || !me) return;
-      if (
-        typeof document !== "undefined" &&
-        document.visibilityState !== "visible"
-      ) {
-        return;
-      }
 
       const targetMessageId =
-        explicitMessageId ??
-        lastVisibleMessageIdRef.current ??
-        latestMessageId;
+        explicitMessageId ?? latestMessageId;
       if (
         !targetMessageId ||
         !isUuid(targetMessageId) ||
@@ -1237,25 +1203,10 @@ export default function ChatRoomPage() {
     [chatId, latestMessageId, markChatRead, me],
   );
 
-  const scheduleMarkReadFromVisibility = useCallback(
-    (bestId: string | null) => {
-      if (!bestId || !isUuid(bestId)) return;
-      if (markReadDebounceRef.current) {
-        window.clearTimeout(markReadDebounceRef.current);
-      }
-      markReadDebounceRef.current = window.setTimeout(() => {
-        markReadDebounceRef.current = null;
-        void markVisibleRoomRead(bestId);
-      }, 380);
-    },
-    [markVisibleRoomRead],
-  );
-
   const backfillAfterReconnect = useCallback(async () => {
     await loadMessages();
     await refreshChats({ silent: true });
-    await markVisibleRoomRead(lastLoadedMessageIdRef.current);
-  }, [loadMessages, markVisibleRoomRead, refreshChats]);
+  }, [loadMessages, refreshChats]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1271,12 +1222,8 @@ export default function ChatRoomPage() {
   }, [me, chatId, markIncomingDeliveredBatch]);
 
   useEffect(() => {
-    if (!chatId || !me) return;
-    void markMessagesAsRead();
-  }, [chatId, me, markMessagesAsRead]);
-
-  useEffect(() => {
     if (!chatId || !isUuid(chatId)) return;
+    lastReadMarkedMessageIdRef.current = null;
     setActiveChatId(chatId);
     setMessages((prev) =>
       prev.map((m) =>
@@ -1292,6 +1239,13 @@ export default function ChatRoomPage() {
       setActiveChatId(null);
     };
   }, [chatId, me, setActiveChatId]);
+
+  useEffect(() => {
+    if (!chatId || !me || !isUuid(chatId)) return;
+    if (!messagesLoaded) return;
+    const targetId = lastLoadedMessageIdRef.current ?? latestMessageId;
+    void markVisibleRoomRead(targetId);
+  }, [chatId, latestMessageId, markVisibleRoomRead, me, messagesLoaded]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -1638,86 +1592,6 @@ export default function ChatRoomPage() {
       return changed ? next : prev;
     });
   }, [chatId, latestMessageId, me]);
-
-  useEffect(() => {
-    const root = listRef.current;
-    if (!root || loadErr || !messages.length) return;
-
-    const visible = new Set<string>();
-
-    const pickBest = () => {
-      let best: string | null = null;
-      const list = messagesRef.current;
-      for (const id of visible) {
-        if (!isUuid(id)) continue;
-        const msg = list.find((m) => m.id === id);
-        if (!msg) continue;
-        if (!best) {
-          best = id;
-          continue;
-        }
-        const other = list.find((m) => m.id === best);
-        if (!other) {
-          best = id;
-          continue;
-        }
-        const t = new Date(msg.created_at).getTime();
-        const to = new Date(other.created_at).getTime();
-        if (t > to || (t === to && msg.id.localeCompare(best) > 0)) {
-          best = id;
-        }
-      }
-      lastVisibleMessageIdRef.current = best;
-      scheduleMarkReadFromVisibility(best);
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const id = (e.target as HTMLElement).dataset.messageId;
-          if (!id) continue;
-          if (e.isIntersecting) visible.add(id);
-          else visible.delete(id);
-        }
-        pickBest();
-      },
-      { root, threshold: 0.35, rootMargin: "0px" },
-    );
-
-    root.querySelectorAll<HTMLElement>("[data-message-id]").forEach((el) => {
-      observer.observe(el);
-    });
-
-    return () => {
-      observer.disconnect();
-      if (markReadDebounceRef.current) {
-        window.clearTimeout(markReadDebounceRef.current);
-        markReadDebounceRef.current = null;
-      }
-    };
-  }, [messages, loadErr, scheduleMarkReadFromVisibility]);
-
-  useEffect(() => {
-    if (!chatId || !me) return;
-
-    const onFocus = () => {
-      void backfillAfterReconnect();
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void backfillAfterReconnect();
-      }
-    };
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [backfillAfterReconnect, chatId, me]);
 
   const openMessageContextMenu = useCallback(
     (message: MessageRow, pos: { x: number; y: number }) => {
