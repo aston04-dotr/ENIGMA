@@ -17,7 +17,7 @@ import { categoryLabel } from "@/lib/categories";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 // Simple toast component
 function Toast({
@@ -65,6 +65,7 @@ export default function ListingDetailPage() {
   } | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const chatOpenInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!id) {
@@ -173,15 +174,21 @@ export default function ListingDetailPage() {
         return;
       }
 
+      if (chatOpenInFlightRef.current) return;
+      chatOpenInFlightRef.current = true;
       setIsChatLoading(true);
-      const chatRes = await getOrCreateChat(sellerUserId);
-      setIsChatLoading(false);
+      try {
+        const chatRes = await getOrCreateChat(sellerUserId);
 
-      if (chatRes.ok) {
-        router.push(`/chat/${chatRes.id}`);
-      } else {
-        console.error(chatRes.error);
-        setChatError("Не удалось открыть чат");
+        if (chatRes.ok) {
+          router.push(`/chat/${chatRes.id}`);
+        } else {
+          console.error(chatRes.error);
+          setChatError("Не удалось открыть чат");
+        }
+      } finally {
+        chatOpenInFlightRef.current = false;
+        setIsChatLoading(false);
       }
     },
     [session?.user?.id, router],

@@ -451,7 +451,7 @@ export type Database = {
         Returns: undefined
       }
       get_or_create_direct_chat: {
-        Args: { p_other_user_id: string; p_listing_id?: string | null }
+        Args: { p_listing_id?: string | null; p_other_user_id: string }
         Returns: string
       }
       http: {

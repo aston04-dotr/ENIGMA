@@ -21,6 +21,7 @@ export async function getOrCreateChat(
     });
 
     if (error || !data) {
+      console.log(data, error);
       return { ok: false, error: error?.message || "No chat id" };
     }
 
