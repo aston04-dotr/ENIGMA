@@ -64,6 +64,7 @@ export default function ListingDetailPage() {
     type: "success" | "error" | "info";
   } | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -153,9 +154,11 @@ export default function ListingDetailPage() {
   }, [isFavoritedFromRow, rowId]);
 
   const openChat = useCallback(
-    async (ownerId: string) => {
-      if (!ownerId) {
-        setToast({ message: "Объявление без владельца", type: "error" });
+    async (sellerUserId: string) => {
+      setChatError(null);
+
+      if (!sellerUserId) {
+        setChatError("Не удалось открыть чат");
         return;
       }
 
@@ -165,23 +168,23 @@ export default function ListingDetailPage() {
         return;
       }
 
-      if (uid === ownerId) {
-        setToast({ message: "Нельзя написать самому себе", type: "error" });
+      if (uid === sellerUserId) {
+        setChatError("Не удалось открыть чат");
         return;
       }
 
       setIsChatLoading(true);
-      const chatRes = await getOrCreateChat(ownerId);
+      const chatRes = await getOrCreateChat(sellerUserId);
       setIsChatLoading(false);
 
-      if (!chatRes.ok) {
-        setToast({ message: "Не удалось открыть чат", type: "error" });
-        return;
+      if (chatRes.ok) {
+        router.push(`/chat/${chatRes.id}`);
+      } else {
+        console.error(chatRes.error);
+        setChatError("Не удалось открыть чат");
       }
-
-      router.push(`/chat/${chatRes.id}`);
     },
-    [session?.user?.id, router, rowId],
+    [session?.user?.id, router],
   );
 
   if (loading) {
@@ -213,7 +216,6 @@ export default function ListingDetailPage() {
     );
   }
 
-  console.log("SAFE LISTING:", safeItem);
   const images = Array.isArray(safeItem.images) ? safeItem.images : [];
   const imgs = normalizeListingImages(images).sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
@@ -382,6 +384,9 @@ export default function ListingDetailPage() {
               >
                 {isChatLoading ? "Открываем чат…" : "💬 Написать"}
               </button>
+              {chatError ? (
+                <p className="text-sm font-medium text-danger">{chatError}</p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void copyPhone()}

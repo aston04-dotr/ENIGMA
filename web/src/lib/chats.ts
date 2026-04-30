@@ -4,45 +4,35 @@ export type GetOrCreateChatResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
-function isValidUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
-
 export async function getOrCreateChat(
   sellerId: string,
 ): Promise<GetOrCreateChatResult> {
   try {
-    const normalizedSellerId = String(sellerId ?? "").trim();
+    const p_other_user_id =
+      typeof sellerId === "string" ? sellerId.trim() : "";
 
-    if (!normalizedSellerId || !isValidUuid(normalizedSellerId)) {
-      return { ok: false, error: "Некорректный продавец" };
+    if (!p_other_user_id || typeof p_other_user_id !== "string") {
+      return { ok: false, error: "Invalid user id" };
     }
 
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
-      p_other_user_id: normalizedSellerId,
       p_listing_id: null,
+      p_other_user_id,
     });
 
-    if (error) {
-      if (error && process.env.NODE_ENV === "development") {
-        console.error("get_or_create_direct_chat", error);
-      }
-      return {
-        ok: false,
-        error: error?.message || "Не удалось открыть чат",
-      };
+    if (error || !data) {
+      return { ok: false, error: error?.message || "No chat id" };
     }
 
-    const chatId = typeof data === "string" ? data.trim() : "";
-    if (!chatId) return { ok: false, error: "RPC не вернул id чата" };
+    const chatId = String(data).trim();
+
+    if (!chatId) {
+      return { ok: false, error: "Empty chat id" };
+    }
+
     return { ok: true, id: chatId };
   } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("getOrCreateChat", error);
-    }
     const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, error: message || "Ошибка сети" };
+    return { ok: false, error: message || "No chat id" };
   }
 }
