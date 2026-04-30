@@ -8,6 +8,11 @@ export async function getOrCreateChat(
   sellerId: string,
 ): Promise<GetOrCreateChatResult> {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) {
+      return { ok: false, error: "NO_SESSION" };
+    }
+
     const p_other_user_id =
       typeof sellerId === "string" ? sellerId.trim() : "";
 

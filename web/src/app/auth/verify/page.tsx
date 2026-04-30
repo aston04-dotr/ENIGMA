@@ -65,15 +65,32 @@ export default function VerifyPage() {
       token: code,
       type: "email",
     });
+    if (verifyError) {
+      setLoading(false);
+      setError(verifyError.message || "Неверный или устаревший код");
+      return;
+    }
+
+    let tries = 0;
+    let user: { id: string } | null = null;
+    while (tries < 5) {
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        user = userData.user;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      tries++;
+    }
 
     setLoading(false);
-    if (verifyError) {
-      setError("Неверный или устаревший код");
+    if (!user) {
+      setError("Session not established");
       return;
     }
 
     localStorage.removeItem("auth_email");
-    window.location.href = "/";
+    window.location.assign("/");
   };
 
   const onResend = async () => {

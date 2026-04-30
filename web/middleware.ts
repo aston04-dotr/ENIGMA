@@ -11,10 +11,6 @@ function applyNoCacheHeaders(res: NextResponse) {
 }
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname.startsWith("/auth/phone") || request.nextUrl.pathname.startsWith("/auth/profile-setup")) {
-    return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
-  }
-
   const { url, anonKey } = getSupabasePublicConfig();
 
   const response = NextResponse.next();
@@ -56,15 +52,16 @@ export async function middleware(request: NextRequest) {
 
   const isAuthPath = pathname === "/login" || pathname.startsWith("/auth");
 
-  const hasSbCookie = request.cookies
-    .getAll()
-    .some((cookie) => cookie.name.startsWith("sb-"));
+  // Не вмешиваемся в auth flow (включая /auth/verify и callback-пути).
+  if (pathname.startsWith("/auth")) {
+    return response;
+  }
 
   if (user && pathname === "/login") {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
 
-  if (!user && !isAuthPath && !hasSbCookie) {
+  if (!user && !isAuthPath) {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/login")));
   }
 

@@ -1849,8 +1849,33 @@ export default function ChatRoomPage() {
     })();
   }
 
+  async function ensureUploadSession(): Promise<boolean> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) {
+      if (typeof window !== "undefined") {
+        window.alert("Нет сессии. Перезайди.");
+      }
+      return false;
+    }
+
+    await supabase.auth.refreshSession();
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log("SESSION:", sessionData);
+    if (!sessionData?.session) {
+      if (typeof window !== "undefined") {
+        window.alert("Нет сессии. Перезайди.");
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   async function sendImageFile(file: File) {
     if (!me || !chatId || !isUuid(chatId)) return;
+    const hasSession = await ensureUploadSession();
+    if (!hasSession) return;
+
     const invalid = await validateChatImageFileDeep(file);
     if (invalid) {
       setToast({ type: "error", message: invalid });
@@ -1858,12 +1883,6 @@ export default function ChatRoomPage() {
     }
     if (uploadInFlightRef.current) return;
     if (sendingImage) return;
-
-    const { data: authData } = await supabase.auth.getSession();
-    if (!authData?.session) {
-      setToast({ type: "error", message: "Сессия истекла. Войдите снова." });
-      return;
-    }
 
     uploadInFlightRef.current = true;
     setSendingImage(true);
@@ -2010,6 +2029,9 @@ export default function ChatRoomPage() {
 
   async function retryImageUpload(messageId: string) {
     if (!me || !chatId || !isUuid(chatId)) return;
+    const hasSession = await ensureUploadSession();
+    if (!hasSession) return;
+
     if (uploadInFlightRef.current) return;
     const file = pendingImageFilesRef.current.get(messageId);
     if (!file) {
@@ -2019,12 +2041,6 @@ export default function ChatRoomPage() {
     const row = messagesRef.current.find((m) => m.id === messageId);
     const previewObjectUrl = row?.image_url ?? "";
     if (!row || !previewObjectUrl) return;
-
-    const { data: authRetry } = await supabase.auth.getSession();
-    if (!authRetry?.session) {
-      setToast({ type: "error", message: "Сессия истекла. Войдите снова." });
-      return;
-    }
 
     setImageRetryingId(messageId);
     uploadInFlightRef.current = true;
