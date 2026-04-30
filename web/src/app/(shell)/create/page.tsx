@@ -7,6 +7,7 @@ import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
+import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
@@ -429,6 +430,11 @@ export default function CreatePage() {
         const { error: ie } = await supabase.schema("public").from("images").insert(imageRows);
         logRlsIfBlocked(ie);
         if (ie) {
+          try {
+            await removeListingImagesFromStorage(uploadedUrls);
+          } catch (storageCleanupError) {
+            console.warn("LISTING STORAGE CLEANUP ERROR", storageCleanupError);
+          }
           const { error: rollbackError } = await supabase.from("listings").delete().eq("id", lid);
           if (rollbackError) {
             console.warn("LISTING ROLLBACK ERROR", rollbackError);

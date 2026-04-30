@@ -4,9 +4,30 @@ import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { useAuth } from "@/context/auth-context";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { fetchListingById } from "@/lib/listings";
+import { getMaxListingPhotos } from "@/lib/runtimeConfig";
+import {
+  removeListingImagesFromStorage,
+  uploadListingPhotoWeb,
+} from "@/lib/storageUploadWeb";
 import { supabase } from "@/lib/supabase";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useRouter, useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 // Toast component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error" | "info"; onClose: () => void }) {
@@ -26,6 +47,69 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
 
 const inputClass =
   "w-full min-h-[52px] rounded-card border border-line bg-elevated px-4 text-fg placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/35 transition-all duration-200";
+const MAX_LISTING_PHOTOS = getMaxListingPhotos();
+
+type PendingImageFile = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+const EXISTING_PREFIX = "existing:";
+const PENDING_PREFIX = "pending:";
+
+function makeExistingKey(url: string): string {
+  return `${EXISTING_PREFIX}${encodeURIComponent(url)}`;
+}
+
+function makePendingKey(id: string): string {
+  return `${PENDING_PREFIX}${id}`;
+}
+
+function keyToExistingUrl(key: string): string | null {
+  if (!key.startsWith(EXISTING_PREFIX)) return null;
+  const encoded = key.slice(EXISTING_PREFIX.length);
+  if (!encoded) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+function keyToPendingId(key: string): string | null {
+  if (!key.startsWith(PENDING_PREFIX)) return null;
+  const id = key.slice(PENDING_PREFIX.length).trim();
+  return id || null;
+}
+
+function SortableThumb({
+  id,
+  disabled,
+  children,
+}: {
+  id: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled: Boolean(disabled) });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={isDragging ? "z-20 opacity-90" : ""}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function EditListingPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,11 +120,29 @@ export default function EditListingPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingImageFile[]>([]);
+  const [imageOrder, setImageOrder] = useState<string[]>([]);
+  const [deletingImageUrls, setDeletingImageUrls] = useState<Set<string>>(() => new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 120, tolerance: 8 },
+    }),
+  );
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [originalData, setOriginalData] = useState<{ title: string; description: string; price: number } | null>(null);
+  const [originalData, setOriginalData] = useState<{
+    title: string;
+    description: string;
+    price: number;
+    imageUrls: string[];
+  } | null>(null);
 
   useEffect(() => {
     if (!authResolved || authLoading) return;
@@ -72,10 +174,16 @@ export default function EditListingPage() {
         setTitle(res.row.title);
         setDescription(res.row.description);
         setPrice(String(res.row.price));
+        const urls = (res.row.images ?? [])
+          .map((img) => String(img?.url ?? "").trim())
+          .filter(Boolean);
+        setExistingImageUrls(urls);
+        setImageOrder(urls.map(makeExistingKey));
         setOriginalData({
           title: res.row.title,
           description: res.row.description,
           price: res.row.price,
+          imageUrls: urls,
         });
       } catch (e) {
         console.error("FETCH ERROR", e);
@@ -87,6 +195,137 @@ export default function EditListingPage() {
     
     return () => { cancelled = true; };
   }, [id, session, authResolved, authLoading, router]);
+
+  useEffect(() => {
+    return () => {
+      for (const item of pendingImages) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+    };
+  }, [pendingImages]);
+
+  async function removeExistingImage(url: string) {
+    if (!id || !session?.user?.id) return;
+    const trimmed = String(url ?? "").trim();
+    if (!trimmed) return;
+
+    setDeletingImageUrls((prev) => {
+      const next = new Set(prev);
+      next.add(trimmed);
+      return next;
+    });
+
+    try {
+      await removeListingImagesFromStorage([trimmed]);
+
+      const { error: dbError } = await supabase
+        .from("images")
+        .delete()
+        .eq("listing_id", id)
+        .eq("url", trimmed);
+      if (dbError) throw dbError;
+
+      setExistingImageUrls((prev) => prev.filter((x) => x !== trimmed));
+      setImageOrder((prev) => prev.filter((k) => k !== makeExistingKey(trimmed)));
+      setOriginalData((prev) => {
+        if (!prev) return prev;
+        return { ...prev, imageUrls: prev.imageUrls.filter((x) => x !== trimmed) };
+      });
+    } catch (removeError) {
+      console.error("EDIT LISTING IMAGE REMOVE ERROR", removeError);
+      setToast({ message: "Не удалось удалить фото", type: "error" });
+    } finally {
+      setDeletingImageUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(trimmed);
+        return next;
+      });
+    }
+  }
+
+  function addPendingFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const selected = Array.from(files).filter((f) =>
+      String(f?.type ?? "").toLowerCase().startsWith("image/"),
+    );
+    if (selected.length === 0) return;
+
+    const freeSlots =
+      MAX_LISTING_PHOTOS - existingImageUrls.length - pendingImages.length;
+    if (freeSlots <= 0) {
+      setToast({
+        message: `Максимум ${MAX_LISTING_PHOTOS} фото`,
+        type: "info",
+      });
+      return;
+    }
+
+    const toAdd = selected.slice(0, freeSlots).map((file) => ({
+      id:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    if (toAdd.length < selected.length) {
+      setToast({
+        message: `Лишние фото пропущены (лимит ${MAX_LISTING_PHOTOS})`,
+        type: "info",
+      });
+    }
+
+    setPendingImages((prev) => [...prev, ...toAdd]);
+    setImageOrder((prev) => [...prev, ...toAdd.map((item) => makePendingKey(item.id))]);
+  }
+
+  function removePendingImage(idToRemove: string) {
+    const keyToRemove = makePendingKey(idToRemove);
+    setImageOrder((prev) => prev.filter((k) => k !== keyToRemove));
+    setPendingImages((prev) => {
+      const target = prev.find((x) => x.id === idToRemove);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== idToRemove);
+    });
+  }
+
+  const pendingMap = useMemo(() => {
+    const map = new Map<string, PendingImageFile>();
+    for (const item of pendingImages) map.set(item.id, item);
+    return map;
+  }, [pendingImages]);
+
+  const orderedThumbnails = useMemo(() => {
+    return imageOrder
+      .map((key) => {
+        const existingUrl = keyToExistingUrl(key);
+        if (existingUrl) {
+          if (!existingImageUrls.includes(existingUrl)) return null;
+          return { key, kind: "existing" as const, url: existingUrl };
+        }
+        const pendingId = keyToPendingId(key);
+        if (!pendingId) return null;
+        const pending = pendingMap.get(pendingId);
+        if (!pending) return null;
+        return { key, kind: "pending" as const, id: pendingId, url: pending.previewUrl };
+      })
+      .filter(Boolean) as Array<
+      | { key: string; kind: "existing"; url: string }
+      | { key: string; kind: "pending"; id: string; url: string }
+    >;
+  }, [existingImageUrls, imageOrder, pendingMap]);
+
+  function handleImageDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setImageOrder((prev) => {
+      const oldIndex = prev.indexOf(String(active.id));
+      const newIndex = prev.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }
 
   async function save() {
     if (!session?.user || !id) return;
@@ -109,40 +348,99 @@ export default function EditListingPage() {
     }
     
     setSaving(true);
-    
-    const { error } = await supabase
-      .from("listings")
-      .update({
+    try {
+      const { error } = await supabase
+        .from("listings")
+        .update({
+          title: titleTrim,
+          description: descriptionTrim,
+          price: priceNum,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("user_id", session.user.id);
+
+      if (error) throw error;
+
+      const existingSet = new Set(existingImageUrls);
+      const pendingById = new Map(pendingImages.map((item) => [item.id, item]));
+      const finalUrls: string[] = [];
+
+      for (let i = 0; i < imageOrder.length; i++) {
+        const key = imageOrder[i]!;
+        const existingUrl = keyToExistingUrl(key);
+        if (existingUrl) {
+          if (existingSet.has(existingUrl)) finalUrls.push(existingUrl);
+          continue;
+        }
+        const pendingId = keyToPendingId(key);
+        if (!pendingId) continue;
+        const pending = pendingById.get(pendingId);
+        if (!pending) continue;
+        const uploaded = await uploadListingPhotoWeb(
+          session.user.id,
+          id,
+          pending.file,
+          i,
+        );
+        finalUrls.push(uploaded);
+      }
+
+      const { error: deleteImagesError } = await supabase
+        .from("images")
+        .delete()
+        .eq("listing_id", id);
+      if (deleteImagesError) throw deleteImagesError;
+
+      if (finalUrls.length > 0) {
+        const rows = finalUrls.map((url, sortOrder) => ({
+          listing_id: id,
+          url,
+          sort_order: sortOrder,
+        }));
+        const { error: insertImagesError } = await supabase
+          .from("images")
+          .insert(rows);
+        if (insertImagesError) throw insertImagesError;
+      }
+
+      for (const item of pendingImages) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+      setPendingImages([]);
+      setExistingImageUrls(finalUrls);
+      setImageOrder(finalUrls.map(makeExistingKey));
+
+      setOriginalData({
         title: titleTrim,
         description: descriptionTrim,
         price: priceNum,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .eq("user_id", session.user.id);
-    
-    if (error) {
-      console.error("UPDATE ERROR", error);
+        imageUrls: finalUrls,
+      });
+      setToast({ message: "✓ Объявление обновлено", type: "success" });
+    } catch (saveError) {
+      console.error("UPDATE ERROR", saveError);
       setToast({ message: "Не удалось сохранить изменения", type: "error" });
+    } finally {
       setSaving(false);
-      return;
     }
-    
-    setToast({ message: "✓ Объявление обновлено", type: "success" });
-    setSaving(false);
-    
-    // Update original data
-    setOriginalData({
-      title: titleTrim,
-      description: descriptionTrim,
-      price: priceNum,
-    });
   }
+
+  const hasImageChanges = useMemo(() => {
+    if (!originalData) return false;
+    if (pendingImages.length > 0) return true;
+    const existingInOrder = imageOrder
+      .map((k) => keyToExistingUrl(k))
+      .filter((url): url is string => Boolean(url));
+    if (existingInOrder.length !== originalData.imageUrls.length) return true;
+    return existingInOrder.some((url, idx) => url !== originalData.imageUrls[idx]);
+  }, [imageOrder, originalData, pendingImages.length]);
 
   const hasChanges = originalData && (
     title.trim() !== originalData.title ||
     description.trim() !== originalData.description ||
-    Number(price) !== originalData.price
+    Number(price) !== originalData.price ||
+    hasImageChanges
   );
   const isDirty = Boolean(hasChanges);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
@@ -196,6 +494,77 @@ export default function EditListingPage() {
       ) : null}
       
       <div className="space-y-5">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-muted">Фото</label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(e) => {
+              addPendingFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full min-h-[48px] rounded-card border border-line bg-elevated px-4 py-2 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 disabled:opacity-50"
+          >
+            Добавить фото
+          </button>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleImageDragEnd}
+          >
+            <SortableContext items={orderedThumbnails.map((item) => item.key)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {orderedThumbnails.map((item) => {
+                  const isExisting = item.kind === "existing";
+                  const isDeleting = isExisting ? deletingImageUrls.has(item.url) : false;
+                  const pendingId = item.kind === "pending" ? item.id : null;
+                  return (
+                    <SortableThumb key={item.key} id={item.key} disabled={saving || isDeleting}>
+                      <div
+                        className={`relative overflow-hidden rounded-card border border-line bg-elevated touch-none ${
+                          isDeleting ? "opacity-70" : "opacity-100"
+                        }`}
+                      >
+                        <img
+                          src={item.url}
+                          alt=""
+                          className={`h-24 w-full object-cover ${
+                            isDeleting ? "blur-[1px]" : ""
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          disabled={saving || isDeleting}
+                          onClick={() => {
+                            if (isExisting) {
+                              void removeExistingImage(item.url);
+                              return;
+                            }
+                            if (pendingId) removePendingImage(pendingId);
+                          }}
+                          className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white disabled:opacity-50"
+                          aria-label="Удалить фото"
+                        >
+                          {isDeleting ? "…" : "×"}
+                        </button>
+                      </div>
+                    </SortableThumb>
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium text-muted">Название</label>
           <input

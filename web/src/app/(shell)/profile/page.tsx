@@ -7,6 +7,7 @@ import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { getMyListings } from "@/lib/listings";
 import { deleteAccount } from "@/lib/deleteAccount";
+import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
@@ -188,6 +189,19 @@ export default function ProfilePage() {
     if (!listingId) return;
     if (typeof window !== "undefined" && !window.confirm("Удалить объявление?")) return;
 
+    const { data: listingImages, error: listingImagesError } = await supabase
+      .from("images")
+      .select("url")
+      .eq("listing_id", listingId);
+    if (listingImagesError) {
+      console.warn("MY LISTING IMAGES LOAD ERROR", listingImagesError);
+    }
+    const imageUrls = Array.isArray(listingImages)
+      ? listingImages
+          .map((row) => String((row as { url?: unknown })?.url ?? "").trim())
+          .filter(Boolean)
+      : [];
+
     const { error } = await supabase
       .from("listings")
       .delete()
@@ -201,6 +215,12 @@ export default function ProfilePage() {
       }
       setMyListingsError("Не удалось удалить объявление");
       return;
+    }
+
+    try {
+      await removeListingImagesFromStorage(imageUrls);
+    } catch (storageError) {
+      console.warn("MY LISTING STORAGE DELETE ERROR", storageError);
     }
 
     setMyListings((prev) => (prev || []).filter((x) => x?.id !== listingId));
