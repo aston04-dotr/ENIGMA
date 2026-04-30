@@ -1,8 +1,10 @@
--- ⚠️ УСТАРЕЛО для БД без колонок user1/user2: Postgres выдаст "column user1 does not exist",
--- даже внутри coalesce(c.user1, c.buyer_id). Используйте вместо этого:
---    fix_get_or_create_direct_chat_buyer_seller_only.sql
+-- Схема БЕЗ колонок user1 / user2 (ошибка: column "user1" does not exist).
+-- Участники только через chats.buyer_id и chats.seller_id — см. миграции 032+ (list_my_chats, mark_chat_read).
 --
--- Ниже оставлен вариант только если в public.chats реально есть user1 и user2.
+-- В таблице public.chats не должно быть обращений к user1/user2 — Postgres верифицирует имя колонки
+-- даже внутри coalesce(..., buyer_id).
+--
+-- Выполните в Supabase SQL Editor (Production).
 
 drop function if exists public.get_or_create_direct_chat(uuid, uuid);
 
@@ -51,6 +53,7 @@ begin
     end if;
   end if;
 
+  -- Стабильная пара (аналог least/greatest по user1/user2 в старых миграциях)
   v_min := least(v_uid, p_other_user_id);
   v_max := greatest(v_uid, p_other_user_id);
 
@@ -69,16 +72,14 @@ begin
   into v_chat_id
   from public.chats c
   where coalesce(c.is_group, false) = false
-    and least(coalesce(c.user1, c.buyer_id), coalesce(c.user2, c.seller_id)) = v_min
-    and greatest(coalesce(c.user1, c.buyer_id), coalesce(c.user2, c.seller_id)) = v_max
+    and least(c.buyer_id, c.seller_id) = v_min
+    and greatest(c.buyer_id, c.seller_id) = v_max
     and coalesce(c.listing_id, v_nil) = coalesce(p_listing_id, v_nil)
   order by c.created_at asc nulls first, c.id asc
   limit 1;
 
   if v_chat_id is null then
     insert into public.chats (
-      user1,
-      user2,
       buyer_id,
       seller_id,
       listing_id,
@@ -87,8 +88,6 @@ begin
       last_message_at
     )
     values (
-      v_min,
-      v_max,
       v_min,
       v_max,
       p_listing_id,
