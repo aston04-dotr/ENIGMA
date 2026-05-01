@@ -673,8 +673,19 @@ export function ChatUnreadProvider({
             Boolean(userId) && String(msg.sender_id ?? "") === String(userId);
 
           const currentChatId = statusRef.current.activeChatId;
+          const routeChatId =
+            typeof window !== "undefined"
+              ? String(window.location.pathname || "").match(
+                  /^\/chat\/([0-9a-f-]{36})$/i,
+                )?.[1] ?? null
+              : null;
           const isOpenChat =
-            Boolean(currentChatId) && messageChatId === currentChatId;
+            Boolean(currentChatId) &&
+            messageChatId === currentChatId &&
+            Boolean(routeChatId) &&
+            routeChatId === messageChatId &&
+            (typeof document === "undefined" ||
+              document.visibilityState === "visible");
 
           setRows((prev) => {
             const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
@@ -710,6 +721,9 @@ export function ChatUnreadProvider({
                 return b.chat_id.localeCompare(a.chat_id);
               });
           });
+          if (!fromMe && !isOpenChat) {
+            scheduleRefresh(220, { silent: true });
+          }
         },
       );
 
