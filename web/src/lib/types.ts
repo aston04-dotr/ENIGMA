@@ -127,6 +127,7 @@ export type ChatListRow = {
   seller_id: string | null;
   created_at: string;
   listing_id?: string | null;
+  listing_image?: string | null;
   is_group?: boolean;
   title?: string | null;
   other_user_id?: string | null;

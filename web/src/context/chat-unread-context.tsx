@@ -93,6 +93,7 @@ function normalizeChatRow(
     seller_id: sellerId,
     created_at: createdAt,
     listing_id: raw.listing_id != null ? String(raw.listing_id) : null,
+    listing_image: raw.listing_image != null ? String(raw.listing_image) : null,
     is_group: Boolean(raw.is_group),
     title: raw.title != null ? String(raw.title) : null,
     other_user_id: otherUserId,
@@ -367,7 +368,45 @@ export function ChatUnreadProvider({
           }
         }
 
-        setRows(sortByLastMessageDesc(enrichedRows));
+        const listingIdsNeedingImage = Array.from(
+          new Set(
+            enrichedRows
+              .filter(
+                (row) =>
+                  isUuid(String(row.listing_id ?? "")) &&
+                  !String(row.listing_image ?? "").trim(),
+              )
+              .map((row) => String(row.listing_id)),
+          ),
+        );
+
+        let finalRows = enrichedRows;
+        if (listingIdsNeedingImage.length > 0) {
+          const imagesRes = await rest
+            .from("images")
+            .select("listing_id,url,sort_order")
+            .in("listing_id", listingIdsNeedingImage)
+            .order("sort_order", { ascending: true });
+          if (!imagesRes.error && Array.isArray(imagesRes.data)) {
+            const firstImageByListing = new Map<string, string>();
+            for (const row of imagesRes.data as Array<Record<string, unknown>>) {
+              const listingId = String(row.listing_id ?? "").trim();
+              const url = String(row.url ?? "").trim();
+              if (!listingId || !url || firstImageByListing.has(listingId)) continue;
+              firstImageByListing.set(listingId, url);
+            }
+            finalRows = enrichedRows.map((row) => {
+              if (String(row.listing_image ?? "").trim()) return row;
+              const listingId = String(row.listing_id ?? "").trim();
+              if (!listingId) return row;
+              const listingImage = firstImageByListing.get(listingId);
+              if (!listingImage) return row;
+              return { ...row, listing_image: listingImage };
+            });
+          }
+        }
+
+        setRows(sortByLastMessageDesc(finalRows));
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");

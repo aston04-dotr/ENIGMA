@@ -65,6 +65,40 @@ function formatUnreadCount(value: number): string {
   return String(value);
 }
 
+function ChatListingThumb({
+  listingImage,
+  displayName,
+  otherAvatar,
+}: {
+  listingImage?: string | null;
+  displayName: string;
+  otherAvatar?: string | null;
+}) {
+  const trimmedImage = String(listingImage ?? "").trim();
+  const trimmedAvatar = String(otherAvatar ?? "").trim();
+  const initial = displayName.trim().slice(0, 1).toUpperCase() || "?";
+
+  return (
+    <span className="relative inline-flex h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-line bg-elev-2">
+      {trimmedImage ? (
+        <img src={trimmedImage} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-base">
+          📦
+        </span>
+      )}
+
+      <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-main text-[10px] font-semibold text-fg dark:border-[#0b0e14]">
+        {trimmedAvatar ? (
+          <img src={trimmedAvatar} alt="" className="h-full w-full object-cover" />
+        ) : (
+          initial
+        )}
+      </span>
+    </span>
+  );
+}
+
 export default function ChatsPage() {
   const router = useRouter();
   const { session } = useAuth();
@@ -157,9 +191,11 @@ export default function ChatsPage() {
                 onClick={() => router.push(`/chat/${row.chat_id}`)}
                 className="pressable flex w-full items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-elev-2 text-sm font-semibold text-fg">
-                  {displayName.slice(0, 1).toUpperCase()}
-                </span>
+                <ChatListingThumb
+                  listingImage={row.listing_image}
+                  displayName={displayName}
+                  otherAvatar={row.other_avatar}
+                />
 
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-3">

@@ -324,52 +324,21 @@ function SupportAvatarIcon({ className }: { className?: string }) {
   );
 }
 
-function MessageStatusTicks({
+function MessageReadStatus({
   mine,
-  optimistic,
-  pendingUpload,
-  uploadFailed,
-  delivered_at,
-  read_at,
+  showRead,
 }: {
   mine: boolean;
-  optimistic?: boolean;
-  pendingUpload?: boolean;
-  uploadFailed?: boolean;
-  delivered_at?: string | null;
-  read_at?: string | null;
+  showRead: boolean;
 }) {
-  if (!mine) return null;
-  const isDelivered = hasValidTimestamp(delivered_at);
-  const isRead = hasValidTimestamp(read_at) && isDelivered;
-  const isServerAccepted = !optimistic && !pendingUpload && !uploadFailed;
-  const activeDots = isRead ? 3 : isDelivered ? 2 : isServerAccepted ? 1 : 0;
-  const statusLabel = isRead
-    ? "прочитано"
-    : isDelivered
-      ? "доставлено"
-      : isServerAccepted
-        ? "отправлено"
-        : "отправка";
-  const activeDotClass = isRead
-    ? "bg-sky-500 dark:bg-sky-400"
-    : "bg-fg/40 dark:bg-fg/35";
-  const inactiveDotClass = "bg-fg/22 dark:bg-fg/20";
+  if (!mine || !showRead) return null;
   return (
     <span
-      className="inline-flex items-center gap-1 leading-none"
-      aria-label={statusLabel}
-      title={statusLabel}
+      className="leading-none text-sky-500 dark:text-sky-400"
+      aria-label="прочитано"
+      title="прочитано"
     >
-      {Array.from({ length: 3 }).map((_, idx) => (
-        <span
-          key={idx}
-          className={`inline-block h-1.5 w-1.5 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${
-            idx < activeDots ? activeDotClass : inactiveDotClass
-          }`}
-          aria-hidden
-        />
-      ))}
+      прочитано
     </span>
   );
 }
@@ -377,6 +346,7 @@ function MessageStatusTicks({
 const ChatListMessageRow = memo(function ChatListMessageRow({
   m,
   mine,
+  latestReadMessageId,
   isAppearing,
   animateSupportWelcome,
   imageRetryingId,
@@ -386,6 +356,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 }: {
   m: MessageRow;
   mine: boolean;
+  latestReadMessageId: string | null;
   isAppearing: boolean;
   animateSupportWelcome: boolean;
   imageRetryingId: string | null;
@@ -403,6 +374,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   const messageTime = formatMessageTime(m.created_at);
   const longPressTimerRef = useRef<number | null>(null);
   const canOpenMenu = !m.id.startsWith("temp-") && !isSupportWelcomeMessage;
+  const showReadStatus = mine && latestReadMessageId === m.id;
 
   const clearLongPress = () => {
     if (typeof window === "undefined") return;
@@ -530,13 +502,9 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
           <div className="mt-0.5 flex min-h-[14px] shrink-0 items-center justify-end gap-1 px-0.5 text-xs text-fg/40">
             <span>{messageTime}</span>
             {mine ? (
-              <MessageStatusTicks
+              <MessageReadStatus
                 mine
-                optimistic={isOptimistic}
-                pendingUpload={m.pendingUpload}
-                uploadFailed={m.imageUploadFailed}
-                delivered_at={m.delivered_at}
-                read_at={m.read_at}
+                showRead={showReadStatus}
               />
             ) : null}
           </div>
@@ -663,6 +631,22 @@ export default function ChatRoomPage() {
     if (visibleMessages.length > 0) return visibleMessages;
     return [supportWelcomeMessage];
   }, [messagesLoaded, loadErr, visibleMessages, supportWelcomeMessage]);
+  const latestReadOutgoingMessageId = useMemo(() => {
+    if (!me) return null;
+    let candidateId: string | null = null;
+    let candidateCreatedAtMs = -1;
+    for (const m of displayMessages) {
+      if (m.sender_id !== me) continue;
+      if (!hasValidTimestamp(m.read_at)) continue;
+      const createdAtMs = Date.parse(m.created_at);
+      if (Number.isNaN(createdAtMs)) continue;
+      if (createdAtMs >= candidateCreatedAtMs) {
+        candidateCreatedAtMs = createdAtMs;
+        candidateId = m.id;
+      }
+    }
+    return candidateId;
+  }, [displayMessages, me]);
   const showSupportWelcomeOnly =
     messagesLoaded &&
     !loadErr &&
@@ -2238,6 +2222,7 @@ export default function ChatRoomPage() {
             key={m.id}
             m={m}
             mine={m.sender_id === me}
+            latestReadMessageId={latestReadOutgoingMessageId}
             isAppearing={appearingMessageIds.has(m.id)}
             animateSupportWelcome={shouldAnimateSupportWelcome}
             imageRetryingId={imageRetryingId}
