@@ -286,6 +286,7 @@ export function ChatUnreadProvider({
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
   const presenceIntervalRef = useRef<number | null>(null);
+  const chatListAuthRetryRef = useRef(0);
   /** Сбрасывается при смене userId; без спама в консоль по одной теме. */
   const logOnceRef = useRef({
     presenceNoToken: false,
@@ -301,6 +302,7 @@ export function ChatUnreadProvider({
       listNoToken: false,
       markNoToken: false,
     };
+    chatListAuthRetryRef.current = 0;
   }, [userId]);
 
   const refreshChats = useCallback(
@@ -317,7 +319,17 @@ export function ChatUnreadProvider({
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData?.session?.access_token) {
+        let accessToken = sessionData?.session?.access_token ?? null;
+        if (!accessToken) {
+          try {
+            await supabase.auth.refreshSession();
+            const { data: refreshedSession } = await supabase.auth.getSession();
+            accessToken = refreshedSession?.session?.access_token ?? null;
+          } catch {
+            // noop: fallback retry below
+          }
+        }
+        if (!accessToken) {
           if (!logOnceRef.current.listNoToken) {
             logOnceRef.current.listNoToken = true;
             if (process.env.NODE_ENV === "development") {
@@ -326,9 +338,20 @@ export function ChatUnreadProvider({
               );
             }
           }
+          if (
+            typeof window !== "undefined" &&
+            chatListAuthRetryRef.current < 5
+          ) {
+            chatListAuthRetryRef.current += 1;
+            const retryDelay = 450 * chatListAuthRetryRef.current;
+            window.setTimeout(() => {
+              void refreshChats({ silent: true });
+            }, retryDelay);
+          }
           if (!opts?.silent) setLoadingState(false);
           return;
         }
+        chatListAuthRetryRef.current = 0;
 
         const rest = getSupabaseRestWithSession();
         if (!rest) {
