@@ -536,6 +536,9 @@ serve(async (req) => {
     const presenceMap = new Map<string, PresenceRow>(
       (presenceRows ?? []).map((row: PresenceRow) => [row.user_id, row]),
     );
+    const onlineUserIds = new Set<string>(
+      (presenceRows ?? []).map((row: PresenceRow) => String(row.user_id)),
+    );
 
     const eligibleRecipientIds = recipientIds.filter((recipientId) => {
       const presence = presenceMap.get(recipientId);
@@ -620,10 +623,6 @@ serve(async (req) => {
       (row) => (row.provider ?? "") === "webpush",
     );
 
-    const pushDeliveredByUser = new Map<string, boolean>(
-      eligibleRecipientIds.map((id) => [id, false]),
-    );
-
     if (expoTokens.length) {
       const expoRows = tokens.filter((row) => (row.provider ?? "expo") === "expo");
       for (const tokenRow of expoRows) {
@@ -635,7 +634,6 @@ serve(async (req) => {
             url,
             record.chat_id,
           );
-          if (ok) pushDeliveredByUser.set(tokenRow.user_id, true);
         } catch (error) {
           console.error("Expo push delivery failed", {
             user_id: tokenRow.user_id,
@@ -659,8 +657,6 @@ serve(async (req) => {
 
         if (result.expired) {
           await deletePushToken(supabase, tokenRow);
-        } else {
-          pushDeliveredByUser.set(tokenRow.user_id, true);
         }
       } catch (error) {
         console.error("Web push delivery failed", {
@@ -672,10 +668,13 @@ serve(async (req) => {
     }
 
     if (resend) {
-      for (const recipientId of eligibleRecipientIds) {
+      const emailFallbackRecipientIds = recipientIds.filter(
+        (recipientId) =>
+          recipientId !== record.sender_id && !onlineUserIds.has(recipientId),
+      );
+      for (const recipientId of emailFallbackRecipientIds) {
         if (recipientId === record.sender_id) continue;
-        if (pushDeliveredByUser.get(recipientId)) continue;
-        console.log("PUSH NOT DELIVERED, FALLBACK EMAIL", recipientId);
+        console.log("USER NOT IN online_users, FALLBACK EMAIL", recipientId);
         const recipientEmail = recipientEmailMap.get(recipientId);
         if (!recipientEmail) {
           console.log("NO EMAIL FOR USER", recipientId);
