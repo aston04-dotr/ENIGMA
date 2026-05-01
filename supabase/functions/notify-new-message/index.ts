@@ -189,11 +189,12 @@ async function sendEmailFallback(
 ): Promise<boolean> {
   const to = String(email ?? "").trim();
   if (!to) return false;
+  const fromEmail = Deno.env.get("RESEND_FROM") || "support@enigma-app.online";
 
   console.log("SENDING EMAIL TO:", to);
 
   const { error } = await resend.emails.send({
-    from: "Enigma <noreply@enigma-app.online>",
+    from: `Enigma <${fromEmail}>`,
     to,
     subject: "Новое сообщение в Enigma",
     html: generateEmailTemplate(data),
