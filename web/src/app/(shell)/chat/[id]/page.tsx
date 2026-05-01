@@ -1406,6 +1406,13 @@ export default function ChatRoomPage() {
                 newMessage.id,
                 newMessage.sender_id,
               );
+              if (
+                typeof document !== "undefined" &&
+                document.visibilityState === "visible" &&
+                currentChatIdRef.current === chatId
+              ) {
+                void markVisibleRoomRead(newMessage.id);
+              }
             }
           },
         )

@@ -761,7 +761,7 @@ export function ChatUnreadProvider({
                         ? 0
                         : fromMe
                           ? Math.max(0, Number(chat.unread_count || 0))
-                          : Math.max(0, Number(chat.unread_count || 0)),
+                          : Math.max(0, Number(chat.unread_count || 0)) + 1,
                     }
                   : chat,
               )
