@@ -12,7 +12,7 @@ import { ListingCard } from "@/components/ListingCard";
 import { useAuth } from "@/context/auth-context";
 import { CATEGORIES, categoryLabel } from "@/lib/categories";
 import { trackEvent } from "@/lib/analytics";
-import { ALLOWED_LISTING_CITIES } from "@/lib/russianCities";
+import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import {
   fetchListings,
@@ -26,9 +26,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const CACHE_KEY = "cached_listings";
 const FEED_CATEGORY_KEY = "feed_category";
+const FEED_STATE_KEY = "feed_state";
 const ALL_CATEGORY = "all";
 
 type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
+type StoredFeedState = {
+  city?: string;
+  category?: string;
+  scrollY?: number;
+  timestamp?: number;
+};
 
 function parseStoredCursor(raw: unknown): FeedListingsCursor | null {
   if (raw == null || typeof raw !== "object") return null;
@@ -76,6 +83,28 @@ function persistFeedCategory(category: string) {
     localStorage.setItem(FEED_CATEGORY_KEY, category);
   } catch {
     /* private mode */
+  }
+}
+
+function readFeedState(): StoredFeedState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(FEED_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredFeedState;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistFeedState(state: StoredFeedState) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(FEED_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // private mode / quota
   }
 }
 
@@ -130,15 +159,25 @@ export default function HomePage() {
 
 function FeedPage({ session }: { session: Session }) {
   const feedSeed = useMemo(() => readFeedCache(), []);
+  const feedStateSeed = useMemo(() => readFeedState(), []);
+  const seededCity = String(feedStateSeed?.city ?? "").trim();
+  const seededCategory = String(feedStateSeed?.category ?? "").trim();
   const [items, setItems] = useState<ListingRow[]>(() => feedSeed.items);
   const [nextCursor, setNextCursor] = useState<FeedListingsCursor | null>(
     () => feedSeed.nextCursor,
   );
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
-  const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
+  const [city, setCity] = useState<string>(
+    isAllowedListingCity(seededCity) ? seededCity : ALLOWED_LISTING_CITIES[0],
+  );
   const [citySheetOpen, setCitySheetOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORY);
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    if (seededCategory === ALL_CATEGORY) return ALL_CATEGORY;
+    return CATEGORIES.some((x) => x.id === seededCategory)
+      ? seededCategory
+      : ALL_CATEGORY;
+  });
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
@@ -153,7 +192,37 @@ function FeedPage({ session }: { session: Session }) {
   }, []);
 
   useEffect(() => {
+    if (seededCategory) return;
     setSelectedCategory(readStoredFeedCategory());
+  }, [seededCategory]);
+
+  useEffect(() => {
+    const state = readFeedState();
+    if (!state) return;
+    const savedCity = String(state.city ?? "").trim();
+    const savedCategory = String(state.category ?? "").trim();
+    const savedScrollY = Number(state.scrollY ?? 0);
+    if (isAllowedListingCity(savedCity)) {
+      setCity(savedCity);
+    }
+    if (savedCategory === ALL_CATEGORY || CATEGORIES.some((x) => x.id === savedCategory)) {
+      setSelectedCategory(savedCategory || ALL_CATEGORY);
+    }
+
+    if (savedScrollY > 0) {
+      let attempts = 0;
+      const restore = () => {
+        attempts += 1;
+        const maxScroll =
+          document.documentElement.scrollHeight - window.innerHeight;
+        const target = Math.min(savedScrollY, Math.max(0, maxScroll));
+        window.scrollTo(0, target);
+        if (attempts < 8 && maxScroll + 20 < savedScrollY) {
+          window.setTimeout(restore, 120);
+        }
+      };
+      window.setTimeout(restore, 80);
+    }
   }, []);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -377,6 +446,15 @@ function FeedPage({ session }: { session: Session }) {
     setCategorySheetOpen(false);
   }, [city, selectedCategory]);
 
+  const rememberFeedStateBeforeOpen = useCallback(() => {
+    persistFeedState({
+      city,
+      category: selectedCategory,
+      scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+      timestamp: Date.now(),
+    });
+  }, [city, selectedCategory]);
+
   return (
     <main className="safe-pt min-h-screen bg-main">
       <header className="border-b border-line bg-main">
@@ -475,7 +553,12 @@ function FeedPage({ session }: { session: Session }) {
         }`}
       >
         {filtered.map((item, idx) => (
-          <ListingCard key={item.id} item={item} index={idx} />
+          <ListingCard
+            key={item.id}
+            item={item}
+            index={idx}
+            onOpen={rememberFeedStateBeforeOpen}
+          />
         ))}
         {filtered.length === 0 ? (
           <EmptyState

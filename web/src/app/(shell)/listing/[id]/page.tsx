@@ -19,6 +19,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 
+const FEED_STATE_KEY = "feed_state";
+
 // Simple toast component
 function Toast({
   message,
@@ -194,6 +196,17 @@ export default function ListingDetailPage() {
   );
 
   const handleBackToFeed = useCallback(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = sessionStorage.getItem(FEED_STATE_KEY);
+        if (saved) {
+          router.push("/");
+          return;
+        }
+      } catch {
+        // noop
+      }
+    }
     if (
       typeof window !== "undefined" &&
       document.referrer &&

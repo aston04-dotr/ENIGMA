@@ -23,6 +23,7 @@ type Props = {
   item?: ListingRow | null;
   index?: number;
   compact?: boolean;
+  onOpen?: () => void;
 };
 
 function LocationTinyIcon() {
@@ -43,7 +44,7 @@ function EyeTinyIcon() {
   );
 }
 
-export function ListingCard({ item, index = 0, compact = false }: Props) {
+export function ListingCard({ item, index = 0, compact = false, onOpen }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
@@ -140,13 +141,14 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
         href={`/listing/${lid}`}
         prefetch
         className="block"
-        onClick={() =>
+        onClick={() => {
+          onOpen?.();
           trackEvent("listing_open", {
             listing_id: lid,
             category: safeItem?.category ?? null,
             city: safeItem?.city ?? null,
-          })
-        }
+          });
+        }}
       >
         <div className={`relative w-full overflow-hidden rounded-t-[16px] bg-elev-2 ${imageHeightClass}`}>
           {uri ? (
