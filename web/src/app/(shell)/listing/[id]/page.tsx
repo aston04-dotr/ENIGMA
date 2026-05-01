@@ -80,6 +80,9 @@ export default function ListingDetailPage() {
         if (cancelled) return;
         if (res.row) {
           const loadedRow = res.row;
+          if (process.env.NODE_ENV === "development") {
+            console.log("LISTING DATA:", loadedRow);
+          }
           setRow(loadedRow);
           void incrementViews(loadedRow.id).then((ok) => {
             if (!ok || cancelled) return;
@@ -190,6 +193,18 @@ export default function ListingDetailPage() {
     [session?.user?.id, router],
   );
 
+  const handleBackToFeed = useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      document.referrer &&
+      document.referrer.includes(window.location.origin)
+    ) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  }, [router]);
+
   if (loading) {
     return (
       <main className="p-5">
@@ -286,18 +301,6 @@ export default function ListingDetailPage() {
       setToast({ message: "Не удалось скопировать номер", type: "error" });
     }
   }
-
-  const handleBackToFeed = useCallback(() => {
-    if (
-      typeof window !== "undefined" &&
-      document.referrer &&
-      document.referrer.includes(window.location.origin)
-    ) {
-      router.back();
-      return;
-    }
-    router.push("/");
-  }, [router]);
 
   try {
     return (
