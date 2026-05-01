@@ -215,6 +215,7 @@ export function ChatUnreadProvider({
   const userId = user?.id ?? null;
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
+  const [unreadBump, setUnreadBump] = useState(0);
   const [loadingState, setLoadingState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
@@ -258,6 +259,7 @@ export function ChatUnreadProvider({
     async (opts?: { silent?: boolean }) => {
       if (!userId) {
         setRows([]);
+        setUnreadBump(0);
         setError(null);
         setLoadingState(false);
         return;
@@ -404,6 +406,7 @@ export function ChatUnreadProvider({
         }
 
         setRows(sortByLastMessageDesc(finalRows));
+        setUnreadBump(0);
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
@@ -608,6 +611,7 @@ export function ChatUnreadProvider({
 
     if (!userId) {
       setRows([]);
+      setUnreadBump(0);
       setError(null);
       setLoadingState(false);
       setActiveChatIdState(null);
@@ -724,6 +728,7 @@ export function ChatUnreadProvider({
               });
           });
           if (!fromMe && !isOpenChat) {
+            setUnreadBump((prev) => prev + 1);
             scheduleRefresh(220, { silent: true });
           }
         },
@@ -870,7 +875,10 @@ export function ChatUnreadProvider({
     };
   }, []);
 
-  const totalUnread = useMemo(() => computeTotalUnread(rows), [rows]);
+  const totalUnread = useMemo(
+    () => Math.max(0, computeTotalUnread(rows) + unreadBump),
+    [rows, unreadBump],
+  );
 
   const value = useMemo<ChatUnreadContextValue>(
     () => ({
