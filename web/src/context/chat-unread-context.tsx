@@ -433,7 +433,10 @@ export function ChatUnreadProvider({
   }, []);
 
   const upsertPresence = useCallback(async () => {
-    if (!userId || typeof document === "undefined") return;
+    const normalizedUserId = String(userId ?? "").trim();
+    if (!normalizedUserId || !isUuid(normalizedUserId) || typeof document === "undefined") {
+      return;
+    }
     if (presenceInFlightRef.current) return;
 
     presenceInFlightRef.current = true;
@@ -458,7 +461,7 @@ export function ChatUnreadProvider({
       const { data: updatedRows, error: updateError } = await rest
         .from("online_users")
         .update({ last_seen: lastSeen })
-        .eq("user_id", userId)
+        .eq("user_id", normalizedUserId)
         .select("user_id");
 
       if (updateError) {
@@ -473,7 +476,7 @@ export function ChatUnreadProvider({
       if (!hasUpdatedRows) {
         const { error: insertError } = await rest
           .from("online_users")
-          .insert({ user_id: userId, last_seen: lastSeen });
+          .insert({ user_id: normalizedUserId, last_seen: lastSeen });
         if (insertError) {
           if (!logOnceRef.current.presenceOnlineUpsert) {
             logOnceRef.current.presenceOnlineUpsert = true;
@@ -491,7 +494,7 @@ export function ChatUnreadProvider({
           rest
             .from("push_tokens")
             .update({ last_seen_at: lastSeen })
-            .eq("user_id", userId)
+            .eq("user_id", normalizedUserId)
             .abortSignal(signal),
       });
       if (!("result" in pushSeenRes) || pushSeenRes.result?.error) {

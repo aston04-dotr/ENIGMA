@@ -38,6 +38,12 @@ const VAPID_PUBLIC_KEY =
 const STORAGE_RETRY_KEY = "enigma:web-push:last-attempt-at";
 const RETRY_INTERVAL_MS = 60_000;
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 function isPushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -78,8 +84,13 @@ async function upsertWebPushSubscription(
   userId: string,
   subscription: PushSubscription,
 ): Promise<boolean> {
+  const normalizedUserId = String(userId ?? "").trim();
+  if (!normalizedUserId || !isUuid(normalizedUserId)) return false;
   const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session?.user?.id || sessionData.session.user.id !== userId) {
+  if (
+    !sessionData?.session?.user?.id ||
+    sessionData.session.user.id !== normalizedUserId
+  ) {
     return false;
   }
 
@@ -99,7 +110,7 @@ async function upsertWebPushSubscription(
   };
 
   const fullPayload: PushTokenPayload = {
-    user_id: userId,
+    user_id: normalizedUserId,
     token: endpoint,
     provider: "webpush" as const,
     subscription: safeJson(subscription.toJSON()) as Json,
@@ -129,6 +140,8 @@ async function removeWebPushSubscription(
   userId: string,
   endpoint: string,
 ): Promise<void> {
+  const normalizedUserId = String(userId ?? "").trim();
+  if (!normalizedUserId || !isUuid(normalizedUserId)) return;
   const trimmed = endpoint?.trim() ?? "";
   if (!trimmed) return;
 
@@ -136,7 +149,7 @@ async function removeWebPushSubscription(
   if (!sessionData?.session?.user?.id) {
     return;
   }
-  if (sessionData.session.user.id !== userId) {
+  if (sessionData.session.user.id !== normalizedUserId) {
     return;
   }
 
@@ -151,7 +164,7 @@ async function removeWebPushSubscription(
       rest
         .from("push_tokens")
         .delete()
-        .eq("user_id", userId)
+        .eq("user_id", normalizedUserId)
         .abortSignal(signal),
   });
   if (isBackoffSkipped(out)) return;
