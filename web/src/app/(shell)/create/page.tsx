@@ -88,6 +88,7 @@ export default function CreatePage() {
   const lastSavedRef = useRef("");
   const saveIdleClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const warningRef = useRef<HTMLDivElement | null>(null);
   const isDirty = Boolean(title || description || price);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
   const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
@@ -367,6 +368,14 @@ export default function CreatePage() {
       setShowPhoneWarning(false);
     }
   }, [profile?.phone]);
+
+  useEffect(() => {
+    if (!showPhoneWarning || !warningRef.current) return;
+    warningRef.current.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [showPhoneWarning]);
 
   useEffect(() => {
     return () => {
@@ -704,12 +713,15 @@ export default function CreatePage() {
         {busy ? (publishStage === "uploading" ? "Загрузка фото..." : "Создание объявления...") : "Опубликовать"}
       </button>
       {!profile?.phone?.trim() && showPhoneWarning ? (
-        <div className="mt-4 rounded-card border border-[rgba(34,197,94,0.3)] bg-[#0f172a] p-4">
+        <div
+          ref={warningRef}
+          className="mt-4 rounded-card border border-[rgba(34,197,94,0.3)] bg-[#0f172a] p-4"
+        >
           <div className="mb-2 text-base font-bold text-[#22c55e]">
             Рекомендуем добавить номер телефона в профиле
           </div>
           <div className="mb-3 text-sm text-[#94a3b8]">
-            Так вам будут чаще писать и доверять
+            Так вы не пропустите важный звонок
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button

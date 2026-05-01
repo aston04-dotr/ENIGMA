@@ -63,19 +63,19 @@ const cardEntryAnimation = `
 
 const packageInfo: Record<string, Record<PackageSize, PackageInfo>> = {
   general: {
-    small: { count: 10, price: 1800, perAd: 180 },
-    base: { count: 25, price: 4000, perAd: 160 },
-    pro: { count: 50, price: 7000, perAd: 140 },
+    small: { count: 10, price: 1500, perAd: 150 },
+    base: { count: 25, price: 3500, perAd: 140 },
+    pro: { count: 50, price: 6000, perAd: 120 },
   },
   realty: {
-    small: { count: 3, price: 4000, perAd: 1333 },
-    base: { count: 7, price: 8500, perAd: 1214 },
-    pro: { count: 15, price: 16500, perAd: 1100 },
+    small: { count: 3, price: 2000, perAd: 667 },
+    base: { count: 7, price: 4000, perAd: 571 },
+    pro: { count: 15, price: 9000, perAd: 600 },
   },
   auto: {
-    small: { count: 3, price: 2500, perAd: 833 },
-    base: { count: 7, price: 5500, perAd: 786 },
-    pro: { count: 15, price: 10500, perAd: 700 },
+    small: { count: 3, price: 1500, perAd: 500 },
+    base: { count: 7, price: 3900, perAd: 557 },
+    pro: { count: 15, price: 7900, perAd: 527 },
   },
 };
 
@@ -86,21 +86,21 @@ function calculateCustomPrice(type: string, quantity: number): { total: number; 
 
   // ЖЁСТКИЕ ЦЕНЫ ПАКЕТОВ (без расчётов)
   if (type === "general") {
-    if (quantity <= 10) return { total: 1800, perAd: 180 }; // small
-    if (quantity <= 25) return { total: 4000, perAd: 160 }; // base
-    return { total: 7000, perAd: 140 }; // pro
+    if (quantity <= 10) return { total: 1500, perAd: 150 }; // small
+    if (quantity <= 25) return { total: 3500, perAd: 140 }; // base
+    return { total: 6000, perAd: 120 }; // pro
   }
 
   if (type === "auto") {
-    if (quantity <= 3) return { total: 2500, perAd: 833 }; // small
-    if (quantity <= 7) return { total: 5500, perAd: 786 }; // base
-    return { total: 10500, perAd: 700 }; // pro
+    if (quantity <= 3) return { total: 1500, perAd: 500 }; // small
+    if (quantity <= 7) return { total: 3900, perAd: 557 }; // base
+    return { total: 7900, perAd: 527 }; // pro
   }
 
   if (type === "realty") {
-    if (quantity <= 3) return { total: 4000, perAd: 1333 }; // small
-    if (quantity <= 7) return { total: 8500, perAd: 1214 }; // base
-    return { total: 16500, perAd: 1100 }; // pro
+    if (quantity <= 3) return { total: 2000, perAd: 667 }; // small
+    if (quantity <= 7) return { total: 4000, perAd: 571 }; // base
+    return { total: 9000, perAd: 600 }; // pro
   }
 
   return { total: 0, perAd: 0 };
@@ -680,6 +680,11 @@ export default function ProfilePage() {
                       !isCustom &&
                       selectedPackage?.type === section.type &&
                       selectedPackage?.size === size;
+                    const isHitPackage =
+                      size === "base" &&
+                      (section.type === "general" ||
+                        section.type === "realty" ||
+                        section.type === "auto");
                     return (
                       <article
                         key={`${section.type}-${size}`}
@@ -710,6 +715,17 @@ export default function ProfilePage() {
                               }
                         }
                       >
+                        {isHitPackage ? (
+                          <span
+                            className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isDark
+                                ? "bg-[rgba(255,159,67,0.2)] text-[#ffd8a8] border border-[rgba(255,159,67,0.35)]"
+                                : "bg-[#fff1e6] text-[#d9480f] border border-[#ffd8a8]"
+                            }`}
+                          >
+                            🔥 Хит
+                          </span>
+                        ) : null}
                         {isDark ? (
                           <div
                             className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-30"
