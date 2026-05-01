@@ -40,7 +40,7 @@ function parseUnknownError(error: unknown): string {
 const inputClass =
   "w-full min-h-[48px] rounded-card border border-line bg-elevated px-4 text-fg placeholder:text-muted/60 transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/35";
 
-const MAX_LISTING_PHOTOS = getMaxListingPhotos();
+const MAX_LISTING_PHOTOS = Math.min(10, Math.max(1, getMaxListingPhotos()));
 const PHONE_REQUIRED_PROMPT = "Please add a phone number so buyers can contact you.";
 const CREATE_FORM_STORAGE_KEY = "create_form";
 
@@ -87,9 +87,41 @@ export default function CreatePage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const lastSavedRef = useRef("");
   const saveIdleClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isDirty = Boolean(title || description || price);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
   const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
+
+  const addSelectedFiles = useCallback((selected: FileList | null) => {
+    if (!selected || selected.length === 0) return;
+    const incoming = Array.from(selected).filter((file) =>
+      String(file.type ?? "").toLowerCase().startsWith("image/"),
+    );
+    if (incoming.length === 0) return;
+    setFiles((prev) => {
+      const base = Array.isArray(prev) ? prev : [];
+      const merged = [...base];
+      for (const file of incoming) {
+        if (
+          merged.some(
+            (x) =>
+              x.name === file.name &&
+              x.size === file.size &&
+              x.lastModified === file.lastModified,
+          )
+        ) {
+          continue;
+        }
+        if (merged.length >= MAX_LISTING_PHOTOS) break;
+        merged.push(file);
+      }
+      return merged;
+    });
+  }, []);
+
+  const removeSelectedFileAt = useCallback((index: number) => {
+    setFiles((prev) => prev.filter((_, idx) => idx !== index));
+  }, []);
 
   useEffect(() => {
     trackEvent("create_open");
@@ -123,6 +155,14 @@ export default function CreatePage() {
     if (isAllowedListingCity(normalized) && safeCities.includes(normalized)) return normalized;
     return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
   }, [city, safeCities]);
+  const selectedFilePreviews = useMemo(
+    () =>
+      files.map((file, idx) => ({
+        key: `${file.name}-${file.size}-${file.lastModified}-${idx}`,
+        url: URL.createObjectURL(file),
+      })),
+    [files],
+  );
 
   const safeCitiesRef = useRef(safeCities);
   safeCitiesRef.current = safeCities;
@@ -322,6 +362,14 @@ export default function CreatePage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      for (const item of selectedFilePreviews) {
+        URL.revokeObjectURL(item.url);
+      }
+    };
+  }, [selectedFilePreviews]);
+
   const resetCreateFormState = useCallback(() => {
     const defaultCity = safeCitiesRef.current[0] ?? ALLOWED_LISTING_CITIES[0];
     setTitle("");
@@ -511,9 +559,6 @@ export default function CreatePage() {
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <div className="space-y-2">
         <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
-        {isDirty ? (
-          <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
-        ) : null}
         <button
           type="button"
           onClick={handleBack}
@@ -537,13 +582,59 @@ export default function CreatePage() {
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Фото</label>
         <input
+          ref={fileInputRef}
           type="file"
           accept="image/*"
           multiple
           disabled={!canEditListingsAndListingPhotos(profile?.trust_score)}
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, MAX_LISTING_PHOTOS))}
-          className="mt-2 min-h-[48px] w-full text-sm text-muted file:mr-4 file:rounded-card file:border-0 file:bg-elev-2 file:px-4 file:py-2 file:text-sm file:font-medium file:text-fg"
+          onChange={(e) => {
+            addSelectedFiles(e.target.files);
+            e.target.value = "";
+          }}
+          className="sr-only"
+          tabIndex={-1}
         />
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={
+              !canEditListingsAndListingPhotos(profile?.trust_score) ||
+              files.length >= MAX_LISTING_PHOTOS
+            }
+            className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-elevated text-2xl font-light text-fg transition-all duration-200 hover:bg-elev-2 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Добавить фото"
+          >
+            +
+          </button>
+          <p className="text-xs text-muted">
+            {files.length}/{MAX_LISTING_PHOTOS} фото
+          </p>
+        </div>
+        {files.length > 0 ? (
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {selectedFilePreviews.map((preview, idx) => (
+              <div
+                key={preview.key}
+                className="relative overflow-hidden rounded-card border border-line bg-elevated"
+              >
+                <img
+                  src={preview.url}
+                  alt=""
+                  className="h-24 w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSelectedFileAt(idx)}
+                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white"
+                  aria-label="Удалить фото"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Заголовок</label>
