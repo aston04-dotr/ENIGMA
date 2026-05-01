@@ -41,7 +41,6 @@ const inputClass =
   "w-full min-h-[48px] rounded-card border border-line bg-elevated px-4 text-fg placeholder:text-muted/60 transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/35";
 
 const MAX_LISTING_PHOTOS = Math.min(10, Math.max(1, getMaxListingPhotos()));
-const PHONE_REQUIRED_PROMPT = "Please add a phone number so buyers can contact you.";
 const CREATE_FORM_STORAGE_KEY = "create_form";
 
 type CreateFormSnapshot = {
@@ -82,6 +81,7 @@ export default function CreatePage() {
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
+  const [showPhoneWarning, setShowPhoneWarning] = useState(false);
   const [formRestored, setFormRestored] = useState(false);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -363,6 +363,12 @@ export default function CreatePage() {
   }, []);
 
   useEffect(() => {
+    if (profile?.phone?.trim()) {
+      setShowPhoneWarning(false);
+    }
+  }, [profile?.phone]);
+
+  useEffect(() => {
     return () => {
       for (const item of selectedFilePreviews) {
         URL.revokeObjectURL(item.url);
@@ -410,13 +416,6 @@ export default function CreatePage() {
     }
     if (!isAllowedListingCity(selectedCity.trim())) {
       setErr("Пожалуйста, выберите город из списка (Москва/Сочи)");
-      return;
-    }
-    if (!profile?.phone?.trim()) {
-      setErr(PHONE_REQUIRED_PROMPT);
-      if (typeof window !== "undefined") {
-        window.alert(PHONE_REQUIRED_PROMPT);
-      }
       return;
     }
     setBusy(true);
@@ -510,6 +509,7 @@ export default function CreatePage() {
         }
       }
       resetCreateFormState();
+      setShowPhoneWarning(false);
       await refreshProfile();
       router.push(`/listing/${lid}`);
     } catch (e: unknown) {
@@ -533,6 +533,14 @@ export default function CreatePage() {
     refreshProfile,
     resetCreateFormState,
   ]);
+
+  const handlePublishClick = useCallback(() => {
+    if (!profile?.phone?.trim()) {
+      setShowPhoneWarning(true);
+      return;
+    }
+    void publish();
+  }, [profile?.phone, publish]);
 
   if (!session) {
     return (
@@ -687,22 +695,40 @@ export default function CreatePage() {
       {saveStatus === "saving" ? <div className="text-xs text-gray-400">Сохранение...</div> : null}
       {saveStatus === "saved" ? <div className="text-xs text-green-500">Сохранено ✓</div> : null}
       {err ? <p className="text-sm font-medium text-danger">{err}</p> : null}
-      {err === PHONE_REQUIRED_PROMPT ? (
-        <Link
-          href="/profile"
-          className="inline-flex min-h-[48px] w-full items-center justify-center rounded-card border border-line bg-elevated px-4 py-3 text-sm font-medium text-fg transition-colors duration-ui hover:bg-elev-2"
-        >
-          Открыть профиль
-        </Link>
-      ) : null}
       <button
         type="button"
         disabled={busy || !canSubmitBasic}
-        onClick={() => void publish()}
+        onClick={handlePublishClick}
         className="pressable w-full min-h-[52px] rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? (publishStage === "uploading" ? "Загрузка фото..." : "Создание объявления...") : "Опубликовать"}
       </button>
+      {!profile?.phone?.trim() && showPhoneWarning ? (
+        <div className="mt-4 rounded-card border border-[rgba(34,197,94,0.3)] bg-[#0f172a] p-4">
+          <div className="mb-2 text-base font-bold text-[#22c55e]">
+            Рекомендуем добавить номер телефона в профиле
+          </div>
+          <div className="mb-3 text-sm text-[#94a3b8]">
+            Так вам будут чаще писать и доверять
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void publish()}
+              className="min-h-[46px] w-full rounded-xl bg-gradient-to-r from-[#6366f1] to-[#3b82f6] px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Опубликовать
+            </button>
+            <Link
+              href="/profile"
+              className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border border-line bg-elevated px-4 py-3 text-sm font-medium text-fg transition-colors duration-ui hover:bg-elev-2"
+            >
+              Добавить телефон
+            </Link>
+          </div>
+        </div>
+      ) : null}
     </main>
     );
   } catch (renderError) {
