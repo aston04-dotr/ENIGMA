@@ -40,7 +40,6 @@ const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
 const CHANNEL_NAME = "enigma-chat-sync";
 const STORAGE_KEY = "enigma:chat-sync";
 const PRESENCE_HEARTBEAT_MS = 25_000;
-const CHAT_LIST_POLL_MS = 12_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
 
@@ -215,7 +214,6 @@ export function ChatUnreadProvider({
   const userId = user?.id ?? null;
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
-  const [unreadBump, setUnreadBump] = useState(0);
   const [loadingState, setLoadingState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
@@ -237,7 +235,6 @@ export function ChatUnreadProvider({
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
   const presenceIntervalRef = useRef<number | null>(null);
-  const chatListPollIntervalRef = useRef<number | null>(null);
   /** Сбрасывается при смене userId; без спама в консоль по одной теме. */
   const logOnceRef = useRef({
     presenceNoToken: false,
@@ -259,7 +256,6 @@ export function ChatUnreadProvider({
     async (opts?: { silent?: boolean }) => {
       if (!userId) {
         setRows([]);
-        setUnreadBump(0);
         setError(null);
         setLoadingState(false);
         return;
@@ -406,7 +402,6 @@ export function ChatUnreadProvider({
         }
 
         setRows(sortByLastMessageDesc(finalRows));
-        setUnreadBump(0);
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
@@ -611,7 +606,6 @@ export function ChatUnreadProvider({
 
     if (!userId) {
       setRows([]);
-      setUnreadBump(0);
       setError(null);
       setLoadingState(false);
       setActiveChatIdState(null);
@@ -716,7 +710,7 @@ export function ChatUnreadProvider({
                         ? 0
                         : fromMe
                           ? Math.max(0, Number(chat.unread_count || 0))
-                          : Math.max(0, Number(chat.unread_count || 0)) + 1,
+                          : Math.max(0, Number(chat.unread_count || 0)),
                     }
                   : chat,
               )
@@ -728,7 +722,6 @@ export function ChatUnreadProvider({
               });
           });
           if (!fromMe && !isOpenChat) {
-            setUnreadBump((prev) => prev + 1);
             scheduleRefresh(220, { silent: true });
           }
         },
@@ -829,30 +822,6 @@ export function ChatUnreadProvider({
   }, [scheduleRefresh, upsertPresence, userId]);
 
   useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
-
-    const run = () => {
-      void refreshChats({ silent: true });
-    };
-
-    // Immediate catch-up for missed realtime while user was offline.
-    run();
-
-    if (chatListPollIntervalRef.current) {
-      window.clearInterval(chatListPollIntervalRef.current);
-      chatListPollIntervalRef.current = null;
-    }
-    chatListPollIntervalRef.current = window.setInterval(run, CHAT_LIST_POLL_MS);
-
-    return () => {
-      if (chatListPollIntervalRef.current) {
-        window.clearInterval(chatListPollIntervalRef.current);
-        chatListPollIntervalRef.current = null;
-      }
-    };
-  }, [refreshChats, userId]);
-
-  useEffect(() => {
     return () => {
       if (typeof window !== "undefined") {
         if (statusRef.current.refreshTimer) {
@@ -863,10 +832,6 @@ export function ChatUnreadProvider({
           window.clearTimeout(statusRef.current.reconnectTimer);
           statusRef.current.reconnectTimer = null;
         }
-        if (chatListPollIntervalRef.current) {
-          window.clearInterval(chatListPollIntervalRef.current);
-          chatListPollIntervalRef.current = null;
-        }
       }
       if (statusRef.current.listChannel) {
         void supabase.removeChannel(statusRef.current.listChannel);
@@ -875,10 +840,7 @@ export function ChatUnreadProvider({
     };
   }, []);
 
-  const totalUnread = useMemo(
-    () => Math.max(0, computeTotalUnread(rows) + unreadBump),
-    [rows, unreadBump],
-  );
+  const totalUnread = useMemo(() => computeTotalUnread(rows), [rows]);
 
   const value = useMemo<ChatUnreadContextValue>(
     () => ({
