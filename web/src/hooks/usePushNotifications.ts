@@ -89,7 +89,16 @@ async function upsertWebPushSubscription(
   const rest = getSupabaseRestWithSession();
   if (!rest) return false;
 
-  const payload = {
+  type PushTokenPayload = {
+    user_id: string;
+    token: string;
+    provider?: string;
+    subscription?: Json;
+    user_agent?: string | null;
+    last_seen_at?: string;
+  };
+
+  const fullPayload: PushTokenPayload = {
     user_id: userId,
     token: endpoint,
     provider: "webpush" as const,
@@ -98,23 +107,33 @@ async function upsertWebPushSubscription(
       typeof navigator !== "undefined" ? (navigator.userAgent ?? null) : null,
     last_seen_at: new Date().toISOString(),
   };
+  const minimalPayload: PushTokenPayload = {
+    user_id: userId,
+    token: endpoint,
+  };
 
-  const out = await withPostgrestBackoff({
-    checkSession: hasValidAccessToken,
-    checkHealth: isSupabaseReachable,
-    logLabel: "web push upsert",
-    run: (signal) =>
-      rest
-        .from("push_tokens")
-        .upsert([payload], { onConflict: "user_id,token" })
-        .abortSignal(signal),
-  });
-  if (isBackoffSkipped(out)) return false;
-  if (out.result.error) {
-    console.error("SUPABASE ERROR: push_tokens upsert", out.result.error);
-    return false;
-  }
-  return !out.result.error;
+  const attempt = async (payload: PushTokenPayload) => {
+    const out = await withPostgrestBackoff({
+      checkSession: hasValidAccessToken,
+      checkHealth: isSupabaseReachable,
+      logLabel: "web push upsert",
+      run: (signal) =>
+        rest
+          .from("push_tokens")
+          .upsert([payload], { onConflict: "user_id,token" })
+          .abortSignal(signal),
+    });
+    if (isBackoffSkipped(out)) return false;
+    if (out.result.error) {
+      console.error("SUPABASE ERROR: push_tokens upsert", out.result.error);
+      return false;
+    }
+    return true;
+  };
+
+  const fullOk = await attempt(fullPayload);
+  if (fullOk) return true;
+  return attempt(minimalPayload);
 }
 
 async function removeWebPushSubscription(
@@ -135,7 +154,7 @@ async function removeWebPushSubscription(
   const rest = getSupabaseRestWithSession();
   if (!rest) return;
 
-  const out = await withPostgrestBackoff({
+  let out = await withPostgrestBackoff({
     checkSession: hasValidAccessToken,
     checkHealth: isSupabaseReachable,
     logLabel: "web push delete",
@@ -148,6 +167,20 @@ async function removeWebPushSubscription(
         .eq("provider", "webpush")
         .abortSignal(signal),
   });
+  if (!isBackoffSkipped(out) && out.result.error) {
+    out = await withPostgrestBackoff({
+      checkSession: hasValidAccessToken,
+      checkHealth: isSupabaseReachable,
+      logLabel: "web push delete fallback",
+      run: (signal) =>
+        rest
+          .from("push_tokens")
+          .delete()
+          .eq("user_id", userId)
+          .eq("token", trimmed)
+          .abortSignal(signal),
+    });
+  }
   if (isBackoffSkipped(out) || out.result.error) {
     // prod: тихо
   }

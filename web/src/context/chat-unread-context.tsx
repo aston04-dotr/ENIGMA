@@ -49,14 +49,6 @@ function isUuid(value: string): boolean {
   );
 }
 
-function isPostgresForeignKeyViolation(err: {
-  code?: string;
-  message?: string;
-}): boolean {
-  if (err.code === "23503") return true;
-  return /foreign key constraint/i.test(String(err.message ?? ""));
-}
-
 async function sessionHasAccessToken(): Promise<boolean> {
   const { data } = await supabase.auth.getSession();
   return Boolean(data?.session?.access_token?.trim());
@@ -446,11 +438,6 @@ export function ChatUnreadProvider({
 
     presenceInFlightRef.current = true;
     try {
-      const visibilityState =
-        document.visibilityState === "visible" ? "visible" : "hidden";
-      const rawActive = statusRef.current.activeChatId;
-      const activeChatId =
-        rawActive && isUuid(String(rawActive)) ? String(rawActive) : null;
       const lastSeen = new Date().toISOString();
 
       const rest = getSupabaseRestWithSession();
@@ -471,26 +458,11 @@ export function ChatUnreadProvider({
       const onlinePayload = {
         user_id: userId,
         last_seen: lastSeen,
-        visibility_state: visibilityState,
-        active_chat_id: activeChatId,
       };
 
       let upsertRes = await rest
         .from("online_users")
         .upsert([onlinePayload], { onConflict: "user_id" });
-
-      if (
-        upsertRes.error &&
-        activeChatId &&
-        isPostgresForeignKeyViolation(upsertRes.error)
-      ) {
-        upsertRes = await rest
-          .from("online_users")
-          .upsert(
-            [{ ...onlinePayload, active_chat_id: null }],
-            { onConflict: "user_id" },
-          );
-      }
 
       if (upsertRes.error) {
         if (!logOnceRef.current.presenceOnlineUpsert) {
@@ -508,7 +480,6 @@ export function ChatUnreadProvider({
             .from("push_tokens")
             .update({ last_seen_at: lastSeen })
             .eq("user_id", userId)
-            .eq("provider", "webpush")
             .abortSignal(signal),
       });
       if (!("result" in pushSeenRes) || pushSeenRes.result?.error) {
