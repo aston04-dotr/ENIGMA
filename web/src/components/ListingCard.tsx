@@ -47,22 +47,33 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
-  if (!item || typeof item !== "object") return null;
+  const safeItem = item && typeof item === "object" ? (item as ListingRow) : null;
 
-  const imgs = normalizeListingImages((item as ListingRow & { images?: unknown })?.images).sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-  );
+  const imgs = normalizeListingImages(
+    (safeItem as ListingRow & { images?: unknown } | null)?.images,
+  ).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const uri = imgs[0]?.url ?? null;
-  const itemTitle = typeof item.title === "string" && item.title.trim() ? item.title : "Без названия";
-  const itemCity = typeof item.city === "string" && item.city.trim() ? item.city : "Город не указан";
-  const boosted = isBoostActive(item);
-  const lid = item?.id;
+  const itemTitle =
+    typeof safeItem?.title === "string" && safeItem.title.trim()
+      ? safeItem.title
+      : "Без названия";
+  const itemCity =
+    typeof safeItem?.city === "string" && safeItem.city.trim()
+      ? safeItem.city
+      : "Город не указан";
+  const boosted = safeItem ? isBoostActive(safeItem) : false;
+  const lid = String(safeItem?.id ?? "").trim();
   const viewerId = session?.user?.id ?? null;
-  const isOwn = Boolean(viewerId && item.user_id && item.user_id === viewerId);
-  const partner = item.is_partner_ad === true;
-  const views = Number.isFinite(Number(item.view_count)) ? Number(item.view_count) : 0;
-  const favorites = Number.isFinite(Number(item.favorite_count)) ? Number(item.favorite_count) : 0;
-  const liveViewersRaw = (item as ListingRow & { live_viewers?: unknown }).live_viewers;
+  const isOwn = Boolean(viewerId && safeItem?.user_id && safeItem.user_id === viewerId);
+  const partner = safeItem?.is_partner_ad === true;
+  const views = Number.isFinite(Number(safeItem?.view_count))
+    ? Number(safeItem?.view_count)
+    : 0;
+  const favorites = Number.isFinite(Number(safeItem?.favorite_count))
+    ? Number(safeItem?.favorite_count)
+    : 0;
+  const liveViewersRaw = (safeItem as ListingRow & { live_viewers?: unknown } | null)
+    ?.live_viewers;
   const liveViewers =
     Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
       ? Number(liveViewersRaw)
@@ -106,12 +117,14 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
     return `/payment?${webTopPaymentQuery(lid, viewerId)}`;
   }
 
-  const numericPrice = Number(item?.price ?? 0);
+  const numericPrice = Number(safeItem?.price ?? 0);
 
   const imageHeightClass = compact
     ? "h-[146px] sm:h-[156px] lg:h-[166px]"
     : "h-[210px] sm:h-[230px] lg:h-[240px]";
   const contentSpacingClass = compact ? "space-y-1.5 p-3 sm:p-3.5" : "space-y-2 p-4 sm:p-[14px]";
+
+  if (!safeItem || !lid) return null;
 
   return (
     <div
@@ -132,8 +145,8 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
         onClick={() =>
           trackEvent("listing_open", {
             listing_id: lid,
-            category: item?.category ?? null,
-            city: item?.city ?? null,
+            category: safeItem?.category ?? null,
+            city: safeItem?.city ?? null,
           })
         }
       >
@@ -170,7 +183,9 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
           ) : null}
         </div>
         <div className={contentSpacingClass}>
-          <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">{itemTitle}</p>
+          <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">
+            {itemTitle}
+          </p>
           <p
             className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${
               theme === "light" ? "text-[#0f172a]" : "text-white"
@@ -225,7 +240,7 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
               <EyeTinyIcon />
               <span>{views}</span>
             </span>
-            <span className="truncate text-muted/65">· {categoryLabel(item?.category)}</span>
+            <span className="truncate text-muted/65">· {categoryLabel(safeItem?.category)}</span>
           </div>
         </div>
       </Link>
