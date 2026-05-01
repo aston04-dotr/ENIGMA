@@ -307,13 +307,13 @@ export default function TermsPage() {
           ← На ленту
         </Link>
 
-        <h1 className="text-2xl font-bold tracking-tight text-black">
+        <h1 className="text-2xl font-bold tracking-tight text-fg">
           Пользовательское соглашение
         </h1>
-        <p className="text-xs text-gray-500 mb-6">Последнее обновление: 2026</p>
+        <p className="mb-6 text-xs text-muted">Последнее обновление: 2026</p>
 
         <div className="mb-6">
-          <h2 className="text-lg font-semibold mb-3 text-black">Содержание</h2>
+          <h2 className="mb-3 text-lg font-semibold text-fg">Содержание</h2>
           <div className="flex flex-col gap-2 text-sm text-blue-500">
             {toc.map((item) => (
               <a key={item.id} href={`#${item.id}`} className="hover:underline">
@@ -323,14 +323,14 @@ export default function TermsPage() {
           </div>
         </div>
 
-        <div className="text-sm text-black leading-relaxed whitespace-pre-wrap">
-          <p className="mb-6 text-gray-400">ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ{`\n`}(редакция от 2026 г.)</p>
+        <div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
+          <p className="mb-6 text-muted">ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ{`\n`}(редакция от 2026 г.)</p>
           {sections.map((section) => (
             <section key={section.id} className="mb-8">
-              <h2 id={section.id} className="mb-3 scroll-mt-24 text-base font-semibold text-black">
+              <h2 id={section.id} className="mb-3 scroll-mt-24 text-base font-semibold text-fg">
                 {section.title}
               </h2>
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-black">
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
                 {section.body}
               </pre>
             </section>
