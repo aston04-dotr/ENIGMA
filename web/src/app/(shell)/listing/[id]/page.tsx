@@ -66,6 +66,7 @@ export default function ListingDetailPage() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatOpenInFlightRef = useRef(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     if (!id) {
@@ -115,6 +116,10 @@ export default function ListingDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [row?.id]);
 
   const viewerId = session?.user?.id ?? null;
   const safeItem = (row || {}) as Partial<import("@/lib/types").ListingRow>;
@@ -227,8 +232,13 @@ export default function ListingDetailPage() {
   const imgs = normalizeListingImages(images).sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
   );
-  const image = imgs?.[0] || null;
+  const safeIndex =
+    imgs.length > 0
+      ? Math.min(Math.max(currentImageIndex, 0), imgs.length - 1)
+      : 0;
+  const image = imgs?.[safeIndex] || null;
   const uri = image?.url || null;
+  const hasMultipleImages = imgs.length > 1;
   const title =
     typeof safeItem.title === "string" && safeItem.title.trim()
       ? safeItem.title
@@ -313,6 +323,39 @@ export default function ListingDetailPage() {
               ENIGMA
             </div>
           )}
+          {imgs.length > 0 ? (
+            <div className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+              {safeIndex + 1} из {imgs.length}
+            </div>
+          ) : null}
+          {hasMultipleImages ? (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentImageIndex((prev) =>
+                    prev <= 0 ? imgs.length - 1 : prev - 1,
+                  )
+                }
+                className="absolute left-3 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-black/45 text-xl font-bold text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-all duration-150 hover:bg-black/60 active:scale-95"
+                aria-label="Предыдущее фото"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentImageIndex((prev) =>
+                    prev >= imgs.length - 1 ? 0 : prev + 1,
+                  )
+                }
+                className="absolute right-3 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-black/45 text-xl font-bold text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-all duration-150 hover:bg-black/60 active:scale-95"
+                aria-label="Следующее фото"
+              >
+                ›
+              </button>
+            </>
+          ) : null}
         </div>
         <div className="p-5">
           <p className="text-3xl font-bold tracking-tight text-fg">{price}</p>
@@ -415,50 +458,6 @@ export default function ListingDetailPage() {
                 : "pointer-events-none translate-y-full opacity-0"
             }`}
           >
-            {/* Header */}
-            <h3 className="text-center text-[18px] font-semibold tracking-tight text-fg">
-              Увеличьте отклик на объявление
-            </h3>
-
-            {/* Subheader */}
-            <p className="mt-1.5 text-center text-[14px] text-muted leading-relaxed">
-              Поднимите объявление, чтобы его увидело больше людей
-            </p>
-
-            {/* Comparison Block */}
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {/* Left - Without Boost */}
-              <div className="rounded-2xl bg-elevated/50 p-3.5 dark:bg-elevated/50 light:bg-gray-50/80">
-                <p className="text-[12px] font-medium text-muted uppercase tracking-wide">
-                  Без продвижения
-                </p>
-                <div className="mt-2 space-y-1">
-                  <p className="text-[13px] text-fg">
-                    <span className="opacity-60">~</span>143 просмотра
-                  </p>
-                  <p className="text-[13px] text-fg">1–2 сообщения</p>
-                  <p className="text-[13px] text-muted">Низкая позиция</p>
-                </div>
-              </div>
-
-              {/* Right - With Boost */}
-              <div className="rounded-2xl bg-elevated/80 p-3.5 dark:bg-elevated/80 light:bg-gray-100/90 border border-accent/10">
-                <p className="text-[12px] font-medium text-accent uppercase tracking-wide">
-                  С продвижением
-                </p>
-                <div className="mt-2 space-y-1">
-                  <p className="text-[13px] text-fg font-medium">
-                    <span className="text-accent">~</span>2 300 просмотров
-                  </p>
-                  <p className="text-[13px] text-fg font-medium">
-                    15+ сообщений
-                  </p>
-                  <p className="text-[13px] text-accent font-medium">В топе</p>
-                </div>
-              </div>
-            </div>
-
-            {/* CTA Button */}
             <Link
               href={boostHref}
               onClick={() =>
@@ -468,15 +467,10 @@ export default function ListingDetailPage() {
                   surface: "listing_sticky",
                 })
               }
-              className="mt-5 flex min-h-[54px] w-full items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+              className="flex min-h-[54px] w-full items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
             >
               Поднять объявление - 149 ₽
             </Link>
-
-            {/* Footer */}
-            <p className="mt-3 text-center text-[14px] text-muted/70">
-              Больше просмотров и откликов
-            </p>
           </div>
         ) : null}
       </main>
