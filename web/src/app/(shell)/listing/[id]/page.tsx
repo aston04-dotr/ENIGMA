@@ -58,7 +58,6 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [row, setRow] = useState<import("@/lib/types").ListingRow | null>(null);
-  const [showStickyBoost, setShowStickyBoost] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error" | "info";
@@ -142,14 +141,6 @@ export default function ListingDetailPage() {
     row && viewerId && ownerId && ownerId === viewerId,
   );
   const partnerListing = safeItem?.is_partner_ad === true;
-
-  useEffect(() => {
-    if (!isOwnListing || partnerListing || !row) return;
-    const onScroll = () => setShowStickyBoost(window.scrollY > 100);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [isOwnListing, partnerListing, row]);
 
   useEffect(() => {
     setFavoriteCountLocal(favoriteCountFromRow);
@@ -299,7 +290,7 @@ export default function ListingDetailPage() {
   try {
     return (
       <main
-        className={`safe-pt ${isOwnListing && !partnerListing ? "pb-28" : "pb-8"}`}
+        className="safe-pt pb-8"
       >
         {toast && (
           <Toast
@@ -450,29 +441,6 @@ export default function ListingDetailPage() {
             </div>
           )}
         </div>
-        {isOwnListing && !partnerListing ? (
-          <div
-            className={`fixed bottom-0 left-1/2 z-40 w-full -translate-x-1/2 view-mode-nav border-t border-line/50 bg-[#0b0f14]/98 px-5 py-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] backdrop-blur-xl transition-transform duration-300 dark:bg-[#0b0f14]/98 light:bg-white/98 ${
-              showStickyBoost
-                ? "translate-y-0"
-                : "pointer-events-none translate-y-full opacity-0"
-            }`}
-          >
-            <Link
-              href={boostHref}
-              onClick={() =>
-                trackBoostEvent("boost_click", {
-                  listingId: rowId,
-                  own: true,
-                  surface: "listing_sticky",
-                })
-              }
-              className="flex min-h-[54px] w-full items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-            >
-              Поднять объявление - 149 ₽
-            </Link>
-          </div>
-        ) : null}
       </main>
     );
   } catch (e) {
