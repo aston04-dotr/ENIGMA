@@ -199,6 +199,57 @@ function sortByLastMessageDesc(rows: ChatListRow[]): ChatListRow[] {
   });
 }
 
+function messageTimestampMs(row: ChatListRow): number {
+  const ts = Date.parse(
+    row.last_message_created_at || row.last_message_at || row.created_at || "",
+  );
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function mergeServerRowsWithLocal(
+  prev: ChatListRow[],
+  next: ChatListRow[],
+): ChatListRow[] {
+  const prevByChat = new Map(prev.map((row) => [row.chat_id, row]));
+  const merged = next.map((serverRow) => {
+    const localRow = prevByChat.get(serverRow.chat_id);
+    if (!localRow) return serverRow;
+
+    const localTs = messageTimestampMs(localRow);
+    const serverTs = messageTimestampMs(serverRow);
+    const preferLocalPayload = localTs > serverTs;
+
+    return {
+      ...serverRow,
+      last_message_text: preferLocalPayload
+        ? localRow.last_message_text
+        : serverRow.last_message_text,
+      last_message_at: preferLocalPayload
+        ? localRow.last_message_at
+        : serverRow.last_message_at,
+      last_message_created_at: preferLocalPayload
+        ? localRow.last_message_created_at
+        : serverRow.last_message_created_at,
+      last_message_sender_id: preferLocalPayload
+        ? localRow.last_message_sender_id
+        : serverRow.last_message_sender_id,
+      last_message_image_url: preferLocalPayload
+        ? localRow.last_message_image_url
+        : serverRow.last_message_image_url,
+      last_message_voice_url: preferLocalPayload
+        ? localRow.last_message_voice_url
+        : serverRow.last_message_voice_url,
+      unread_count: Math.max(
+        0,
+        Number(serverRow.unread_count || 0),
+        Number(localRow.unread_count || 0),
+      ),
+    };
+  });
+
+  return sortByLastMessageDesc(merged);
+}
+
 function rowMatchesChatId(row: ChatListRow, messageChatId: string): boolean {
   if (row.chat_id === messageChatId) return true;
   const withId = row as ChatListRow & { id?: string };
@@ -401,7 +452,7 @@ export function ChatUnreadProvider({
           }
         }
 
-        setRows(sortByLastMessageDesc(finalRows));
+        setRows((prev) => mergeServerRowsWithLocal(prev, finalRows));
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
