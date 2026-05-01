@@ -78,10 +78,10 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
     Number.isFinite(Number(liveViewersRaw)) && Number(liveViewersRaw) > 0
       ? Number(liveViewersRaw)
       : null;
-  const favoriteStateRaw = (item as ListingRow & {
+  const favoriteStateRaw = (safeItem ?? {}) as {
     is_favorited?: unknown;
     isFavorited?: unknown;
-  });
+  };
   const isFavorited =
     favoriteStateRaw.is_favorited === true || favoriteStateRaw.isFavorited === true;
   const [favoriteCountLocal, setFavoriteCountLocal] = useState(favorites);
@@ -97,22 +97,20 @@ export function ListingCard({ item, index = 0, compact = false }: Props) {
     setIsFavoritedLocal(isFavorited);
   }, [isFavorited, lid]);
 
-  if (!lid) return null;
-
   function boostHref(): string {
-    if (!viewerId) return "/login";
+    if (!viewerId || !lid) return "/login";
     if (!isOwn) return `/listing/${lid}`;
     return `/payment?${webBoostPaymentQuery(lid, viewerId)}`;
   }
 
   function vipHref(): string {
-    if (!viewerId) return "/login";
+    if (!viewerId || !lid) return "/login";
     if (!isOwn) return `/listing/${lid}`;
     return `/payment?${webVipPaymentQuery(lid, viewerId)}`;
   }
 
   function topHref(): string {
-    if (!viewerId) return "/login";
+    if (!viewerId || !lid) return "/login";
     if (!isOwn) return `/listing/${lid}`;
     return `/payment?${webTopPaymentQuery(lid, viewerId)}`;
   }
