@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import webpush from "npm:web-push@3.6.7";
 import { Resend } from "npm:resend@4.0.0";
 
 type MessageRow = {
@@ -476,16 +475,7 @@ serve(async (req) => {
     const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
     const siteUrl =
       optionalEnv("NEXT_PUBLIC_SITE_URL") || "https://enigma-app.online";
-    const vapidPublicKey = optionalEnv("WEB_PUSH_VAPID_PUBLIC_KEY");
-    const vapidPrivateKey = optionalEnv("WEB_PUSH_VAPID_PRIVATE_KEY");
-    const vapidSubject =
-      optionalEnv("WEB_PUSH_VAPID_SUBJECT") ||
-      "mailto:support@enigma-app.online";
     const resendApiKey = optionalEnv("RESEND_API_KEY");
-
-    if (vapidPublicKey && vapidPrivateKey) {
-      webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-    }
     const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -508,53 +498,27 @@ serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
-    const [
-      { data: senderProfile },
-      { data: presenceRows },
-      { data: tokenRows },
-    ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id,name")
-        .eq("id", record.sender_id)
-        .maybeSingle(),
-      supabase
-        .from("online_users")
-        .select("user_id,last_seen,visibility_state,active_chat_id")
-        .in("user_id", recipientIds),
-      supabase
-        .from("push_tokens")
-        .select("user_id,token,provider,subscription,last_seen_at")
-        .in("user_id", recipientIds),
-    ]);
+    const { data: senderProfile } = await supabase
+      .from("profiles")
+      .select("id,name")
+      .eq("id", record.sender_id)
+      .maybeSingle();
 
     const senderName = buildSenderName(senderProfile as ProfileRow | null);
     const messageBody = buildMessageBody(record);
     const title = senderName;
     const url = `${siteUrl.replace(/\/+$/, "")}/chat/${record.chat_id}`;
-
-    const presenceMap = new Map<string, PresenceRow>(
-      (presenceRows ?? []).map((row: PresenceRow) => [row.user_id, row]),
+    const recipientTargetIds = recipientIds.filter(
+      (recipientId) => recipientId !== record.sender_id,
     );
-    const onlineUserIds = new Set<string>(
-      (presenceRows ?? []).map((row: PresenceRow) => String(row.user_id)),
-    );
-
-    const eligibleRecipientIds = recipientIds.filter((recipientId) => {
-      const presence = presenceMap.get(recipientId);
-      return !isRecentlyVisible(presence);
-    });
-    console.log("ELIGIBLE RECIPIENTS:", eligibleRecipientIds);
-
-    if (!eligibleRecipientIds.length) {
-      return new Response("ok", { status: 200 });
-    }
+    console.log("EMAIL TARGET RECIPIENTS:", recipientTargetIds);
+    if (!recipientTargetIds.length) return new Response("ok", { status: 200 });
 
     const [{ data: recipientProfiles }, { data: chatRow }] = await Promise.all([
       supabase
         .from("profiles")
         .select("id,email")
-        .in("id", eligibleRecipientIds),
+        .in("id", recipientTargetIds),
       supabase
         .from("chats")
         .select("listing_id")
@@ -568,7 +532,7 @@ serve(async (req) => {
       const email = String((row as { email?: string | null }).email ?? "").trim();
       if (id && email) recipientEmailMap.set(id, email);
     }
-    const missingEmailUserIds = eligibleRecipientIds.filter(
+    const missingEmailUserIds = recipientTargetIds.filter(
       (id) => !recipientEmailMap.has(id),
     );
     if (missingEmailUserIds.length > 0) {
@@ -610,71 +574,11 @@ serve(async (req) => {
       listingImage = String((imageRow as { url?: string | null } | null)?.url ?? "").trim();
     }
 
-    const tokens = (tokenRows ?? []).filter((row: PushTokenRow) =>
-      eligibleRecipientIds.includes(row.user_id),
-    );
-
-    const expoTokens = tokens
-      .filter((row) => (row.provider ?? "expo") === "expo")
-      .map((row) => row.token)
-      .filter(Boolean);
-
-    const webTokens = tokens.filter(
-      (row) => (row.provider ?? "") === "webpush",
-    );
-
-    if (expoTokens.length) {
-      const expoRows = tokens.filter((row) => (row.provider ?? "expo") === "expo");
-      for (const tokenRow of expoRows) {
-        try {
-          const ok = await sendExpoPushOne(
-            tokenRow.token,
-            title,
-            messageBody,
-            url,
-            record.chat_id,
-          );
-        } catch (error) {
-          console.error("Expo push delivery failed", {
-            user_id: tokenRow.user_id,
-            token: tokenRow.token,
-            error,
-          });
-        }
-      }
-    }
-
-    for (const tokenRow of webTokens) {
-      try {
-        const result = await sendWebPushOne(
-          tokenRow,
-          title,
-          messageBody,
-          url,
-          record.chat_id,
-          senderName,
-        );
-
-        if (result.expired) {
-          await deletePushToken(supabase, tokenRow);
-        }
-      } catch (error) {
-        console.error("Web push delivery failed", {
-          user_id: tokenRow.user_id,
-          token: tokenRow.token,
-          error,
-        });
-      }
-    }
+    console.log("PUSH DISABLED: email-only mode");
 
     if (resend) {
-      const emailFallbackRecipientIds = recipientIds.filter(
-        (recipientId) =>
-          recipientId !== record.sender_id && !onlineUserIds.has(recipientId),
-      );
-      for (const recipientId of emailFallbackRecipientIds) {
-        if (recipientId === record.sender_id) continue;
-        console.log("USER NOT IN online_users, FALLBACK EMAIL", recipientId);
+      for (const recipientId of recipientTargetIds) {
+        console.log("EMAIL FALLBACK TARGET", recipientId);
         const recipientEmail = recipientEmailMap.get(recipientId);
         if (!recipientEmail) {
           console.log("NO EMAIL FOR USER", recipientId);
@@ -690,6 +594,8 @@ serve(async (req) => {
           chatUrl: url,
         });
       }
+    } else {
+      console.log("RESEND DISABLED: missing RESEND_API_KEY");
     }
 
     return new Response("ok", { status: 200 });
