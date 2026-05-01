@@ -1666,7 +1666,19 @@ export default function ChatRoomPage() {
       }
 
       if (error) {
-        console.error("chat delete message for all", error);
+        const hardDelete = await (supabase.from("messages") as any)
+          .delete()
+          .eq("id", messageId)
+          .eq("sender_id", me);
+        if (!hardDelete.error) {
+          setMessages((prev) => prev.filter((m) => m.id !== messageId));
+          return;
+        }
+
+        console.error("chat delete message for all", {
+          softDeleteError: error,
+          hardDeleteError: hardDelete.error,
+        });
         setToast({
           type: "error",
           message: "Не удалось удалить сообщение у всех",

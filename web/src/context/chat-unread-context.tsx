@@ -250,6 +250,92 @@ function mergeServerRowsWithLocal(
   return sortByLastMessageDesc(merged);
 }
 
+type MessageSnapshotRow = {
+  id?: string | null;
+  chat_id?: string | null;
+  sender_id?: string | null;
+  text?: string | null;
+  image_url?: string | null;
+  voice_url?: string | null;
+  created_at?: string | null;
+  deleted?: boolean | null;
+  read_at?: string | null;
+};
+
+function hydrateRowsFromMessagesSnapshot(
+  rows: ChatListRow[],
+  messages: MessageSnapshotRow[],
+  viewerId: string,
+): ChatListRow[] {
+  const latestByChat = new Map<string, MessageSnapshotRow>();
+  const unreadByChat = new Map<string, number>();
+
+  for (const msg of messages) {
+    const chatId = String(msg.chat_id ?? "").trim();
+    if (!chatId) continue;
+    if (!latestByChat.has(chatId)) {
+      latestByChat.set(chatId, msg);
+    }
+    const senderId = String(msg.sender_id ?? "").trim();
+    const readAt = String(msg.read_at ?? "").trim();
+    if (senderId && senderId !== viewerId && !readAt) {
+      unreadByChat.set(chatId, (unreadByChat.get(chatId) ?? 0) + 1);
+    }
+  }
+
+  const hydrated = rows.map((row) => {
+    const latest = latestByChat.get(row.chat_id);
+    const snapshotUnread = unreadByChat.get(row.chat_id) ?? 0;
+    if (!latest) {
+      return {
+        ...row,
+        unread_count: Math.max(0, Number(row.unread_count || 0), snapshotUnread),
+      };
+    }
+
+    const latestCreatedAt = String(latest.created_at ?? "").trim();
+    const serverCreatedAt = String(
+      row.last_message_created_at || row.last_message_at || row.created_at || "",
+    ).trim();
+    const latestTs = Date.parse(latestCreatedAt);
+    const serverTs = Date.parse(serverCreatedAt);
+    const shouldTakeLatest =
+      Number.isFinite(latestTs) &&
+      (!Number.isFinite(serverTs) || latestTs > serverTs);
+
+    return {
+      ...row,
+      last_message_id: shouldTakeLatest
+        ? String(latest.id ?? "").trim() || row.last_message_id
+        : row.last_message_id,
+      last_message_text: shouldTakeLatest
+        ? String(latest.text ?? "")
+        : row.last_message_text,
+      last_message_sender_id: shouldTakeLatest
+        ? String(latest.sender_id ?? "").trim() || row.last_message_sender_id
+        : row.last_message_sender_id,
+      last_message_created_at: shouldTakeLatest
+        ? latestCreatedAt || row.last_message_created_at
+        : row.last_message_created_at,
+      last_message_at: shouldTakeLatest
+        ? latestCreatedAt || row.last_message_at
+        : row.last_message_at,
+      last_message_image_url: shouldTakeLatest
+        ? String(latest.image_url ?? "").trim() || null
+        : row.last_message_image_url,
+      last_message_voice_url: shouldTakeLatest
+        ? String(latest.voice_url ?? "").trim() || null
+        : row.last_message_voice_url,
+      last_message_deleted: shouldTakeLatest
+        ? Boolean(latest.deleted)
+        : row.last_message_deleted,
+      unread_count: Math.max(0, Number(row.unread_count || 0), snapshotUnread),
+    };
+  });
+
+  return sortByLastMessageDesc(hydrated);
+}
+
 function rowMatchesChatId(row: ChatListRow, messageChatId: string): boolean {
   if (row.chat_id === messageChatId) return true;
   const withId = row as ChatListRow & { id?: string };
@@ -472,6 +558,31 @@ export function ChatUnreadProvider({
               if (!listingImage) return row;
               return { ...row, listing_image: listingImage };
             });
+          }
+        }
+
+        const chatIds = finalRows
+          .map((row) => String(row.chat_id ?? "").trim())
+          .filter((id) => id.length > 0);
+        if (chatIds.length > 0) {
+          const messagesRes = await (rest.from("messages") as any)
+            .select(
+              "id,chat_id,sender_id,text,image_url,voice_url,created_at,deleted,read_at",
+            )
+            .in("chat_id", chatIds)
+            .order("created_at", { ascending: false })
+            .limit(2000);
+          if (messagesRes.error) {
+            console.error(
+              "SUPABASE ERROR: messages snapshot for chat list",
+              messagesRes.error,
+            );
+          } else if (Array.isArray(messagesRes.data)) {
+            finalRows = hydrateRowsFromMessagesSnapshot(
+              finalRows,
+              messagesRes.data as MessageSnapshotRow[],
+              userId,
+            );
           }
         }
 
