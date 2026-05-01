@@ -287,6 +287,18 @@ export default function ListingDetailPage() {
     }
   }
 
+  const handleBackToFeed = useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      document.referrer &&
+      document.referrer.includes(window.location.origin)
+    ) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  }, [router]);
+
   try {
     return (
       <main
@@ -319,6 +331,15 @@ export default function ListingDetailPage() {
               {safeIndex + 1} из {imgs.length}
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={handleBackToFeed}
+            className="absolute left-3 top-12 z-20 inline-flex items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-1 text-sm font-semibold text-blue-500 shadow-[0_2px_10px_rgba(0,0,0,0.2)] transition-all duration-150 hover:bg-white active:scale-95 dark:bg-[#0b0f14]/85"
+            aria-label="Назад"
+          >
+            <span aria-hidden>←</span>
+            <span>Назад</span>
+          </button>
           {hasMultipleImages ? (
             <>
               <button
