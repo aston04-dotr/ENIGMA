@@ -455,21 +455,32 @@ export function ChatUnreadProvider({
         return;
       }
 
-      const onlinePayload = {
-        user_id: userId,
-        last_seen: lastSeen,
-      };
-
-      let upsertRes = await rest
+      const { data: updatedRows, error: updateError } = await rest
         .from("online_users")
-        .upsert([onlinePayload], { onConflict: "user_id" });
+        .update({ last_seen: lastSeen })
+        .eq("user_id", userId)
+        .select("user_id");
 
-      if (upsertRes.error) {
+      if (updateError) {
         if (!logOnceRef.current.presenceOnlineUpsert) {
           logOnceRef.current.presenceOnlineUpsert = true;
-          console.error("online_users upsert", upsertRes.error);
+          console.error("online_users update", updateError);
         }
         return;
+      }
+
+      const hasUpdatedRows = Array.isArray(updatedRows) && updatedRows.length > 0;
+      if (!hasUpdatedRows) {
+        const { error: insertError } = await rest
+          .from("online_users")
+          .insert({ user_id: userId, last_seen: lastSeen });
+        if (insertError) {
+          if (!logOnceRef.current.presenceOnlineUpsert) {
+            logOnceRef.current.presenceOnlineUpsert = true;
+            console.error("online_users insert", insertError);
+          }
+          return;
+        }
       }
 
       const pushSeenRes = await withPostgrestBackoff({
