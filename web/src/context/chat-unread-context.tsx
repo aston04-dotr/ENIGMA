@@ -469,6 +469,7 @@ export function ChatUnreadProvider({
           logOnceRef.current.presenceOnlineUpsert = true;
           console.error("online_users upsert", upsertRes.error);
         }
+        return;
       }
 
       const pushSeenRes = await withPostgrestBackoff({
@@ -484,6 +485,7 @@ export function ChatUnreadProvider({
       });
       if (!("result" in pushSeenRes) || pushSeenRes.result?.error) {
         console.error("SUPABASE ERROR: push_tokens last_seen", pushSeenRes);
+        return;
       }
     } catch (e) {
       console.error("presence heartbeat", e);
