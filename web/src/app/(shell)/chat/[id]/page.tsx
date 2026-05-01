@@ -1316,6 +1316,9 @@ export default function ChatRoomPage() {
             ...(me ? { presence: { key: me } } : {}),
           },
         })
+        .on("system" as any, { event: "error" } as any, (payload: unknown) => {
+          console.error("chat realtime system error", payload);
+        })
         .on("broadcast", { event: "typing" }, (msg) => {
           const payload = msg.payload as {
             chat_id?: string;

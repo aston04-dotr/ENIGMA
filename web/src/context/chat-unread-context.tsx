@@ -217,7 +217,6 @@ export function ChatUnreadProvider({
   const [loadingState, setLoadingState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   const statusRef = useRef<{
     refreshTimer: number | null;
@@ -252,11 +251,6 @@ export function ChatUnreadProvider({
       markNoToken: false,
     };
   }, [userId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setMounted(true);
-  }, []);
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -644,6 +638,12 @@ export function ChatUnreadProvider({
       }
 
       const channel = supabase.channel("chat-list-" + userId).on(
+        "system" as any,
+        { event: "error" } as any,
+        (payload: unknown) => {
+          console.error("chat-list realtime system error", payload);
+        },
+      ).on(
         "postgres_changes",
         {
           event: "INSERT",
@@ -853,8 +853,6 @@ export function ChatUnreadProvider({
       getChatRow,
     ],
   );
-
-  if (!mounted) return null;
 
   return (
     <ChatUnreadContext.Provider value={value}>
