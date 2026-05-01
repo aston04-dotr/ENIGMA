@@ -40,6 +40,7 @@ const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
 const CHANNEL_NAME = "enigma-chat-sync";
 const STORAGE_KEY = "enigma:chat-sync";
 const PRESENCE_HEARTBEAT_MS = 25_000;
+const CHAT_LIST_POLL_MS = 12_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
 
@@ -235,6 +236,7 @@ export function ChatUnreadProvider({
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
   const presenceIntervalRef = useRef<number | null>(null);
+  const chatListPollIntervalRef = useRef<number | null>(null);
   /** Сбрасывается при смене userId; без спама в консоль по одной теме. */
   const logOnceRef = useRef({
     presenceNoToken: false,
@@ -822,6 +824,30 @@ export function ChatUnreadProvider({
   }, [scheduleRefresh, upsertPresence, userId]);
 
   useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+
+    const run = () => {
+      void refreshChats({ silent: true });
+    };
+
+    // Immediate catch-up for missed realtime while user was offline.
+    run();
+
+    if (chatListPollIntervalRef.current) {
+      window.clearInterval(chatListPollIntervalRef.current);
+      chatListPollIntervalRef.current = null;
+    }
+    chatListPollIntervalRef.current = window.setInterval(run, CHAT_LIST_POLL_MS);
+
+    return () => {
+      if (chatListPollIntervalRef.current) {
+        window.clearInterval(chatListPollIntervalRef.current);
+        chatListPollIntervalRef.current = null;
+      }
+    };
+  }, [refreshChats, userId]);
+
+  useEffect(() => {
     return () => {
       if (typeof window !== "undefined") {
         if (statusRef.current.refreshTimer) {
@@ -831,6 +857,10 @@ export function ChatUnreadProvider({
         if (statusRef.current.reconnectTimer) {
           window.clearTimeout(statusRef.current.reconnectTimer);
           statusRef.current.reconnectTimer = null;
+        }
+        if (chatListPollIntervalRef.current) {
+          window.clearInterval(chatListPollIntervalRef.current);
+          chatListPollIntervalRef.current = null;
         }
       }
       if (statusRef.current.listChannel) {
