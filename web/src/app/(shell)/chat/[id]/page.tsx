@@ -1227,9 +1227,13 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!chatId || !me || !isUuid(chatId)) return;
     if (!messagesLoaded) return;
-    const targetId = lastLoadedMessageIdRef.current ?? latestMessageId;
+    if (lastReadMarkedMessageIdRef.current) return;
+    const targetId =
+      lastLoadedMessageIdRef.current ??
+      messagesRef.current[messagesRef.current.length - 1]?.id ??
+      null;
     void markVisibleRoomRead(targetId);
-  }, [chatId, latestMessageId, markVisibleRoomRead, me, messagesLoaded]);
+  }, [chatId, markVisibleRoomRead, me, messagesLoaded]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -1402,12 +1406,6 @@ export default function ChatRoomPage() {
                 newMessage.id,
                 newMessage.sender_id,
               );
-              if (
-                typeof document !== "undefined" &&
-                document.visibilityState === "visible"
-              ) {
-                void markVisibleRoomRead(newMessage.id);
-              }
             }
           },
         )
@@ -1559,26 +1557,6 @@ export default function ChatRoomPage() {
       alignListToBottomAfterPaint();
     }
   }, [messages.length, alignListToBottomAfterPaint]);
-
-  useEffect(() => {
-    if (!latestMessageId) return;
-
-    setMessages((prev) => {
-      let changed = false;
-      const next = prev.map((m) => {
-        if (
-          m.chat_id === chatId &&
-          m.sender_id !== me &&
-          m.status !== "seen"
-        ) {
-          changed = true;
-          return { ...m, status: "seen" as const };
-        }
-        return m;
-      });
-      return changed ? next : prev;
-    });
-  }, [chatId, latestMessageId, me]);
 
   const openMessageContextMenu = useCallback(
     (message: MessageRow, pos: { x: number; y: number }) => {
