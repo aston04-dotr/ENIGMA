@@ -217,6 +217,7 @@ export function ChatUnreadProvider({
   const [loadingState, setLoadingState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const statusRef = useRef<{
     refreshTimer: number | null;
@@ -251,6 +252,11 @@ export function ChatUnreadProvider({
       markNoToken: false,
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setMounted(true);
+  }, []);
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -441,7 +447,7 @@ export function ChatUnreadProvider({
 
     presenceInFlightRef.current = true;
     try {
-      const lastSeen = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       const rest = getSupabaseRestWithSession();
       if (!rest) return;
@@ -458,32 +464,29 @@ export function ChatUnreadProvider({
         return;
       }
 
-      const { data: updatedRows, error: updateError } = await rest
-        .from("online_users")
-        .update({ last_seen: lastSeen })
-        .eq("user_id", normalizedUserId)
-        .select("user_id");
-
-      if (updateError) {
-        if (!logOnceRef.current.presenceOnlineUpsert) {
-          logOnceRef.current.presenceOnlineUpsert = true;
-          console.error("online_users update", updateError);
-        }
-        return;
-      }
-
-      const hasUpdatedRows = Array.isArray(updatedRows) && updatedRows.length > 0;
-      if (!hasUpdatedRows) {
-        const { error: insertError } = await rest
-          .from("online_users")
-          .insert({ user_id: normalizedUserId, last_seen: lastSeen });
-        if (insertError) {
+      try {
+        const { error: upsertError } = await (rest.from("online_users") as any).upsert(
+          [
+            {
+              user_id: normalizedUserId,
+              updated_at: nowIso,
+            },
+          ],
+          { onConflict: "user_id" },
+        );
+        if (upsertError) {
+          const status = Number((upsertError as { status?: unknown })?.status ?? 0);
+          // Silent fail on bad query shape to avoid cascading React crash screen.
+          if (status === 400) return;
           if (!logOnceRef.current.presenceOnlineUpsert) {
             logOnceRef.current.presenceOnlineUpsert = true;
-            console.error("online_users insert", insertError);
+            console.error("online_users upsert", upsertError);
           }
           return;
         }
+      } catch (upsertCrash) {
+        console.error("online_users upsert unexpected", upsertCrash);
+        return;
       }
 
       const pushSeenRes = await withPostgrestBackoff({
@@ -493,7 +496,7 @@ export function ChatUnreadProvider({
         run: (signal) =>
           rest
             .from("push_tokens")
-            .update({ last_seen_at: lastSeen })
+            .update({ last_seen_at: nowIso })
             .eq("user_id", normalizedUserId)
             .abortSignal(signal),
       });
@@ -850,6 +853,8 @@ export function ChatUnreadProvider({
       getChatRow,
     ],
   );
+
+  if (!mounted) return null;
 
   return (
     <ChatUnreadContext.Provider value={value}>
