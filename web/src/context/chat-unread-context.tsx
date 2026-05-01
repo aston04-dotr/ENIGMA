@@ -341,16 +341,17 @@ export function ChatUnreadProvider({
         let enrichedRows = nextRows;
         if (missingNameUserIds.length > 0) {
           const profileRes = await (rest.from("profiles") as any)
-            .select("id,display_name,name")
+            .select("id,name")
             .in("id", missingNameUserIds);
-          if (!profileRes.error && Array.isArray(profileRes.data)) {
+          if (profileRes.error) {
+            console.error("SUPABASE ERROR: profiles list for chats", profileRes.error);
+          } else if (Array.isArray(profileRes.data)) {
             const namesById = new Map<string, string>();
             for (const profile of profileRes.data as Array<Record<string, unknown>>) {
               const id = String(profile.id ?? "").trim();
               if (!id) continue;
-              const displayName = String(profile.display_name ?? "").trim();
               const name = String(profile.name ?? "").trim();
-              const resolved = displayName || name;
+              const resolved = name;
               if (resolved) {
                 namesById.set(id, resolved);
               }
@@ -387,7 +388,9 @@ export function ChatUnreadProvider({
             .select("listing_id,url,sort_order")
             .in("listing_id", listingIdsNeedingImage)
             .order("sort_order", { ascending: true });
-          if (!imagesRes.error && Array.isArray(imagesRes.data)) {
+          if (imagesRes.error) {
+            console.error("SUPABASE ERROR: listing images for chats", imagesRes.error);
+          } else if (Array.isArray(imagesRes.data)) {
             const firstImageByListing = new Map<string, string>();
             for (const row of imagesRes.data as Array<Record<string, unknown>>) {
               const listingId = String(row.listing_id ?? "").trim();
@@ -474,7 +477,7 @@ export function ChatUnreadProvider({
 
       let upsertRes = await rest
         .from("online_users")
-        .upsert(onlinePayload, { onConflict: "user_id" });
+        .upsert([onlinePayload], { onConflict: "user_id" });
 
       if (
         upsertRes.error &&
@@ -484,7 +487,7 @@ export function ChatUnreadProvider({
         upsertRes = await rest
           .from("online_users")
           .upsert(
-            { ...onlinePayload, active_chat_id: null },
+            [{ ...onlinePayload, active_chat_id: null }],
             { onConflict: "user_id" },
           );
       }
@@ -496,7 +499,7 @@ export function ChatUnreadProvider({
         }
       }
 
-      await withPostgrestBackoff({
+      const pushSeenRes = await withPostgrestBackoff({
         checkSession: sessionHasAccessToken,
         checkHealth: isSupabaseReachable,
         logLabel: "push_tokens last_seen",
@@ -508,6 +511,9 @@ export function ChatUnreadProvider({
             .eq("provider", "webpush")
             .abortSignal(signal),
       });
+      if (!("result" in pushSeenRes) || pushSeenRes.result?.error) {
+        console.error("SUPABASE ERROR: push_tokens last_seen", pushSeenRes);
+      }
     } catch (e) {
       console.error("presence heartbeat", e);
     } finally {

@@ -106,10 +106,14 @@ async function upsertWebPushSubscription(
     run: (signal) =>
       rest
         .from("push_tokens")
-        .upsert(payload, { onConflict: "user_id,token" })
+        .upsert([payload], { onConflict: "user_id,token" })
         .abortSignal(signal),
   });
   if (isBackoffSkipped(out)) return false;
+  if (out.result.error) {
+    console.error("SUPABASE ERROR: push_tokens upsert", out.result.error);
+    return false;
+  }
   return !out.result.error;
 }
 

@@ -103,6 +103,17 @@ export default function ChatsPage() {
   const router = useRouter();
   const { session } = useAuth();
   const { rows, loading, error, refreshChats } = useChatUnread();
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const ts = (r: (typeof rows)[number]) =>
+          r.last_message_at || r.last_message_created_at || r.created_at;
+        const tb = new Date(ts(b)).getTime();
+        const ta = new Date(ts(a)).getTime();
+        return tb - ta;
+      }),
+    [rows],
+  );
 
   useEffect(() => {
     if (!session?.user) return;
@@ -122,18 +133,6 @@ export default function ChatsPage() {
       </main>
     );
   }
-
-  const sortedRows = useMemo(
-    () =>
-      [...rows].sort((a, b) => {
-        const ts = (r: (typeof rows)[number]) =>
-          r.last_message_at || r.last_message_created_at || r.created_at;
-        const tb = new Date(ts(b)).getTime();
-        const ta = new Date(ts(a)).getTime();
-        return tb - ta;
-      }),
-    [rows],
-  );
 
   return (
     <main className="safe-pt min-h-screen bg-main px-5 pb-6 pt-8">
