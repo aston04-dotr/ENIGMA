@@ -192,6 +192,7 @@ async function sendEmailFallback(
   const fromEmail = Deno.env.get("RESEND_FROM") || "support@enigma-app.online";
 
   console.log("SENDING EMAIL TO:", to);
+  console.log("USING FROM EMAIL:", fromEmail);
 
   const { error } = await resend.emails.send({
     from: `Enigma <${fromEmail}>`,
