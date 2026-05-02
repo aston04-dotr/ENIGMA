@@ -34,6 +34,7 @@ export type SupportTicketPayload = {
   user_id: string;
   message: string;
   type: SupportTicketType;
+  topic_label?: string;
   status?: SupportTicketStatus;
   notifyByEmail?: boolean;
 };
@@ -108,6 +109,7 @@ export async function createSupportTicket(payload: SupportTicketPayload): Promis
       type: "support_ticket",
       user_id: userId,
       message,
+      topic_label: payload.topic_label,
     });
   };
 
@@ -153,6 +155,7 @@ export function notifyAdmin(event: {
   type: "payment_pending" | "support_ticket";
   user_id: string;
   message: string;
+  topic_label?: string;
   payment_id?: string;
   listing_id?: string | null;
   promoKind?: string | null;
@@ -160,20 +163,48 @@ export function notifyAdmin(event: {
 }) {
   const subject = "[ENIGMA SUPPORT] Новое обращение";
 
-  const createdAt = new Date().toISOString();
+  const createdAt = new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
 
-  const text = [
-    `тип: ${event.type}`,
-    `user_id: ${event.user_id}`,
-    `текст обращения: ${event.message}`,
-    `дата: ${createdAt}`,
-    event.payment_id ? `payment_id: ${event.payment_id}` : null,
-    event.listing_id ? `listing_id: ${event.listing_id}` : null,
-    event.promoKind ? `promoKind: ${event.promoKind}` : null,
-    typeof event.amount === "number" ? `amount: ${event.amount}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const supportTopicLabel = String(event.topic_label ?? "").trim() || "Другое";
+  const supportMessage = String(event.message ?? "").trim() || "<пусто>";
+
+  const text =
+    event.type === "support_ticket"
+      ? [
+          "Новое обращение в поддержку ENIGMA",
+          "Тип обращения:",
+          supportTopicLabel,
+          "User ID:",
+          event.user_id,
+          "Сообщение:",
+          supportMessage,
+          "Дата:",
+          createdAt,
+        ].join("\n")
+      : [
+          "Новое обращение в поддержку ENIGMA",
+          "Тип обращения:",
+          "Проблема с оплатой",
+          "User ID:",
+          event.user_id,
+          "Сообщение:",
+          supportMessage,
+          "Дата:",
+          createdAt,
+          event.payment_id ? `payment_id: ${event.payment_id}` : null,
+          event.listing_id ? `listing_id: ${event.listing_id}` : null,
+          event.promoKind ? `promoKind: ${event.promoKind}` : null,
+          typeof event.amount === "number" ? `amount: ${event.amount}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
   console.log("ADMIN_NOTIFY", {
     ts: new Date().toISOString(),

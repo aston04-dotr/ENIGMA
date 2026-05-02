@@ -50,21 +50,18 @@ export default function SupportPage() {
       return;
     }
 
-    const finalText = [
-      topic ? `Тема: ${topic}` : "Тема: не выбрана",
-      answer ? `Ответ бота: ${answer}` : null,
-      message.trim() ? `Сообщение: ${message.trim()}` : "Сообщение: без текста",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const selectedTopic = TOPICS.find((t) => t.id === topic) ?? null;
+    const topicLabel = selectedTopic?.title ?? "Другое";
+    const userMessage = message.trim() || "<пусто>";
 
     setBusy(true);
     setNotice(null);
 
     const res = await createSupportTicket({
       user_id: userId,
-      message: finalText,
+      message: userMessage,
       type: topic ?? "other",
+      topic_label: topicLabel,
       status: "open",
       notifyByEmail: true,
     });

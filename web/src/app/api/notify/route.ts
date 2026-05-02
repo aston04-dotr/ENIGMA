@@ -39,7 +39,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "to and subject required" }, { status: 400 });
     }
 
-    const from = "Enigma <noreply@enigma-app.online>";
+    const fromEmail = String(process.env.RESEND_FROM ?? "").trim() || "support@enigma-app.online";
+    console.log("USING FROM EMAIL:", fromEmail);
+    const from = `Enigma Support <${fromEmail}>`;
     const resend = new Resend(key);
 
     const { data, error } = await resend.emails.send({
