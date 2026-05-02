@@ -12,8 +12,8 @@ const CACHE_NAME = "enigma-" + APP_VERSION;
 const MAX_ITEMS = 120;
 
 const SHELL = ["/", "/offline.html"];
-const NOTIFICATION_ICON = "/icons/icon-192.png";
-const NOTIFICATION_BADGE = "/icons/icon-192.png";
+const NOTIFICATION_ICON = "/icon-192.png";
+const NOTIFICATION_BADGE = "/icon-192.png";
 
 const SW_DEV =
   self.location.hostname === "localhost" ||
