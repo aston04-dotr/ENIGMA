@@ -67,9 +67,14 @@ type RealEstateParams = {
 };
 
 type ElectronicsParams = { brand: string; model: string; condition: string };
-type FashionParams = { itemType: string; size: string; condition: string };
+type FashionParams = {
+  itemType: string;
+  size: string;
+  sizeOther: string;
+  condition: string;
+};
 type ServicesParams = { serviceType: string; priceType: string };
-type KidsParams = { itemType: string; age: string };
+type KidsParams = { itemType: string; age: string; size: string; sizeOther: string };
 type SportParams = { itemType: string; condition: string };
 type HomeParams = { itemType: string; condition: string };
 
@@ -107,12 +112,46 @@ const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
     renovation: "",
   },
   electronics: { brand: "", model: "", condition: "" },
-  fashion: { itemType: "", size: "", condition: "" },
+  fashion: { itemType: "", size: "", sizeOther: "", condition: "" },
   services: { serviceType: "", priceType: "" },
-  kids: { itemType: "", age: "" },
+  kids: { itemType: "", age: "", size: "", sizeOther: "" },
   sport: { itemType: "", condition: "" },
   home: { itemType: "", condition: "" },
 };
+
+const KIDS_SIZE_OPTIONS = [
+  "50",
+  "56",
+  "62",
+  "68",
+  "74",
+  "80",
+  "86",
+  "92",
+  "98",
+  "104",
+  "110",
+  "116",
+  "122",
+  "128",
+  "134",
+  "140",
+  "146",
+  "152",
+  "158",
+  "164",
+] as const;
+
+const FASHION_CLOTHING_SIZE_OPTIONS = [
+  "XXS",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "XXL",
+  "XXXL",
+] as const;
 
 export default function CreatePage() {
   const { session, profile, refreshProfile } = useAuth();
@@ -274,6 +313,18 @@ export default function CreatePage() {
     [],
   );
 
+  const resolveKidsSize = useCallback((): string => {
+    const p = categoryParams.kids;
+    if (p.size === "__other__") return p.sizeOther.trim();
+    return p.size.trim();
+  }, [categoryParams.kids]);
+
+  const resolveFashionSize = useCallback((): string => {
+    const p = categoryParams.fashion;
+    if (p.size === "__other__") return p.sizeOther.trim();
+    return p.size.trim();
+  }, [categoryParams.fashion]);
+
   const validateCategoryRequiredFields = useCallback((): string | null => {
     if (category === "auto") {
       const p = categoryParams.auto;
@@ -295,8 +346,12 @@ export default function CreatePage() {
     }
     if (category === "fashion") {
       const p = categoryParams.fashion;
-      if (!p.itemType.trim() || !p.size.trim() || !p.condition.trim()) {
+      const resolvedSize = resolveFashionSize();
+      if (!p.itemType.trim() || !resolvedSize || !p.condition.trim()) {
         return "Заполните обязательные параметры одежды/обуви: тип, размер, состояние";
+      }
+      if (p.itemType === "Обувь" && !/^\d+$/.test(resolvedSize)) {
+        return "Для обуви размер должен быть числом";
       }
     }
     if (category === "services") {
@@ -307,8 +362,8 @@ export default function CreatePage() {
     }
     if (category === "kids") {
       const p = categoryParams.kids;
-      if (!p.itemType.trim() || !p.age.trim()) {
-        return "Заполните обязательные параметры для категории Детям: тип товара и возраст";
+      if (!p.itemType.trim() || !p.age.trim() || !resolveKidsSize()) {
+        return "Заполните обязательные параметры для категории Детям: тип товара, возраст и размер";
       }
     }
     if (category === "sport") {
@@ -324,7 +379,7 @@ export default function CreatePage() {
       }
     }
     return null;
-  }, [category, categoryParams]);
+  }, [category, categoryParams, resolveFashionSize, resolveKidsSize]);
 
   const buildSpecsSummary = useCallback((): string => {
     const specs: Array<[string, string]> = [];
@@ -361,7 +416,11 @@ export default function CreatePage() {
     }
     if (category === "fashion") {
       const p = categoryParams.fashion;
-      specs.push(["Тип", p.itemType], ["Размер", p.size], ["Состояние", p.condition]);
+      specs.push(
+        ["Тип", p.itemType],
+        ["Размер", resolveFashionSize()],
+        ["Состояние", p.condition],
+      );
     }
     if (category === "services") {
       const p = categoryParams.services;
@@ -369,7 +428,7 @@ export default function CreatePage() {
     }
     if (category === "kids") {
       const p = categoryParams.kids;
-      specs.push(["Тип товара", p.itemType], ["Возраст", p.age]);
+      specs.push(["Тип товара", p.itemType], ["Возраст", p.age], ["Размер", resolveKidsSize()]);
     }
     if (category === "sport") {
       const p = categoryParams.sport;
@@ -385,7 +444,7 @@ export default function CreatePage() {
     if (filled.length === 0) return "";
     const lines = filled.map(([label, value]) => `- ${label}: ${value}`).join("\n");
     return `Характеристики:\n${lines}`;
-  }, [category, categoryParams]);
+  }, [category, categoryParams, resolveFashionSize, resolveKidsSize]);
 
   const buildParamsFromForm = useCallback((): Record<string, unknown> => {
     const toIntOrNull = (raw: string): number | null => {
@@ -442,9 +501,14 @@ export default function CreatePage() {
     }
     if (category === "fashion") {
       const p = categoryParams.fashion;
+      const resolvedSize = resolveFashionSize();
+      const sizeValue =
+        p.itemType === "Обувь"
+          ? toIntOrNull(resolvedSize)
+          : resolvedSize || null;
       return {
         type: p.itemType.trim() || null,
-        size: p.size.trim() || null,
+        size: sizeValue,
         price: normalizedPrice,
         condition: p.condition.trim() || null,
       };
@@ -459,9 +523,12 @@ export default function CreatePage() {
     }
     if (category === "kids") {
       const p = categoryParams.kids;
+      const resolvedSize = resolveKidsSize();
+      const parsedKidsSize = toIntOrNull(resolvedSize);
       return {
         item_type: p.itemType.trim() || null,
         age: p.age.trim() || null,
+        size: parsedKidsSize ?? (resolvedSize || null),
         price: normalizedPrice,
       };
     }
@@ -484,7 +551,7 @@ export default function CreatePage() {
     return {
       price: normalizedPrice,
     };
-  }, [category, categoryParams]);
+  }, [category, categoryParams, price, resolveFashionSize, resolveKidsSize]);
 
   const handleBack = useCallback(() => {
     if (!confirmLeave()) return;
@@ -930,12 +997,51 @@ export default function CreatePage() {
       {category === "fashion" ? (
         <div className="space-y-3">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры одежды/обуви</label>
-          <select value={categoryParams.fashion.itemType} onChange={(e) => updateCategoryParam("fashion", "itemType", e.target.value)} className={inputClass}>
+          <select
+            value={categoryParams.fashion.itemType}
+            onChange={(e) => {
+              const nextType = e.target.value;
+              updateCategoryParam("fashion", "itemType", nextType);
+              updateCategoryParam("fashion", "size", "");
+              updateCategoryParam("fashion", "sizeOther", "");
+            }}
+            className={inputClass}
+          >
             <option value="">Тип * (одежда/обувь)</option>
             <option value="Одежда">Одежда</option>
             <option value="Обувь">Обувь</option>
           </select>
-          <input value={categoryParams.fashion.size} onChange={(e) => updateCategoryParam("fashion", "size", e.target.value)} placeholder="Размер *" className={inputClass} />
+          <select
+            value={categoryParams.fashion.size}
+            onChange={(e) => updateCategoryParam("fashion", "size", e.target.value)}
+            className={inputClass}
+            disabled={!categoryParams.fashion.itemType}
+          >
+            <option value="">Выберите размер</option>
+            {categoryParams.fashion.itemType === "Одежда"
+              ? FASHION_CLOTHING_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))
+              : null}
+            {categoryParams.fashion.itemType === "Обувь"
+              ? Array.from({ length: 14 }, (_, idx) => String(35 + idx)).map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))
+              : null}
+            <option value="__other__">Другой</option>
+          </select>
+          {categoryParams.fashion.size === "__other__" ? (
+            <input
+              value={categoryParams.fashion.sizeOther}
+              onChange={(e) => updateCategoryParam("fashion", "sizeOther", e.target.value)}
+              placeholder="Укажите размер"
+              className={inputClass}
+            />
+          ) : null}
           <select value={categoryParams.fashion.condition} onChange={(e) => updateCategoryParam("fashion", "condition", e.target.value)} className={inputClass}>
             <option value="">Состояние *</option>
             <option value="Новое">Новое</option>
@@ -959,6 +1065,27 @@ export default function CreatePage() {
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Детям</label>
           <input value={categoryParams.kids.itemType} onChange={(e) => updateCategoryParam("kids", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
           <input value={categoryParams.kids.age} onChange={(e) => updateCategoryParam("kids", "age", e.target.value)} placeholder="Возраст *" className={inputClass} />
+          <select
+            value={categoryParams.kids.size}
+            onChange={(e) => updateCategoryParam("kids", "size", e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Выберите размер</option>
+            {KIDS_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+            <option value="__other__">Другой</option>
+          </select>
+          {categoryParams.kids.size === "__other__" ? (
+            <input
+              value={categoryParams.kids.sizeOther}
+              onChange={(e) => updateCategoryParam("kids", "sizeOther", e.target.value)}
+              placeholder="Укажите размер"
+              className={inputClass}
+            />
+          ) : null}
         </div>
       ) : null}
       {category === "sport" ? (
