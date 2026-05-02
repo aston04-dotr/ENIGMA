@@ -43,29 +43,76 @@ const inputClass =
 const MAX_LISTING_PHOTOS = Math.min(10, Math.max(1, getMaxListingPhotos()));
 const CREATE_FORM_STORAGE_KEY = "create_form";
 
-type CreateFormSnapshot = {
-  title: string;
-  description: string;
-  price: string;
-  city: string;
-  category: string;
+type AutoParams = {
+  brand: string;
+  model: string;
+  year: string;
+  mileage: string;
+  owners: string;
+  fuel: string;
+  transmission: string;
+  drive: string;
+  customsCleared: string;
+  damaged: string;
 };
 
-function buildDraftPayloadKey(
-  title: string,
-  description: string,
-  price: string,
-  city: string,
-  category: string,
-): string {
-  return JSON.stringify({ title, description, price, city, category });
-}
+type RealEstateParams = {
+  propertyType: string;
+  area: string;
+  floor: string;
+  floorsTotal: string;
+  rooms: string;
+  parking: string;
+  renovation: string;
+};
 
-function cityToSelectedKey(cityRaw: string, safeCities: string[]): string {
-  const n = (cityRaw || "").trim();
-  if (isAllowedListingCity(n) && safeCities.includes(n)) return n;
-  return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
-}
+type ElectronicsParams = { brand: string; model: string; condition: string };
+type FashionParams = { itemType: string; size: string; condition: string };
+type ServicesParams = { serviceType: string; priceType: string };
+type KidsParams = { itemType: string; age: string };
+type SportParams = { itemType: string; condition: string };
+type HomeParams = { itemType: string; condition: string };
+
+type CategoryFormParams = {
+  auto: AutoParams;
+  realestate: RealEstateParams;
+  electronics: ElectronicsParams;
+  fashion: FashionParams;
+  services: ServicesParams;
+  kids: KidsParams;
+  sport: SportParams;
+  home: HomeParams;
+};
+
+const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
+  auto: {
+    brand: "",
+    model: "",
+    year: "",
+    mileage: "",
+    owners: "",
+    fuel: "",
+    transmission: "",
+    drive: "",
+    customsCleared: "",
+    damaged: "",
+  },
+  realestate: {
+    propertyType: "",
+    area: "",
+    floor: "",
+    floorsTotal: "",
+    rooms: "",
+    parking: "",
+    renovation: "",
+  },
+  electronics: { brand: "", model: "", condition: "" },
+  fashion: { itemType: "", size: "", condition: "" },
+  services: { serviceType: "", priceType: "" },
+  kids: { itemType: "", age: "" },
+  sport: { itemType: "", condition: "" },
+  home: { itemType: "", condition: "" },
+};
 
 export default function CreatePage() {
   const { session, profile, refreshProfile } = useAuth();
@@ -78,19 +125,31 @@ export default function CreatePage() {
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [category, setCategory] = useState("other");
   const [files, setFiles] = useState<File[]>([]);
+  const [categoryParams, setCategoryParams] = useState<CategoryFormParams>(
+    EMPTY_CATEGORY_PARAMS,
+  );
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
   const [showPhoneWarning, setShowPhoneWarning] = useState(false);
-  const [formRestored, setFormRestored] = useState(false);
-  const [draftLoaded, setDraftLoaded] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const lastSavedRef = useRef("");
-  const saveIdleClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const warningRef = useRef<HTMLDivElement | null>(null);
-  const isDirty = Boolean(title || description || price);
-  const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
+  const hasAnyParams = useMemo(() => {
+    const active = categoryParams[category as keyof CategoryFormParams];
+    if (!active || typeof active !== "object") return false;
+    return Object.values(active).some((v) => String(v ?? "").trim().length > 0);
+  }, [category, categoryParams, price]);
+  const isDirty = Boolean(
+    title.trim() ||
+      description.trim() ||
+      price.trim() ||
+      files.length > 0 ||
+      category !== "other" ||
+      hasAnyParams,
+  );
+  const { safePush, confirmLeave } = useUnsavedChangesGuard(isDirty, {
+    enabled: true,
+  });
   const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
 
   const addSelectedFiles = useCallback((selected: FileList | null) => {
@@ -128,18 +187,6 @@ export default function CreatePage() {
     trackEvent("create_open");
   }, []);
 
-  const handleBack = useCallback(() => {
-    if (
-      typeof window !== "undefined" &&
-      document.referrer &&
-      document.referrer.includes(window.location.origin)
-    ) {
-      safeBack(router);
-    } else {
-      safePush(router, "/");
-    }
-  }, [router, safeBack, safePush]);
-
   const safeCities = useMemo(() => {
     const source = Array.isArray(cities) ? cities : [];
     const normalized = source
@@ -168,6 +215,18 @@ export default function CreatePage() {
   const safeCitiesRef = useRef(safeCities);
   safeCitiesRef.current = safeCities;
 
+  const resetCreateFormState = useCallback(() => {
+    const defaultCity = safeCitiesRef.current[0] ?? ALLOWED_LISTING_CITIES[0];
+    setTitle("");
+    setDescription("");
+    setPrice("");
+    setCity(defaultCity);
+    setCategory("other");
+    setFiles([]);
+    setCategoryParams(EMPTY_CATEGORY_PARAMS);
+    setErr("");
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -182,186 +241,265 @@ export default function CreatePage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    let cancelled = false;
-    setFormRestored(false);
-    setDraftLoaded(false);
-
-    void (async () => {
-      const sc = safeCitiesRef.current;
-      const localSafe = Array.isArray(sc) && sc.length > 0 ? sc : [...ALLOWED_LISTING_CITIES];
-
-      const setLastSavedFromFields = (fields: {
-        title: string;
-        description: string;
-        price: string;
-        cityRaw: string;
-        category: string;
-      }) => {
-        const cityK = cityToSelectedKey(fields.cityRaw, localSafe);
-        lastSavedRef.current = buildDraftPayloadKey(
-          fields.title,
-          fields.description,
-          fields.price,
-          cityK,
-          fields.category,
-        );
-      };
-
-      const applyLocalSnapshot = (): {
-        title: string;
-        description: string;
-        price: string;
-        cityRaw: string;
-        category: string;
-      } | null => {
-        try {
-          const saved = localStorage.getItem(CREATE_FORM_STORAGE_KEY);
-          if (!saved) return null;
-          const parsed = JSON.parse(saved) as Partial<CreateFormSnapshot>;
-          if (typeof parsed.title === "string") setTitle(parsed.title);
-          if (typeof parsed.description === "string") setDescription(parsed.description);
-          if (typeof parsed.price === "string") setPrice(parsed.price);
-          if (typeof parsed.city === "string" && parsed.city.trim()) setCity(parsed.city);
-          if (typeof parsed.category === "string" && parsed.category.trim()) setCategory(parsed.category);
-          const t = typeof parsed.title === "string" ? parsed.title : "";
-          const d = typeof parsed.description === "string" ? parsed.description : "";
-          const p = typeof parsed.price === "string" ? parsed.price : "";
-          const cRaw = typeof parsed.city === "string" && parsed.city.trim() ? parsed.city : "";
-          const cat =
-            typeof parsed.category === "string" && parsed.category.trim() ? parsed.category : "other";
-          return { title: t, description: d, price: p, cityRaw: cRaw, category: cat };
-        } catch (e) {
-          console.warn("Failed to parse local draft", e);
-          return null;
-        }
-      };
-
-      if (uid) {
-        const rest = getSupabaseRestWithSession();
-        if (rest) {
-          const { data, error } = await rest.from("drafts").select("*").eq("user_id", uid).maybeSingle();
-          if (cancelled) return;
-          if (error) {
-            console.warn("[drafts] load", error);
-          } else if (data) {
-            const t = data.title != null ? String(data.title) : "";
-            const d = data.description != null ? String(data.description) : "";
-            const p = data.price != null ? String(data.price) : "";
-            const cRaw = data.city != null && String(data.city).trim() ? String(data.city) : "";
-            const cat =
-              data.category != null && String(data.category).trim() ? String(data.category) : "other";
-            setTitle(t);
-            setDescription(d);
-            setPrice(p);
-            if (cRaw) setCity(cRaw);
-            setCategory(cat);
-            setLastSavedFromFields({ title: t, description: d, price: p, cityRaw: cRaw, category: cat });
-            setFormRestored(true);
-            setDraftLoaded(true);
-            return;
-          }
-        }
-        if (cancelled) return;
-        const local = applyLocalSnapshot();
-        if (local) {
-          setLastSavedFromFields(local);
-        } else {
-          setLastSavedFromFields({
-            title: "",
-            description: "",
-            price: "",
-            cityRaw: "",
-            category: "other",
-          });
-        }
-        setFormRestored(true);
-        setDraftLoaded(true);
-        return;
-      }
-
-      const local = applyLocalSnapshot();
-      if (local) setLastSavedFromFields(local);
-      if (!cancelled) {
-        setFormRestored(true);
-        setDraftLoaded(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [uid]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !formRestored) return;
-    const timeout = setTimeout(() => {
-      const snapshot: CreateFormSnapshot = {
-        title,
-        description,
-        price,
-        city,
-        category,
-      };
-      try {
-        localStorage.setItem(CREATE_FORM_STORAGE_KEY, JSON.stringify(snapshot));
-      } catch {
-        /* quota / private mode */
-      }
-    }, 300);
-
-    return () => clearTimeout(timeout);
-  }, [formRestored, title, description, price, city, category]);
-
-  useEffect(() => {
-    if (!uid || !isDirty || !draftLoaded || !formRestored) return;
+  const clearDraft = useCallback(async () => {
+    try {
+      localStorage.removeItem(CREATE_FORM_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    if (!uid) return;
     const rest = getSupabaseRestWithSession();
     if (!rest) return;
+    const { error } = await rest.from("drafts").delete().eq("user_id", uid);
+    logRlsIfBlocked(error);
+  }, [uid]);
 
-    const timeout = setTimeout(() => {
-      void (async () => {
-        const payload = buildDraftPayloadKey(title, description, price, selectedCity, category);
-        if (payload === lastSavedRef.current) return;
+  const updateCategoryParam = useCallback(
+    <
+      K extends keyof CategoryFormParams,
+      P extends keyof CategoryFormParams[K],
+    >(
+      categoryKey: K,
+      field: P,
+      value: string,
+    ) => {
+      setCategoryParams((prev) => ({
+        ...prev,
+        [categoryKey]: {
+          ...prev[categoryKey],
+          [field]: value,
+        },
+      }));
+    },
+    [],
+  );
 
-        setSaveStatus("saving");
-        const priceNum = parseNonNegativePrice(price);
-        const { error } = await rest.from("drafts").upsert(
-          {
-            user_id: uid,
-            title: title.trim() || null,
-            description: description.trim() || null,
-            price: priceNum,
-            city: selectedCity.trim() || null,
-            category: category || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        );
-        if (error) {
-          logRlsIfBlocked(error);
-          console.warn("[drafts] upsert", error);
-          setSaveStatus("idle");
-          return;
-        }
-        lastSavedRef.current = payload;
-        setSaveStatus("saved");
-        if (saveIdleClearRef.current) clearTimeout(saveIdleClearRef.current);
-        saveIdleClearRef.current = setTimeout(() => {
-          setSaveStatus("idle");
-          saveIdleClearRef.current = null;
-        }, 2000);
-      })();
-    }, 1000);
+  const validateCategoryRequiredFields = useCallback((): string | null => {
+    if (category === "auto") {
+      const p = categoryParams.auto;
+      if (!p.brand.trim() || !p.model.trim() || !p.year.trim() || !p.mileage.trim()) {
+        return "Заполните обязательные параметры авто: марка, модель, год, пробег";
+      }
+    }
+    if (category === "realestate") {
+      const p = categoryParams.realestate;
+      if (!p.propertyType.trim() || !p.area.trim()) {
+        return "Заполните обязательные параметры недвижимости: тип и площадь";
+      }
+    }
+    if (category === "electronics") {
+      const p = categoryParams.electronics;
+      if (!p.brand.trim() || !p.model.trim() || !p.condition.trim()) {
+        return "Заполните обязательные параметры электроники: бренд, модель, состояние";
+      }
+    }
+    if (category === "fashion") {
+      const p = categoryParams.fashion;
+      if (!p.itemType.trim() || !p.size.trim() || !p.condition.trim()) {
+        return "Заполните обязательные параметры одежды/обуви: тип, размер, состояние";
+      }
+    }
+    if (category === "services") {
+      const p = categoryParams.services;
+      if (!p.serviceType.trim() || !p.priceType.trim()) {
+        return "Заполните обязательные параметры услуги: тип услуги и формат цены";
+      }
+    }
+    if (category === "kids") {
+      const p = categoryParams.kids;
+      if (!p.itemType.trim() || !p.age.trim()) {
+        return "Заполните обязательные параметры для категории Детям: тип товара и возраст";
+      }
+    }
+    if (category === "sport") {
+      const p = categoryParams.sport;
+      if (!p.itemType.trim() || !p.condition.trim()) {
+        return "Заполните обязательные параметры категории Спорт: тип товара и состояние";
+      }
+    }
+    if (category === "home") {
+      const p = categoryParams.home;
+      if (!p.itemType.trim() || !p.condition.trim()) {
+        return "Заполните обязательные параметры категории Дом и сад: тип товара и состояние";
+      }
+    }
+    return null;
+  }, [category, categoryParams]);
 
-    return () => clearTimeout(timeout);
-  }, [uid, isDirty, draftLoaded, formRestored, title, description, price, category, selectedCity]);
+  const buildSpecsSummary = useCallback((): string => {
+    const specs: Array<[string, string]> = [];
+    if (category === "auto") {
+      const p = categoryParams.auto;
+      specs.push(
+        ["Марка", p.brand],
+        ["Модель", p.model],
+        ["Год выпуска", p.year],
+        ["Пробег (км)", p.mileage],
+        ["Количество владельцев", p.owners],
+        ["Тип топлива", p.fuel],
+        ["Коробка передач", p.transmission],
+        ["Привод", p.drive],
+        ["Растаможен", p.customsCleared],
+        ["Битый", p.damaged],
+      );
+    }
+    if (category === "realestate") {
+      const p = categoryParams.realestate;
+      specs.push(
+        ["Тип", p.propertyType],
+        ["Площадь (м2)", p.area],
+        ["Этаж", p.floor],
+        ["Этажность здания", p.floorsTotal],
+        ["Количество комнат", p.rooms],
+        ["Парковка", p.parking],
+        ["Ремонт", p.renovation],
+      );
+    }
+    if (category === "electronics") {
+      const p = categoryParams.electronics;
+      specs.push(["Бренд", p.brand], ["Модель", p.model], ["Состояние", p.condition]);
+    }
+    if (category === "fashion") {
+      const p = categoryParams.fashion;
+      specs.push(["Тип", p.itemType], ["Размер", p.size], ["Состояние", p.condition]);
+    }
+    if (category === "services") {
+      const p = categoryParams.services;
+      specs.push(["Тип услуги", p.serviceType], ["Цена", p.priceType]);
+    }
+    if (category === "kids") {
+      const p = categoryParams.kids;
+      specs.push(["Тип товара", p.itemType], ["Возраст", p.age]);
+    }
+    if (category === "sport") {
+      const p = categoryParams.sport;
+      specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
+    }
+    if (category === "home") {
+      const p = categoryParams.home;
+      specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
+    }
+    const filled = specs
+      .map(([label, value]) => [label, String(value ?? "").trim()] as const)
+      .filter(([, value]) => value.length > 0);
+    if (filled.length === 0) return "";
+    const lines = filled.map(([label, value]) => `- ${label}: ${value}`).join("\n");
+    return `Характеристики:\n${lines}`;
+  }, [category, categoryParams]);
 
-  useEffect(() => {
-    return () => {
-      if (saveIdleClearRef.current) clearTimeout(saveIdleClearRef.current);
+  const buildParamsFromForm = useCallback((): Record<string, unknown> => {
+    const toIntOrNull = (raw: string): number | null => {
+      const normalized = raw.trim();
+      if (!/^\d+$/.test(normalized)) return null;
+      const value = Number.parseInt(normalized, 10);
+      return Number.isFinite(value) ? value : null;
     };
-  }, []);
+    const toBoolOrNull = (raw: string): boolean | null => {
+      const normalized = raw.trim().toLowerCase();
+      if (!normalized) return null;
+      if (normalized === "да" || normalized === "true") return true;
+      if (normalized === "нет" || normalized === "false") return false;
+      return null;
+    };
+    const normalizedPrice = toIntOrNull(price);
+    if (category === "auto") {
+      const p = categoryParams.auto;
+      return {
+        brand: p.brand.trim() || null,
+        model: p.model.trim() || null,
+        year: toIntOrNull(p.year),
+        mileage: toIntOrNull(p.mileage),
+        owners: toIntOrNull(p.owners),
+        price: normalizedPrice,
+        fuel: p.fuel.trim() || null,
+        transmission: p.transmission.trim() || null,
+        drive: p.drive.trim() || null,
+        is_cleared: toBoolOrNull(p.customsCleared),
+        is_damaged: toBoolOrNull(p.damaged),
+      };
+    }
+    if (category === "realestate") {
+      const p = categoryParams.realestate;
+      return {
+        type: p.propertyType.trim() || null,
+        area_m2: toIntOrNull(p.area),
+        floor: toIntOrNull(p.floor),
+        floors_total: toIntOrNull(p.floorsTotal),
+        rooms: toIntOrNull(p.rooms),
+        price: normalizedPrice,
+        has_parking: toBoolOrNull(p.parking),
+        renovation: p.renovation.trim() || null,
+      };
+    }
+    if (category === "electronics") {
+      const p = categoryParams.electronics;
+      return {
+        brand: p.brand.trim() || null,
+        model: p.model.trim() || null,
+        price: normalizedPrice,
+        condition: p.condition.trim() || null,
+      };
+    }
+    if (category === "fashion") {
+      const p = categoryParams.fashion;
+      return {
+        type: p.itemType.trim() || null,
+        size: p.size.trim() || null,
+        price: normalizedPrice,
+        condition: p.condition.trim() || null,
+      };
+    }
+    if (category === "services") {
+      const p = categoryParams.services;
+      return {
+        service_type: p.serviceType.trim() || null,
+        price: normalizedPrice,
+        price_type: p.priceType.trim() || null,
+      };
+    }
+    if (category === "kids") {
+      const p = categoryParams.kids;
+      return {
+        item_type: p.itemType.trim() || null,
+        age: p.age.trim() || null,
+        price: normalizedPrice,
+      };
+    }
+    if (category === "sport") {
+      const p = categoryParams.sport;
+      return {
+        item_type: p.itemType.trim() || null,
+        price: normalizedPrice,
+        condition: p.condition.trim() || null,
+      };
+    }
+    if (category === "home") {
+      const p = categoryParams.home;
+      return {
+        item_type: p.itemType.trim() || null,
+        price: normalizedPrice,
+        condition: p.condition.trim() || null,
+      };
+    }
+    return {
+      price: normalizedPrice,
+    };
+  }, [category, categoryParams]);
+
+  const handleBack = useCallback(() => {
+    if (!confirmLeave()) return;
+    resetCreateFormState();
+    void clearDraft();
+    if (
+      typeof window !== "undefined" &&
+      document.referrer &&
+      document.referrer.includes(window.location.origin)
+    ) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }, [clearDraft, confirmLeave, resetCreateFormState, router]);
 
   useEffect(() => {
     if (profile?.phone?.trim()) {
@@ -384,19 +522,6 @@ export default function CreatePage() {
       }
     };
   }, [selectedFilePreviews]);
-
-  const resetCreateFormState = useCallback(() => {
-    const defaultCity = safeCitiesRef.current[0] ?? ALLOWED_LISTING_CITIES[0];
-    setTitle("");
-    setDescription("");
-    setPrice("");
-    setCity(defaultCity);
-    setCategory("other");
-    setFiles([]);
-    setErr("");
-    setSaveStatus("idle");
-    lastSavedRef.current = buildDraftPayloadKey("", "", "", defaultCity, "other");
-  }, []);
 
   const publish = useCallback(async () => {
     if (!uid) {
@@ -427,6 +552,11 @@ export default function CreatePage() {
       setErr("Пожалуйста, выберите город из списка (Москва/Сочи)");
       return;
     }
+    const paramsError = validateCategoryRequiredFields();
+    if (paramsError) {
+      setErr(paramsError);
+      return;
+    }
     setBusy(true);
     setPublishStage("uploading");
     try {
@@ -449,13 +579,19 @@ export default function CreatePage() {
       }
 
       setPublishStage("creating");
+      const specsSummary = buildSpecsSummary();
+      const params = buildParamsFromForm();
+      const finalDescription = [description.trim(), specsSummary]
+        .filter((chunk) => chunk.length > 0)
+        .join("\n\n");
 
       const res = await insertListingRow({
         title: title.trim(),
-        description: description.trim(),
+        description: finalDescription,
         price: priceNum,
         category,
         city: selectedCity.trim(),
+        params,
         user_id: uid,
         owner_id: uid,
         contact_phone: profile?.phone || null,
@@ -504,19 +640,7 @@ export default function CreatePage() {
         category,
         city: selectedCity,
       });
-      const restForDraft = getSupabaseRestWithSession();
-      if (restForDraft) {
-        const { error: draftDeleteError } = await restForDraft.from("drafts").delete().eq("user_id", uid);
-        logRlsIfBlocked(draftDeleteError);
-        if (draftDeleteError) console.warn("[drafts] delete after publish", draftDeleteError);
-      }
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.removeItem(CREATE_FORM_STORAGE_KEY);
-        } catch {
-          /* ignore */
-        }
-      }
+      await clearDraft();
       resetCreateFormState();
       setShowPhoneWarning(false);
       await refreshProfile();
@@ -541,6 +665,10 @@ export default function CreatePage() {
     router,
     refreshProfile,
     resetCreateFormState,
+    clearDraft,
+    buildSpecsSummary,
+    buildParamsFromForm,
+    validateCategoryRequiredFields,
   ]);
 
   const handlePublishClick = useCallback(() => {
@@ -701,8 +829,160 @@ export default function CreatePage() {
           ))}
         </select>
       </div>
-      {saveStatus === "saving" ? <div className="text-xs text-gray-400">Сохранение...</div> : null}
-      {saveStatus === "saved" ? <div className="text-xs text-green-500">Сохранено ✓</div> : null}
+      {category === "auto" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры авто</label>
+          <input value={categoryParams.auto.brand} onChange={(e) => updateCategoryParam("auto", "brand", e.target.value)} placeholder="Марка *" className={inputClass} />
+          <input value={categoryParams.auto.model} onChange={(e) => updateCategoryParam("auto", "model", e.target.value)} placeholder="Модель *" className={inputClass} />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={categoryParams.auto.year} onChange={(e) => updateCategoryParam("auto", "year", e.target.value)} inputMode="numeric" placeholder="Год выпуска *" className={inputClass} />
+            <input value={categoryParams.auto.mileage} onChange={(e) => updateCategoryParam("auto", "mileage", e.target.value)} inputMode="numeric" placeholder="Пробег (км) *" className={inputClass} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={categoryParams.auto.owners} onChange={(e) => updateCategoryParam("auto", "owners", e.target.value)} className={inputClass}>
+              <option value="">Владельцев</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3+</option>
+            </select>
+            <select value={categoryParams.auto.fuel} onChange={(e) => updateCategoryParam("auto", "fuel", e.target.value)} className={inputClass}>
+              <option value="">Тип топлива</option>
+              <option value="Бензин">Бензин</option>
+              <option value="Дизель">Дизель</option>
+              <option value="Гибрид">Гибрид</option>
+              <option value="Электро">Электро</option>
+              <option value="Газ">Газ</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={categoryParams.auto.transmission} onChange={(e) => updateCategoryParam("auto", "transmission", e.target.value)} className={inputClass}>
+              <option value="">Коробка передач</option>
+              <option value="Механика">Механика</option>
+              <option value="Автомат">Автомат</option>
+              <option value="Робот">Робот</option>
+              <option value="Вариатор">Вариатор</option>
+            </select>
+            <select value={categoryParams.auto.drive} onChange={(e) => updateCategoryParam("auto", "drive", e.target.value)} className={inputClass}>
+              <option value="">Привод</option>
+              <option value="Передний">Передний</option>
+              <option value="Задний">Задний</option>
+              <option value="Полный">Полный</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={categoryParams.auto.customsCleared} onChange={(e) => updateCategoryParam("auto", "customsCleared", e.target.value)} className={inputClass}>
+              <option value="">Растаможен</option>
+              <option value="Да">Да</option>
+              <option value="Нет">Нет</option>
+            </select>
+            <select value={categoryParams.auto.damaged} onChange={(e) => updateCategoryParam("auto", "damaged", e.target.value)} className={inputClass}>
+              <option value="">Битый</option>
+              <option value="Да">Да</option>
+              <option value="Нет">Нет</option>
+            </select>
+          </div>
+        </div>
+      ) : null}
+      {category === "realestate" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры недвижимости</label>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={categoryParams.realestate.propertyType} onChange={(e) => updateCategoryParam("realestate", "propertyType", e.target.value)} className={inputClass}>
+              <option value="">Тип * (квартира/дом/участок)</option>
+              <option value="Квартира">Квартира</option>
+              <option value="Дом">Дом</option>
+              <option value="Участок">Участок</option>
+            </select>
+            <input value={categoryParams.realestate.area} onChange={(e) => updateCategoryParam("realestate", "area", e.target.value)} inputMode="decimal" placeholder="Площадь (м2) *" className={inputClass} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={categoryParams.realestate.floor} onChange={(e) => updateCategoryParam("realestate", "floor", e.target.value)} inputMode="numeric" placeholder="Этаж" className={inputClass} />
+            <input value={categoryParams.realestate.floorsTotal} onChange={(e) => updateCategoryParam("realestate", "floorsTotal", e.target.value)} inputMode="numeric" placeholder="Этажность здания" className={inputClass} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={categoryParams.realestate.rooms} onChange={(e) => updateCategoryParam("realestate", "rooms", e.target.value)} inputMode="numeric" placeholder="Количество комнат" className={inputClass} />
+            <select value={categoryParams.realestate.parking} onChange={(e) => updateCategoryParam("realestate", "parking", e.target.value)} className={inputClass}>
+              <option value="">Парковка</option>
+              <option value="Да">Да</option>
+              <option value="Нет">Нет</option>
+            </select>
+          </div>
+          <select value={categoryParams.realestate.renovation} onChange={(e) => updateCategoryParam("realestate", "renovation", e.target.value)} className={inputClass}>
+            <option value="">Ремонт</option>
+            <option value="Нет">Нет</option>
+            <option value="Косметический">Косметический</option>
+            <option value="Евро">Евро</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "electronics" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры электроники</label>
+          <input value={categoryParams.electronics.brand} onChange={(e) => updateCategoryParam("electronics", "brand", e.target.value)} placeholder="Бренд *" className={inputClass} />
+          <input value={categoryParams.electronics.model} onChange={(e) => updateCategoryParam("electronics", "model", e.target.value)} placeholder="Модель *" className={inputClass} />
+          <select value={categoryParams.electronics.condition} onChange={(e) => updateCategoryParam("electronics", "condition", e.target.value)} className={inputClass}>
+            <option value="">Состояние *</option>
+            <option value="Новое">Новое</option>
+            <option value="Б/у">Б/у</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "fashion" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры одежды/обуви</label>
+          <select value={categoryParams.fashion.itemType} onChange={(e) => updateCategoryParam("fashion", "itemType", e.target.value)} className={inputClass}>
+            <option value="">Тип * (одежда/обувь)</option>
+            <option value="Одежда">Одежда</option>
+            <option value="Обувь">Обувь</option>
+          </select>
+          <input value={categoryParams.fashion.size} onChange={(e) => updateCategoryParam("fashion", "size", e.target.value)} placeholder="Размер *" className={inputClass} />
+          <select value={categoryParams.fashion.condition} onChange={(e) => updateCategoryParam("fashion", "condition", e.target.value)} className={inputClass}>
+            <option value="">Состояние *</option>
+            <option value="Новое">Новое</option>
+            <option value="Б/у">Б/у</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "services" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры услуги</label>
+          <input value={categoryParams.services.serviceType} onChange={(e) => updateCategoryParam("services", "serviceType", e.target.value)} placeholder="Тип услуги *" className={inputClass} />
+          <select value={categoryParams.services.priceType} onChange={(e) => updateCategoryParam("services", "priceType", e.target.value)} className={inputClass}>
+            <option value="">Цена *</option>
+            <option value="За час">За час</option>
+            <option value="За услугу">За услугу</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "kids" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Детям</label>
+          <input value={categoryParams.kids.itemType} onChange={(e) => updateCategoryParam("kids", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
+          <input value={categoryParams.kids.age} onChange={(e) => updateCategoryParam("kids", "age", e.target.value)} placeholder="Возраст *" className={inputClass} />
+        </div>
+      ) : null}
+      {category === "sport" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Спорт</label>
+          <input value={categoryParams.sport.itemType} onChange={(e) => updateCategoryParam("sport", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
+          <select value={categoryParams.sport.condition} onChange={(e) => updateCategoryParam("sport", "condition", e.target.value)} className={inputClass}>
+            <option value="">Состояние *</option>
+            <option value="Новое">Новое</option>
+            <option value="Б/у">Б/у</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "home" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Дом и сад</label>
+          <input value={categoryParams.home.itemType} onChange={(e) => updateCategoryParam("home", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
+          <select value={categoryParams.home.condition} onChange={(e) => updateCategoryParam("home", "condition", e.target.value)} className={inputClass}>
+            <option value="">Состояние *</option>
+            <option value="Новое">Новое</option>
+            <option value="Б/у">Б/у</option>
+          </select>
+        </div>
+      ) : null}
       {err ? <p className="text-sm font-medium text-danger">{err}</p> : null}
       <button
         type="button"

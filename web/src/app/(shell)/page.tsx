@@ -28,6 +28,7 @@ const CACHE_KEY = "cached_listings";
 const FEED_CATEGORY_KEY = "feed_category";
 const FEED_STATE_KEY = "feed_state";
 const ALL_CATEGORY = "all";
+const FILTERS_DEBOUNCE_MS = 350;
 
 type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
 type StoredFeedState = {
@@ -36,6 +37,7 @@ type StoredFeedState = {
   scrollY?: number;
   timestamp?: number;
 };
+type FeedSort = "newest" | "price_asc" | "price_desc";
 
 function parseStoredCursor(raw: unknown): FeedListingsCursor | null {
   if (raw == null || typeof raw !== "object") return null;
@@ -44,6 +46,48 @@ function parseStoredCursor(raw: unknown): FeedListingsCursor | null {
   const id = String(o.id ?? "").trim();
   if (!created_at || !id) return null;
   return { created_at, id };
+}
+
+function parseIntOrNull(raw: string): number | null {
+  const normalized = String(raw ?? "").trim();
+  if (!/^\d+$/.test(normalized)) return null;
+  const value = Number.parseInt(normalized, 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getParamsObject(row: ListingRow): Record<string, unknown> {
+  const maybe = (row as ListingRow & { params?: unknown }).params;
+  if (maybe && typeof maybe === "object") return maybe as Record<string, unknown>;
+  return {};
+}
+
+function getParamInt(row: ListingRow, key: string): number | null {
+  const params = getParamsObject(row);
+  const value = params[key];
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === "string") return parseIntOrNull(value);
+  return null;
+}
+
+function getParamBool(row: ListingRow, key: string): boolean | null {
+  const params = getParamsObject(row);
+  const value = params[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "да") return true;
+    if (normalized === "false" || normalized === "нет") return false;
+  }
+  return null;
+}
+
+function getParamText(row: ListingRow, key: string): string {
+  const params = getParamsObject(row);
+  return String(params[key] ?? "").trim();
+}
+
+function getListingPriceForSort(row: ListingRow): number {
+  return getParamInt(row, "price") ?? Number(row.price ?? 0) ?? 0;
 }
 
 function readFeedCache(): FeedCache {
@@ -179,6 +223,22 @@ function FeedPage({ session }: { session: Session }) {
       : ALL_CATEGORY;
   });
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<FeedSort>("newest");
+  const [priceFrom, setPriceFrom] = useState("");
+  const [priceTo, setPriceTo] = useState("");
+  const [autoYearFrom, setAutoYearFrom] = useState("");
+  const [autoYearTo, setAutoYearTo] = useState("");
+  const [autoMileageFrom, setAutoMileageFrom] = useState("");
+  const [autoMileageTo, setAutoMileageTo] = useState("");
+  const [autoTransmission, setAutoTransmission] = useState("");
+  const [autoClearedOnly, setAutoClearedOnly] = useState(false);
+  const [autoDamagedOnly, setAutoDamagedOnly] = useState(false);
+  const [realAreaFrom, setRealAreaFrom] = useState("");
+  const [realAreaTo, setRealAreaTo] = useState("");
+  const [realFloor, setRealFloor] = useState("");
+  const [realFloorsTotal, setRealFloorsTotal] = useState("");
+  const [realRooms, setRealRooms] = useState("");
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
@@ -233,6 +293,7 @@ function FeedPage({ session }: { session: Session }) {
   const loadMoreLockRef = useRef(false);
   const lastPrefetchAtRef = useRef(0);
   const lastLoadMoreAtRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedFilters = useMemo(() => {
     const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
     if (selectedCategory !== ALL_CATEGORY) {
@@ -243,13 +304,110 @@ function FeedPage({ session }: { session: Session }) {
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
-    return items.filter((x) => {
+    const base = items.filter((x) => {
       if (!listingIsRussiaForFeed(x)) return false;
       if (x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
       if (selectedCategory === ALL_CATEGORY) return true;
       return (x.category ?? "").trim() === selectedCategory;
     });
-  }, [items, city, selectedCategory]);
+    const minPrice = parseIntOrNull(priceFrom);
+    const maxPrice = parseIntOrNull(priceTo);
+    const yearFrom = parseIntOrNull(autoYearFrom);
+    const yearTo = parseIntOrNull(autoYearTo);
+    const mileageFrom = parseIntOrNull(autoMileageFrom);
+    const mileageTo = parseIntOrNull(autoMileageTo);
+    const areaFrom = parseIntOrNull(realAreaFrom);
+    const areaTo = parseIntOrNull(realAreaTo);
+    const floorEq = parseIntOrNull(realFloor);
+    const floorsTotalEq = parseIntOrNull(realFloorsTotal);
+    const roomsEq = parseIntOrNull(realRooms);
+
+    const afterFilters = base.filter((row) => {
+      const listingPrice = getListingPriceForSort(row);
+      if (minPrice != null && listingPrice < minPrice) return false;
+      if (maxPrice != null && listingPrice > maxPrice) return false;
+
+      if (selectedCategory === "auto") {
+        const year = getParamInt(row, "year");
+        const mileage = getParamInt(row, "mileage");
+        const transmission = getParamText(row, "transmission").toLowerCase();
+        const isCleared = getParamBool(row, "is_cleared");
+        const isDamaged = getParamBool(row, "is_damaged");
+        if (yearFrom != null && (year == null || year < yearFrom)) return false;
+        if (yearTo != null && (year == null || year > yearTo)) return false;
+        if (mileageFrom != null && (mileage == null || mileage < mileageFrom)) return false;
+        if (mileageTo != null && (mileage == null || mileage > mileageTo)) return false;
+        if (
+          autoTransmission &&
+          transmission !== autoTransmission.trim().toLowerCase()
+        ) {
+          return false;
+        }
+        if (autoClearedOnly && isCleared !== true) return false;
+        if (autoDamagedOnly && isDamaged !== true) return false;
+      }
+
+      if (selectedCategory === "realestate") {
+        const area = getParamInt(row, "area_m2");
+        const floor = getParamInt(row, "floor");
+        const floorsTotal = getParamInt(row, "floors_total");
+        const rooms = getParamInt(row, "rooms");
+        if (areaFrom != null && (area == null || area < areaFrom)) return false;
+        if (areaTo != null && (area == null || area > areaTo)) return false;
+        if (floorEq != null && floor !== floorEq) return false;
+        if (floorsTotalEq != null && floorsTotal !== floorsTotalEq) return false;
+        if (roomsEq != null && rooms !== roomsEq) return false;
+      }
+
+      return true;
+    });
+
+    const sorted = [...afterFilters];
+    if (sortMode === "price_asc") {
+      sorted.sort((a, b) => {
+        const pa = getListingPriceForSort(a);
+        const pb = getListingPriceForSort(b);
+        if (pa !== pb) return pa - pb;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      return sorted;
+    }
+    if (sortMode === "price_desc") {
+      sorted.sort((a, b) => {
+        const pa = getListingPriceForSort(a);
+        const pb = getListingPriceForSort(b);
+        if (pa !== pb) return pb - pa;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      return sorted;
+    }
+    sorted.sort((a, b) => {
+      const tb = new Date(b.created_at).getTime();
+      const ta = new Date(a.created_at).getTime();
+      if (tb !== ta) return tb - ta;
+      return b.id.localeCompare(a.id);
+    });
+    return sorted;
+  }, [
+    items,
+    city,
+    selectedCategory,
+    priceFrom,
+    priceTo,
+    autoYearFrom,
+    autoYearTo,
+    autoMileageFrom,
+    autoMileageTo,
+    autoTransmission,
+    autoClearedOnly,
+    autoDamagedOnly,
+    realAreaFrom,
+    realAreaTo,
+    realFloor,
+    realFloorsTotal,
+    realRooms,
+    sortMode,
+  ]);
 
   const applyRes = useCallback(
     (
@@ -292,44 +450,68 @@ function FeedPage({ session }: { session: Session }) {
   );
 
   useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+    let fetchStarted = false;
     prefetchedRef.current = null;
     prefetchKeyRef.current = null;
-    setIsFeedRefreshing(true);
-    (async () => {
-      try {
-        const res = await fetchListings(feedFilters);
-        if (cancelled) return;
-        const raw = Array.isArray(res.listings) ? res.listings : [];
-        setFeedNotice(res.notice ?? null);
-        if (res.error) {
-          console.error("LISTINGS FETCH ERROR", res.error);
-          setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
-          setItems(raw);
-          setNextCursor(res.nextCursor ?? null);
-          persistFeed(raw, res.nextCursor ?? null);
-          return;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      if (cancelled) return;
+      fetchStarted = true;
+      setIsFeedRefreshing(true);
+      void (async () => {
+        try {
+          const res = await fetchListings(feedFilters);
+          if (cancelled) return;
+          const raw = Array.isArray(res.listings) ? res.listings : [];
+          setFeedNotice(res.notice ?? null);
+          if (res.error) {
+            console.error("LISTINGS FETCH ERROR", res.error);
+            setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
+            setItems(raw);
+            setNextCursor(res.nextCursor ?? null);
+            persistFeed(raw, res.nextCursor ?? null);
+            return;
+          }
+          prefetchedRef.current = null;
+          prefetchKeyRef.current = null;
+          setFeedError(null);
+          const mix = mixFeed(raw, session?.user?.id);
+          const serverNext = res.nextCursor ?? null;
+          setItems(mix);
+          setNextCursor(serverNext);
+          persistFeed(mix, serverNext);
+        } catch (e) {
+          if (cancelled) return;
+          console.error("LISTINGS INITIAL FETCH ERROR", e);
+          setFeedError(FETCH_ERROR_MESSAGE);
+        } finally {
+          if (!cancelled) {
+            setIsFeedRefreshing(false);
+          }
         }
-        prefetchedRef.current = null;
-        prefetchKeyRef.current = null;
-        setFeedError(null);
-        const mix = mixFeed(raw, session?.user?.id);
-        const serverNext = res.nextCursor ?? null;
-        setItems(mix);
-        setNextCursor(serverNext);
-        persistFeed(mix, serverNext);
-      } catch (e) {
-        if (cancelled) return;
-        console.error("LISTINGS INITIAL FETCH ERROR", e);
-        setFeedError(FETCH_ERROR_MESSAGE);
-      } finally {
-        if (!cancelled) {
-          setIsFeedRefreshing(false);
-        }
-      }
-    })();
+      })();
+    }, FILTERS_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      if (!fetchStarted) {
+        setIsFeedRefreshing(false);
+      }
     };
   }, [feedFilters, session?.user?.id, feedNonce]);
 
@@ -432,7 +614,25 @@ function FeedPage({ session }: { session: Session }) {
   const filterRowClass =
     "pressable flex w-full items-center justify-between rounded-card border border-line bg-elevated px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.995]";
   const hasActiveFilters =
-    city !== ALLOWED_LISTING_CITIES[0] || selectedCategory !== ALL_CATEGORY;
+    city !== ALLOWED_LISTING_CITIES[0] ||
+    selectedCategory !== ALL_CATEGORY ||
+    sortMode !== "newest" ||
+    Boolean(
+      priceFrom ||
+        priceTo ||
+        autoYearFrom ||
+        autoYearTo ||
+        autoMileageFrom ||
+        autoMileageTo ||
+        autoTransmission ||
+        autoClearedOnly ||
+        autoDamagedOnly ||
+        realAreaFrom ||
+        realAreaTo ||
+        realFloor ||
+        realFloorsTotal ||
+        realRooms,
+    );
   const quickCategories = useMemo(() => CATEGORIES.slice(0, 8), []);
 
   const resetFilters = useCallback(() => {
@@ -442,9 +642,31 @@ function FeedPage({ session }: { session: Session }) {
     });
     setCity(ALLOWED_LISTING_CITIES[0]);
     setSelectedCategory(ALL_CATEGORY);
+    setSortMode("newest");
+    setPriceFrom("");
+    setPriceTo("");
+    setAutoYearFrom("");
+    setAutoYearTo("");
+    setAutoMileageFrom("");
+    setAutoMileageTo("");
+    setAutoTransmission("");
+    setAutoClearedOnly(false);
+    setAutoDamagedOnly(false);
+    setRealAreaFrom("");
+    setRealAreaTo("");
+    setRealFloor("");
+    setRealFloorsTotal("");
+    setRealRooms("");
     setCitySheetOpen(false);
     setCategorySheetOpen(false);
+    setFiltersSheetOpen(false);
   }, [city, selectedCategory]);
+
+  const sortLabel = useMemo(() => {
+    if (sortMode === "price_asc") return "Сначала дешёвые";
+    if (sortMode === "price_desc") return "Сначала дорогие";
+    return "Сначала новые";
+  }, [sortMode]);
 
   const rememberFeedStateBeforeOpen = useCallback(() => {
     persistFeedState({
@@ -467,7 +689,7 @@ function FeedPage({ session }: { session: Session }) {
             </div>
           </div>
           <div className="mt-6 space-y-2.5">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => setCitySheetOpen(true)}
@@ -484,9 +706,17 @@ function FeedPage({ session }: { session: Session }) {
                 <span className="text-sm text-fg">Категория: {categoryTitle}</span>
                 <span className="text-sm font-semibold text-muted">{">"}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setFiltersSheetOpen(true)}
+                className={filterRowClass}
+              >
+                <span className="text-sm text-fg">Фильтры: {sortLabel}</span>
+                <span className="text-sm font-semibold text-muted">{">"}</span>
+              </button>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-gray-500">Найдено: {foundCountLabel} объявлений</p>
+              <p className="text-sm text-muted">Найдено: {foundCountLabel} объявлений</p>
               {hasActiveFilters ? (
                 <button
                   type="button"
@@ -548,7 +778,7 @@ function FeedPage({ session }: { session: Session }) {
       ) : null}
 
       <div
-        className={`relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-6 lg:px-8 ${
+        className={`relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-6 lg:max-w-[760px] lg:px-0 xl:max-w-[800px] ${
           isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
         }`}
       >
@@ -690,6 +920,119 @@ function FeedPage({ session }: { session: Session }) {
                   {city === cityOption ? <span>✓</span> : null}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {filtersSheetOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-main/40 p-4 backdrop-blur-sm animate-[feedBackdropIn_200ms_ease-out] sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="feed-filters-title"
+          onClick={() => setFiltersSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-card border border-line bg-elevated p-4 shadow-soft animate-[feedSheetUp_200ms_cubic-bezier(0.2,0.8,0.2,1)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="feed-filters-title" className="text-base font-semibold text-fg">
+              Фильтры и сортировка
+            </h2>
+            <div className="mt-3 space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                Сортировка
+              </label>
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as FeedSort)}
+                className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg"
+              >
+                <option value="newest">Сначала новые</option>
+                <option value="price_asc">Сначала дешёвые</option>
+                <option value="price_desc">Сначала дорогие</option>
+              </select>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                Цена
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={priceFrom}
+                  onChange={(e) => setPriceFrom(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="От"
+                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                />
+                <input
+                  value={priceTo}
+                  onChange={(e) => setPriceTo(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="До"
+                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                />
+              </div>
+              {selectedCategory === "auto" ? (
+                <>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                    Авто
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={autoYearFrom} onChange={(e) => setAutoYearFrom(e.target.value)} inputMode="numeric" placeholder="Год от" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                    <input value={autoYearTo} onChange={(e) => setAutoYearTo(e.target.value)} inputMode="numeric" placeholder="Год до" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={autoMileageFrom} onChange={(e) => setAutoMileageFrom(e.target.value)} inputMode="numeric" placeholder="Пробег от" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                    <input value={autoMileageTo} onChange={(e) => setAutoMileageTo(e.target.value)} inputMode="numeric" placeholder="Пробег до" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                  </div>
+                  <select value={autoTransmission} onChange={(e) => setAutoTransmission(e.target.value)} className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg">
+                    <option value="">Коробка: любая</option>
+                    <option value="механика">Механика</option>
+                    <option value="автомат">Автомат</option>
+                    <option value="робот">Робот</option>
+                    <option value="вариатор">Вариатор</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm text-fg">
+                    <input type="checkbox" checked={autoClearedOnly} onChange={(e) => setAutoClearedOnly(e.target.checked)} />
+                    Растаможен
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-fg">
+                    <input type="checkbox" checked={autoDamagedOnly} onChange={(e) => setAutoDamagedOnly(e.target.checked)} />
+                    Битый
+                  </label>
+                </>
+              ) : null}
+              {selectedCategory === "realestate" ? (
+                <>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                    Недвижимость
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={realAreaFrom} onChange={(e) => setRealAreaFrom(e.target.value)} inputMode="numeric" placeholder="Площадь от" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                    <input value={realAreaTo} onChange={(e) => setRealAreaTo(e.target.value)} inputMode="numeric" placeholder="Площадь до" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input value={realFloor} onChange={(e) => setRealFloor(e.target.value)} inputMode="numeric" placeholder="Этаж" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                    <input value={realFloorsTotal} onChange={(e) => setRealFloorsTotal(e.target.value)} inputMode="numeric" placeholder="Этажность" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                    <input value={realRooms} onChange={(e) => setRealRooms(e.target.value)} inputMode="numeric" placeholder="Комнаты" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                  </div>
+                </>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setFiltersSheetOpen(false)}
+                  className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-3 text-sm font-medium text-fg"
+                >
+                  Применить
+                </button>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="pressable min-h-[44px] rounded-card border border-line bg-elevated px-3 text-sm font-medium text-muted"
+                >
+                  Сбросить
+                </button>
+              </div>
             </div>
           </div>
         </div>

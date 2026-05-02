@@ -119,8 +119,8 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   const numericPrice = Number(safeItem?.price ?? 0);
 
   const imageHeightClass = compact
-    ? "h-[146px] sm:h-[156px] lg:h-[166px]"
-    : "h-[210px] sm:h-[230px] lg:h-[240px]";
+    ? "h-[146px] sm:h-[156px] lg:h-auto lg:aspect-video"
+    : "h-[210px] sm:h-[230px] lg:h-auto lg:aspect-video";
   const contentSpacingClass = compact ? "space-y-1.5 p-3 sm:p-3.5" : "space-y-2 p-4 sm:p-[14px]";
 
   if (!safeItem || !lid) return null;

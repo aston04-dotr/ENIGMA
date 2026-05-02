@@ -84,9 +84,6 @@ export default function SupportPage() {
       </div>
 
       <h1 className="text-xl font-bold text-fg">Поддержка</h1>
-      {isDirty ? (
-        <div className="mb-2 text-xs text-orange-500">Есть несохранённые изменения</div>
-      ) : null}
       <p className="mt-2 text-sm text-muted">Выберите тему и получите быстрый ответ.</p>
 
       <div className="mt-5 space-y-2">

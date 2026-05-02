@@ -19,8 +19,7 @@ export const LISTINGS_PAGE_SIZE = getListingsPageSize();
 /** Курсор keyset: `created_at` не уникален — добавляем `id`. */
 export type FeedListingsCursor = { created_at: string; id: string };
 
-const FEED_SELECT =
-  "id,user_id,title,price,created_at,city,category,is_partner_ad,contact_phone,images(url,sort_order)";
+const FEED_SELECT = "*,images(url,sort_order)";
 
 function quotePostgrestValue(v: string): string {
   return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -64,6 +63,10 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   };
   (row as ListingRow & { contact_phone?: string | null }).contact_phone =
     data.contact_phone != null ? String(data.contact_phone) : null;
+  (row as ListingRow & { params?: Record<string, unknown> | null }).params =
+    data.params && typeof data.params === "object"
+      ? (data.params as Record<string, unknown>)
+      : null;
   return row;
 }
 
@@ -720,6 +723,10 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
   };
   (row as ListingRow & { contact_phone?: string | null }).contact_phone =
     data.contact_phone != null ? String(data.contact_phone) : null;
+  (row as ListingRow & { params?: Record<string, unknown> | null }).params =
+    data.params && typeof data.params === "object"
+      ? (data.params as Record<string, unknown>)
+      : null;
   return row;
 }
 
@@ -841,6 +848,10 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     const priceNum = Number(payload.price);
     const payloadContactPhone = (payload as ListingInsertPayload & { contact_phone?: string | null })
       .contact_phone;
+    const payloadParams =
+      payload.params && typeof payload.params === "object"
+        ? payload.params
+        : null;
     const normalizedCity = normalizeAllowedListingCity(payload.city);
     if (!normalizedCity) {
       return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
@@ -853,6 +864,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       price: priceNum,
       city: normalizedCity,
       category: payload.category || "other",
+      params: payloadParams,
       contact_phone: payloadContactPhone || null,
     };
 

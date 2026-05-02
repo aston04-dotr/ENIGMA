@@ -9,7 +9,7 @@ const config: Config = {
         elevated: "var(--color-elevated)",
         "elev-2": "var(--color-elev-2)",
         fg: "var(--color-fg)",
-        muted: "var(--color-muted)",
+        muted: "rgb(var(--muted))",
         accent: {
           DEFAULT: "var(--color-accent)",
           hover: "var(--color-accent-hover)",

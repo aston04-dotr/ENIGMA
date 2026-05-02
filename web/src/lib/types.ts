@@ -28,6 +28,8 @@ export type ListingInsertPayload = {
   city: string;
   user_id: string;
   owner_id: string;
+  /** Структурированные параметры объявления (для фильтров/поиска). */
+  params?: Record<string, unknown> | null;
   /** Контактный телефон продавца (копируется из profiles.phone). */
   contact_phone?: string | null;
 };
@@ -58,6 +60,8 @@ export type ListingRow = {
   favorite_count?: number;
   /** Контактный телефон продавца (копируется из profiles.phone при создании). */
   contact_phone?: string | null;
+  /** Структурированные параметры объявления (jsonb). */
+  params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];
   /** Безопасно нормализованный продавец для страницы объявления. */
   seller?: UserRow | null;

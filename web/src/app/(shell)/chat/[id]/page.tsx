@@ -465,7 +465,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
           } ${isOptimistic ? "opacity-70" : "opacity-100"}`}
         >
           {m.deleted ? (
-            <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-gray-400">
+            <p className="px-3 py-1.5 text-[14px] leading-[1.38] italic text-muted">
               {mine ? "Вы удалили сообщение" : "Сообщение удалено"}
             </p>
           ) : isImage && m.image_url ? (
@@ -2135,7 +2135,7 @@ export default function ChatRoomPage() {
             ) : null}
           </div>
           {isTyping ? (
-            <div className="mt-0.5 flex items-center gap-1 text-xs text-gray-400 transition-opacity duration-200">
+            <div className="mt-0.5 flex items-center gap-1 text-xs text-muted transition-opacity duration-200">
               Печатает
               <span className="animate-pulse">...</span>
             </div>

@@ -390,7 +390,7 @@ export default function ProfilePage() {
           ? (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
           : (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
       }`}>
-        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Имя</p>
+        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-muted"}`}>Имя</p>
         <input
           value={nameInput}
           onChange={(e) => {
@@ -425,7 +425,7 @@ export default function ProfilePage() {
           ? (isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200")
           : (isDark ? "bg-elevated/72 border-line/20" : "bg-[#f9fbfd] border-[rgba(15,23,42,0.05)]")
       }`}>
-        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-gray-500"}`}>Номер телефона</p>
+        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-muted"}`}>Номер телефона</p>
         <input
           value={phoneInput}
           onChange={(e) => {
@@ -463,7 +463,7 @@ export default function ProfilePage() {
             className={`inline-flex min-h-[42px] items-center rounded-[12px] border px-3 py-1.5 text-sm font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
               isDark
                 ? "border-line bg-elevated text-fg hover:bg-elev-2"
-                : "border-[rgba(15,23,42,0.12)] bg-white text-[#0f172a] hover:bg-[#f8fafc]"
+                : "border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
             }`}
           >
             Создать объявление
@@ -658,7 +658,7 @@ export default function ProfilePage() {
         {/* Пакеты: 3 понятных блока без смешивания категорий */}
         <div
           className={`mt-5 rounded-2xl p-4 ${
-            isDark ? "bg-white/[0.03]" : "bg-white"
+            isDark ? "bg-white/[0.03]" : "bg-elevated"
           }`}
         >
           {[
@@ -668,7 +668,7 @@ export default function ProfilePage() {
           ].map((section) => (
             <div
               key={section.type}
-              className={`rounded-2xl border p-3 ${isDark ? "border-white/14 bg-transparent" : "border-gray-300/80 bg-white"} ${section.type === "realty" ? "" : "mt-5"}`}
+              className={`rounded-2xl border p-3 ${isDark ? "border-white/14 bg-transparent" : "border-gray-300/80 bg-elevated"} ${section.type === "realty" ? "" : "mt-5"}`}
             >
               <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
                 {section.title}
@@ -839,7 +839,7 @@ export default function ProfilePage() {
               className={`h-[46px] w-full rounded-xl px-4 text-[14px] font-medium outline-none transition-all duration-200 ${
                 isDark
                   ? "bg-white/5 border border-white/10 text-white placeholder:text-muted/80 focus:border-accent/50 focus:bg-white/[0.07]"
-                  : "bg-gray-50 border border-gray-200 text-[#111] placeholder:text-gray-400 focus:border-[#8B5FFF]/40 focus:bg-white"
+                  : "bg-elev-2 border border-line text-fg placeholder:text-muted/70 focus:border-accent/40 focus:bg-elevated"
               }`}
             />
             <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-[13px] ${isDark ? "text-muted/60" : "text-gray-400"}`}>шт</span>
@@ -889,7 +889,7 @@ export default function ProfilePage() {
                   : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/20")
               : (isDark
                   ? "bg-white/10 text-muted hover:bg-white/15 border border-line/30"
-                  : "bg-gray-100 text-gray-500 border border-gray-200")
+                  : "bg-elev-2 text-muted border border-line")
           }`}
         >
           {(() => {
