@@ -656,11 +656,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Пакеты: 3 понятных блока без смешивания категорий */}
-        <div
-          className={`mt-5 rounded-2xl p-4 ${
-            isDark ? "bg-white/[0.03]" : "bg-elevated"
-          }`}
-        >
+        <div className="mt-5 rounded-2xl bg-elevated p-4">
           {[
             { type: "realty", title: "Недвижимость" },
             { type: "auto", title: "Авто" },
@@ -668,9 +664,9 @@ export default function ProfilePage() {
           ].map((section) => (
             <div
               key={section.type}
-              className={`rounded-2xl border p-3 ${isDark ? "border-white/14 bg-transparent" : "border-gray-300/80 bg-elevated"} ${section.type === "realty" ? "" : "mt-5"}`}
+              className={`rounded-2xl border border-line bg-elevated p-3 ${section.type === "realty" ? "" : "mt-5"}`}
             >
-              <h3 className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
+              <h3 className="text-[16px] font-semibold tracking-tight text-fg">
                 {section.title}
               </h3>
               <div className="mt-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
@@ -688,60 +684,24 @@ export default function ProfilePage() {
                     return (
                       <article
                         key={`${section.type}-${size}`}
-                        className={`relative overflow-hidden rounded-xl border p-2.5 backdrop-blur-[1px] transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
+                        className={`relative overflow-hidden rounded-xl border bg-elevated p-2.5 transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
                           selected
-                            ? isDark
-                              ? "scale-[1.015] border-[rgba(139,95,255,0.6)] opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.4),0_12px_40px_rgba(139,95,255,0.25)]"
-                              : "scale-[1.015] border-transparent opacity-100 shadow-[0_0_0_1px_rgba(139,95,255,0.24),0_10px_24px_rgba(139,95,255,0.16)]"
-                            : isDark
-                              ? "border-[rgba(255,255,255,0.12)] text-white/90 opacity-100"
-                              : "border-transparent text-[#111] opacity-100 hover:shadow-sm"
+                            ? "border-accent shadow-md shadow-accent/20"
+                            : "border-line"
                         }`}
-                        style={
-                          isDark
-                            ? {
-                              background: selected
-                                ? "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.45) 100%), #0F1117"
-                                : "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.4) 100%), #0F1117",
-                                boxShadow: selected
-                                ? "0 0 0 1px rgba(139,95,255,0.4), 0 12px 40px rgba(139,95,255,0.25), 0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)"
-                                  : "0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)",
-                              }
-                            : {
-                                background: "#ffffff",
-                                boxShadow: selected
-                                  ? "inset 0 1px 0 rgba(255,255,255,0.7), 0 8px 20px rgba(139,95,255,0.16)"
-                                  : "inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 16px rgba(139,95,255,0.12)",
-                              }
-                        }
                       >
                         {isHitPackage ? (
-                          <span
-                            className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              isDark
-                                ? "bg-[rgba(255,159,67,0.2)] text-[#ffd8a8] border border-[rgba(255,159,67,0.35)]"
-                                : "bg-[#fff1e6] text-[#d9480f] border border-[#ffd8a8]"
-                            }`}
-                          >
+                          <span className="absolute right-2 top-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 px-2 py-1 text-xs font-medium text-white">
                             🔥 Хит
                           </span>
                         ) : null}
-                        {isDark ? (
-                          <div
-                            className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-30"
-                            style={{
-                              background:
-                                "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)",
-                            }}
-                          />
-                        ) : null}
-                        <p className={`mt-1 text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
+                        <p className="mt-1 text-[13px] font-semibold text-fg">
                           {info.count} объявлений
                         </p>
-                        <div className={`mt-2 ${isDark ? "text-white/95" : ""}`}>
+                        <div className="mt-2 text-fg">
                           <PriceDisplay value={info.price} size="lg" />
                         </div>
-                        <p className={`mt-1 text-[12px] ${isDark ? "text-white/70" : "text-gray-500/85"}`}>
+                        <p className="mt-1 text-[12px] text-muted">
                           Выгоднее, чем поштучно
                         </p>
                         <button
@@ -753,19 +713,9 @@ export default function ProfilePage() {
                           }}
                           className={`pressable mt-3 min-h-[42px] w-full rounded-lg border text-[13px] font-semibold transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] ${
                             selected
-                              ? isDark
-                                ? "border-[rgba(139,95,255,0.5)] bg-[rgba(139,95,255,0.2)] text-[#ddd6fe] hover:bg-[rgba(139,95,255,0.25)]"
-                                : "border-[#8B5FFF]/35 bg-[#ede7ff] text-[#7c3aed] hover:bg-[#e7e0ff]"
-                              : "border-transparent text-white hover:shadow-[0_6px_22px_rgba(139,95,255,0.35)]"
+                              ? "border-green-500 bg-green-500 text-white"
+                              : "border-accent bg-accent text-white"
                           }`}
-                          style={
-                            selected
-                              ? undefined
-                              : {
-                                  background: "linear-gradient(135deg, #8B5FFF, #6EE7FF)",
-                                  boxShadow: "0 8px 24px rgba(139,95,255,0.38)",
-                                }
-                          }
                         >
                           {selected ? (
                             <span className="inline-flex items-center gap-1.5">

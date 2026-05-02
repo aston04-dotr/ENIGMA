@@ -1012,12 +1012,14 @@ export default function CreatePage() {
             <option value="Обувь">Обувь</option>
           </select>
           <select
-            value={categoryParams.fashion.size}
+            value={categoryParams.fashion.size || ""}
             onChange={(e) => updateCategoryParam("fashion", "size", e.target.value)}
-            className={inputClass}
+            className={`${inputClass} ${categoryParams.fashion.size ? "text-fg" : "text-muted"}`}
             disabled={!categoryParams.fashion.itemType}
           >
-            <option value="">Выберите размер</option>
+            <option value="" className="text-muted">
+              Выберите размер
+            </option>
             {categoryParams.fashion.itemType === "Одежда"
               ? FASHION_CLOTHING_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
@@ -1032,7 +1034,9 @@ export default function CreatePage() {
                   </option>
                 ))
               : null}
-            <option value="__other__">Другой</option>
+            <option value="__other__" className="text-fg">
+              Другой
+            </option>
           </select>
           {categoryParams.fashion.size === "__other__" ? (
             <input
@@ -1066,17 +1070,21 @@ export default function CreatePage() {
           <input value={categoryParams.kids.itemType} onChange={(e) => updateCategoryParam("kids", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
           <input value={categoryParams.kids.age} onChange={(e) => updateCategoryParam("kids", "age", e.target.value)} placeholder="Возраст *" className={inputClass} />
           <select
-            value={categoryParams.kids.size}
+            value={categoryParams.kids.size || ""}
             onChange={(e) => updateCategoryParam("kids", "size", e.target.value)}
-            className={inputClass}
+            className={`${inputClass} ${categoryParams.kids.size ? "text-fg" : "text-muted"}`}
           >
-            <option value="">Выберите размер</option>
+            <option value="" className="text-muted">
+              Выберите размер
+            </option>
             {KIDS_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
+              <option key={size} value={size} className="text-fg">
                 {size}
               </option>
             ))}
-            <option value="__other__">Другой</option>
+            <option value="__other__" className="text-fg">
+              Другой
+            </option>
           </select>
           {categoryParams.kids.size === "__other__" ? (
             <input
