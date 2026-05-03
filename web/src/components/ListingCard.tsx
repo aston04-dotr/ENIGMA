@@ -11,6 +11,7 @@ import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
+import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { useEffect, useState } from "react";
@@ -117,6 +118,10 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   }
 
   const numericPrice = Number(safeItem?.price ?? 0);
+  const reFacts =
+    safeItem?.category === "realestate" && safeItem
+      ? formatRealEstateListingFacts(safeItem as ListingRow)
+      : null;
 
   const imageHeightClass = compact
     ? "h-[146px] sm:h-[156px] lg:h-auto lg:aspect-video"
@@ -186,6 +191,9 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">
             {itemTitle}
           </p>
+          {reFacts ? (
+            <p className="line-clamp-2 text-[12px] leading-snug text-muted">{reFacts}</p>
+          ) : null}
           <p
             className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${
               theme === "light" ? "text-[#0f172a]" : "text-white"

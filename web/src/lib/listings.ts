@@ -858,6 +858,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       comms_water?: boolean;
       comms_electricity?: string | null;
       comms_sewage?: boolean;
+      plot_area?: string | null;
       deal_type?: string | null;
     };
     const payloadParams =
@@ -905,6 +906,9 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     if (typeof payloadExtended.comms_sewage === "boolean") {
       insertPayload.comms_sewage = payloadExtended.comms_sewage;
+    }
+    if (payloadExtended.plot_area != null && String(payloadExtended.plot_area).trim() !== "") {
+      insertPayload.plot_area = String(payloadExtended.plot_area).trim();
     }
     if (payloadExtended.deal_type === "rent" || payloadExtended.deal_type === "sale") {
       insertPayload.deal_type = payloadExtended.deal_type;

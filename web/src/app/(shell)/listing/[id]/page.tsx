@@ -14,6 +14,7 @@ import {
   toggleFavorite,
 } from "@/lib/listings";
 import { categoryLabel } from "@/lib/categories";
+import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -288,6 +289,9 @@ export default function ListingDetailPage() {
     Number.isFinite(Number(safeItem.price)) ? Number(safeItem.price) : 0,
   );
 
+  const listingFacts =
+    category === "realestate" && row ? formatRealEstateListingFacts(row) : null;
+
   const boostHref =
     viewerId && rowId
       ? `/payment?${webBoostPaymentQuery(String(rowId), viewerId)}`
@@ -390,6 +394,9 @@ export default function ListingDetailPage() {
           <h1 className="mt-2 text-xl font-semibold leading-snug text-fg">
             {title}
           </h1>
+          {listingFacts ? (
+            <p className="mt-2 text-[13px] leading-snug text-muted">{listingFacts}</p>
+          ) : null}
           <p className="mt-3 text-sm text-muted">{city} · {categoryLabel(category)}</p>
           <div className="mt-2">
             <ListingMetricsRow
