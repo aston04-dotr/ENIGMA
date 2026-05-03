@@ -684,20 +684,18 @@ export default function ProfilePage() {
                     return (
                       <article
                         key={`${section.type}-${size}`}
-                        className={`relative overflow-hidden rounded-xl border bg-elevated p-2.5 transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
+                        className={`overflow-hidden rounded-xl border bg-elevated p-2.5 transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
                           selected
                             ? "border-accent shadow-md shadow-accent/20"
                             : "border-line"
                         }`}
                       >
-                        {isHitPackage ? (
-                          <span className="absolute right-2 top-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 px-2 py-1 text-xs font-medium text-white">
-                            🔥 Хит
-                          </span>
-                        ) : null}
-                        <p className="mt-1 text-[13px] font-semibold text-fg">
-                          {info.count} объявлений
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-sm text-muted">{info.count} объявлений</span>
+                          {isHitPackage ? (
+                            <span className="badge-hit shrink-0">🔥 Хит</span>
+                          ) : null}
+                        </div>
                         <div className="mt-2 text-fg">
                           <PriceDisplay value={info.price} size="lg" />
                         </div>

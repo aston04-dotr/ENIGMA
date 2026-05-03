@@ -54,6 +54,16 @@ html {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+.badge-hit {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: linear-gradient(90deg, #8b5fff, #22d3ee);
+  color: white;
+  white-space: nowrap;
+}
+
 /* React Select styles */
 .react-select-container .react-select__control {
   background-color: var(--color-elevated);
