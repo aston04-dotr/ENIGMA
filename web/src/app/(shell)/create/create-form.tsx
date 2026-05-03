@@ -15,6 +15,13 @@ import { parseNonNegativePrice } from "@/lib/validate";
 import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { trackEvent } from "@/lib/analytics";
+import {
+  formatPlotAreaForListingFromSotkiString,
+  hectaresInputToSotki,
+  normalizeDecimalInput,
+  parseFlexiblePositiveNumber,
+  sotkiToHectaresDisplay,
+} from "@/lib/plotAreaSotki";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -67,8 +74,10 @@ type RealEstateParams = {
   rooms: string;
   parking: string;
   renovation: string;
-  /** Площадь участка (текст: сотки, га и т.д.). */
+  /** Площадь участка: для «Участок» — число соток (строка); отображение может быть в га. */
   plotArea: string;
+  /** Участок: ввод площади в гектарах (значение plotArea всё равно в сотках). */
+  plotAreaUnitHa: boolean;
   /** Коммерция: электромощность кВт (необязательно, все подтипы). */
   commercialPowerKw: string;
   commsGas: boolean;
@@ -130,6 +139,7 @@ const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
     parking: "",
     renovation: "",
     plotArea: "",
+    plotAreaUnitHa: false,
     commercialPowerKw: "",
     commsGas: false,
     commsWater: false,
@@ -263,6 +273,15 @@ function kidsShowsSize(kind: KidsItemKind | null): boolean {
   return kind === "clothing" || kind === "shoes";
 }
 
+function formatPersistPlotArea(p: RealEstateParams): string {
+  const t = p.plotArea.trim();
+  if (!t) return "";
+  if (p.propertyType === LAND_PLOT_LABEL) {
+    return formatPlotAreaForListingFromSotkiString(t);
+  }
+  return t;
+}
+
 export function CreateListingForm() {
   const { session, profile, refreshProfile } = useAuth();
   const router = useRouter();
@@ -279,6 +298,8 @@ export function CreateListingForm() {
   const [categoryParams, setCategoryParams] = useState<CategoryFormParams>(
     EMPTY_CATEGORY_PARAMS,
   );
+  /** Локальное отображение поля га при вводе (каноническое значение — сотки в plotArea). */
+  const [landPlotHaTyping, setLandPlotHaTyping] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
@@ -304,6 +325,13 @@ export function CreateListingForm() {
     }
   }, [listingIntent]);
 
+  useEffect(() => {
+    const land =
+      category === "realestate" &&
+      categoryParams.realestate.propertyType === LAND_PLOT_LABEL;
+    if (!land) setLandPlotHaTyping(null);
+  }, [category, categoryParams.realestate.propertyType]);
+
   const rentFeedFiltersSeededRef = useRef(false);
   useEffect(() => {
     if (listingIntent !== "rent" || rentFeedFiltersSeededRef.current) return;
@@ -318,11 +346,22 @@ export function CreateListingForm() {
         realAreaTo?: string;
         realFloor?: string;
         realFloorsTotal?: string;
+        realPlotFrom?: string;
+        realPlotTo?: string;
+        realPlotUseHa?: boolean;
       };
       const areaSeed =
         String(state.realAreaFrom ?? "").trim() || String(state.realAreaTo ?? "").trim();
       const floorSeed = String(state.realFloor ?? "").trim();
       const floorsTotalSeed = String(state.realFloorsTotal ?? "").trim();
+      const plotSeedRaw =
+        String(state.realPlotFrom ?? "").trim() || String(state.realPlotTo ?? "").trim();
+      const plotHaMode = state.realPlotUseHa === true;
+      let plotSotkiSeed: string | undefined;
+      if (plotSeedRaw) {
+        const n = plotHaMode ? hectaresInputToSotki(plotSeedRaw) : parseFlexiblePositiveNumber(plotSeedRaw);
+        if (n != null) plotSotkiSeed = String(n);
+      }
       const feedCity = String(state.city ?? "").trim();
       setCategoryParams((prev) => ({
         ...prev,
@@ -331,6 +370,9 @@ export function CreateListingForm() {
           ...(areaSeed ? { area: areaSeed } : {}),
           ...(floorSeed ? { floor: floorSeed } : {}),
           ...(floorsTotalSeed ? { floorsTotal: floorsTotalSeed } : {}),
+          ...(plotSotkiSeed
+            ? { plotArea: plotSotkiSeed, plotAreaUnitHa: plotHaMode }
+            : {}),
         },
       }));
       if (isAllowedListingCity(feedCity)) {
@@ -520,6 +562,9 @@ export function CreateListingForm() {
       }
 
       if (isLand) {
+        if (parseFlexiblePositiveNumber(p.plotArea) == null) {
+          return "Укажите площадь участка числом больше нуля (сотки)";
+        }
         if (!p.landType.trim()) {
           return "Выберите вид участка";
         }
@@ -639,7 +684,7 @@ export function CreateListingForm() {
         specs.push(["Тип помещения", p.commercialPremisesType]);
       }
       if (p.propertyType === LAND_PLOT_LABEL) {
-        specs.push(["Площадь участка", p.plotArea]);
+        specs.push(["Площадь участка", formatPersistPlotArea(p)]);
         const purposeLabel =
           LAND_PURPOSE_OPTIONS.find((o) => o.value === p.landType)?.label ?? p.landType;
         if (purposeLabel.trim()) specs.push(["Вид участка", purposeLabel]);
@@ -754,7 +799,8 @@ export function CreateListingForm() {
       const area_m2 = areaNum != null ? Math.round(areaNum) : null;
       const commercialType =
         isCommercial ? p.commercialPremisesType.trim() || null : null;
-      const plotTrim = p.plotArea.trim();
+      const plotPersist =
+        isLand ? formatPersistPlotArea(p) : p.plotArea.trim();
       const electricityCol = resolveCommsElectricityColumn(p);
       const landTypeTrim = isLand ? p.landType.trim() || null : null;
       const landOwnTrim = isLand ? p.landOwnershipStatus.trim() || null : null;
@@ -763,7 +809,7 @@ export function CreateListingForm() {
         commercial_type: commercialType,
         deal_type: listingIntent,
         area_m2,
-        plot_area: plotTrim || null,
+        plot_area: plotPersist || null,
         land_type: landTypeTrim,
         land_ownership_status: landOwnTrim,
         floor: isLand ? null : toIntOrNull(p.floor),
@@ -952,14 +998,15 @@ export function CreateListingForm() {
           ? (() => {
               const p = categoryParams.realestate;
               const electricityCol = resolveCommsElectricityColumn(p);
-              const plotTrim = p.plotArea.trim();
               const isLand = p.propertyType === LAND_PLOT_LABEL;
+              const plotPersist =
+                isLand ? formatPersistPlotArea(p) : p.plotArea.trim();
               return {
                 commercial_type:
                   p.propertyType === COMMERCIAL_PROPERTY_LABEL
                     ? p.commercialPremisesType.trim() || null
                     : null,
-                plot_area: plotTrim || null,
+                plot_area: plotPersist || null,
                 land_type: isLand ? p.landType.trim() || null : null,
                 land_ownership_status: isLand ? p.landOwnershipStatus.trim() || null : null,
                 comms_gas: p.commsGas,
@@ -1097,6 +1144,14 @@ export function CreateListingForm() {
   const isLandPlotProp = re.propertyType === LAND_PLOT_LABEL;
   const needsMainAreaField = Boolean(re.propertyType.trim()) && !isLandPlotProp;
   const needsPlotAreaField = isHouseProp || isLandPlotProp;
+
+  const landPlotInputDisplay = useMemo(() => {
+    if (!isLandPlotProp) return "";
+    if (!re.plotAreaUnitHa) return re.plotArea;
+    if (landPlotHaTyping != null) return landPlotHaTyping;
+    const s = parseFlexiblePositiveNumber(re.plotArea);
+    return s != null ? sotkiToHectaresDisplay(s) : "";
+  }, [isLandPlotProp, re.plotArea, re.plotAreaUnitHa, landPlotHaTyping]);
 
   console.log("[CITIES-CREATE DEBUG] options:", cityOptions?.length, cityOptions);
 
@@ -1311,9 +1366,11 @@ export function CreateListingForm() {
                   if (v === HOUSE_LABEL || v === LAND_PLOT_LABEL) {
                     if (r.propertyType !== HOUSE_LABEL && r.propertyType !== LAND_PLOT_LABEL) {
                       base.plotArea = "";
+                      base.plotAreaUnitHa = false;
                     }
                   } else {
                     base.plotArea = "";
+                    base.plotAreaUnitHa = false;
                   }
 
                   if (v === LAND_PLOT_LABEL) {
@@ -1326,16 +1383,19 @@ export function CreateListingForm() {
                     if (r.propertyType !== LAND_PLOT_LABEL) {
                       base.landType = "";
                       base.landOwnershipStatus = "";
+                      base.plotAreaUnitHa = false;
                     }
                   }
 
                   if (v !== LAND_PLOT_LABEL && r.propertyType === LAND_PLOT_LABEL) {
                     base.landType = "";
                     base.landOwnershipStatus = "";
+                    base.plotAreaUnitHa = false;
                   }
 
                   if (v === COMMERCIAL_PROPERTY_LABEL) {
                     base.plotArea = "";
+                    base.plotAreaUnitHa = false;
                     base.rooms = "";
                   }
 
@@ -1363,12 +1423,74 @@ export function CreateListingForm() {
             ) : null}
           </div>
           {needsPlotAreaField ? (
-            <input
-              value={categoryParams.realestate.plotArea}
-              onChange={(e) => updateCategoryParam("realestate", "plotArea", e.target.value)}
-              placeholder="Площадь участка *"
-              className={inputClass}
-            />
+            isLandPlotProp ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  value={landPlotInputDisplay}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (!re.plotAreaUnitHa) {
+                      updateCategoryParam(
+                        "realestate",
+                        "plotArea",
+                        normalizeDecimalInput(raw).replace(/[^\d.]/g, ""),
+                      );
+                      return;
+                    }
+                    setLandPlotHaTyping(raw);
+                    const ha = parseFlexiblePositiveNumber(raw);
+                    updateCategoryParam(
+                      "realestate",
+                      "plotArea",
+                      ha != null ? String(ha * 100) : "",
+                    );
+                  }}
+                  onFocus={() => {
+                    if (!re.plotAreaUnitHa) return;
+                    const s = parseFlexiblePositiveNumber(re.plotArea);
+                    setLandPlotHaTyping(s != null ? sotkiToHectaresDisplay(s) : "");
+                  }}
+                  onBlur={() => setLandPlotHaTyping(null)}
+                  inputMode="decimal"
+                  placeholder={re.plotAreaUnitHa ? "Площадь, га *" : "Площадь, сот. *"}
+                  className={`${inputClass} min-w-[160px] flex-1`}
+                />
+                <label className="flex shrink-0 cursor-pointer select-none items-center gap-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={re.plotAreaUnitHa}
+                    aria-label="Площадь в гектарах"
+                    onClick={() => {
+                      const next = !re.plotAreaUnitHa;
+                      updateCategoryParam("realestate", "plotAreaUnitHa", next);
+                      setLandPlotHaTyping(null);
+                    }}
+                    className={`relative inline-flex h-8 w-[52px] shrink-0 items-center rounded-full border transition-colors duration-200 ${
+                      re.plotAreaUnitHa
+                        ? "border-accent bg-accent"
+                        : "border-line bg-elev-2"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-full bg-white shadow transition-transform duration-200 ${
+                        re.plotAreaUnitHa ? "translate-x-[22px]" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    ГА
+                  </span>
+                </label>
+              </div>
+            ) : (
+              <input
+                value={categoryParams.realestate.plotArea}
+                onChange={(e) => updateCategoryParam("realestate", "plotArea", e.target.value)}
+                placeholder="Площадь участка *"
+                className={inputClass}
+              />
+            )
           ) : null}
           {isLandPlotProp ? (
             <>

@@ -21,6 +21,7 @@ import {
 } from "@/lib/listings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
+import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
 import type { ListingRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,6 +42,10 @@ type StoredFeedState = {
   realAreaTo?: string;
   realFloor?: string;
   realFloorsTotal?: string;
+  /** Фильтр площади участка (сотки; опционально ввод в га через realPlotUseHa). */
+  realPlotFrom?: string;
+  realPlotTo?: string;
+  realPlotUseHa?: boolean;
 };
 type FeedSort = "newest" | "price_asc" | "price_desc";
 
@@ -248,6 +253,15 @@ function FeedPage({ session }: { session: Session }) {
     String(feedStateSeed?.realFloorsTotal ?? "").trim(),
   );
   const [realRooms, setRealRooms] = useState("");
+  const [realPlotFrom, setRealPlotFrom] = useState(() =>
+    String(feedStateSeed?.realPlotFrom ?? "").trim(),
+  );
+  const [realPlotTo, setRealPlotTo] = useState(() =>
+    String(feedStateSeed?.realPlotTo ?? "").trim(),
+  );
+  const [realPlotUseHa, setRealPlotUseHa] = useState(
+    feedStateSeed?.realPlotUseHa === true,
+  );
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
   const [feedNonce, setFeedNonce] = useState(0);
@@ -305,10 +319,23 @@ function FeedPage({ session }: { session: Session }) {
         realAreaTo,
         realFloor,
         realFloorsTotal,
+        realPlotFrom,
+        realPlotTo,
+        realPlotUseHa,
       });
     }, FILTERS_DEBOUNCE_MS);
     return () => window.clearTimeout(id);
-  }, [city, selectedCategory, realAreaFrom, realAreaTo, realFloor, realFloorsTotal]);
+  }, [
+    city,
+    selectedCategory,
+    realAreaFrom,
+    realAreaTo,
+    realFloor,
+    realFloorsTotal,
+    realPlotFrom,
+    realPlotTo,
+    realPlotUseHa,
+  ]);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -346,6 +373,7 @@ function FeedPage({ session }: { session: Session }) {
     const floorEq = parseIntOrNull(realFloor);
     const floorsTotalEq = parseIntOrNull(realFloorsTotal);
     const roomsEq = parseIntOrNull(realRooms);
+    const plotBounds = plotFilterBoundsToSotki(realPlotFrom, realPlotTo, realPlotUseHa);
 
     const afterFilters = base.filter((row) => {
       const listingPrice = getListingPriceForSort(row);
@@ -373,15 +401,30 @@ function FeedPage({ session }: { session: Session }) {
       }
 
       if (selectedCategory === "realestate") {
+        const listingType = getParamText(row, "type");
+        const isPlotListing = listingType === "Участок";
         const area = getParamInt(row, "area_m2");
         const floor = getParamInt(row, "floor");
         const floorsTotal = getParamInt(row, "floors_total");
         const rooms = getParamInt(row, "rooms");
-        if (areaFrom != null && (area == null || area < areaFrom)) return false;
-        if (areaTo != null && (area == null || area > areaTo)) return false;
-        if (floorEq != null && floor !== floorEq) return false;
-        if (floorsTotalEq != null && floorsTotal !== floorsTotalEq) return false;
-        if (roomsEq != null && rooms !== roomsEq) return false;
+        if (!isPlotListing) {
+          if (areaFrom != null && (area == null || area < areaFrom)) return false;
+          if (areaTo != null && (area == null || area > areaTo)) return false;
+          if (floorEq != null && floor !== floorEq) return false;
+          if (floorsTotalEq != null && floorsTotal !== floorsTotalEq) return false;
+          if (roomsEq != null && rooms !== roomsEq) return false;
+        }
+
+        if (plotBounds.from != null || plotBounds.to != null) {
+          if (listingType !== "Участок") return false;
+          const rawPlot =
+            (typeof row.plot_area === "string" ? row.plot_area.trim() : "") ||
+            getParamText(row, "plot_area");
+          const listingSotki = parsePlotAreaToSotki(rawPlot);
+          if (listingSotki == null) return false;
+          if (plotBounds.from != null && listingSotki < plotBounds.from) return false;
+          if (plotBounds.to != null && listingSotki > plotBounds.to) return false;
+        }
       }
 
       return true;
@@ -426,13 +469,14 @@ function FeedPage({ session }: { session: Session }) {
     autoTransmission,
     autoClearedOnly,
     autoDamagedOnly,
-    realAreaFrom,
-    realAreaTo,
-    realFloor,
-    realFloorsTotal,
-    realRooms,
-    sortMode,
-  ]);
+        realFloor,
+        realFloorsTotal,
+        realRooms,
+        sortMode,
+        realPlotFrom,
+        realPlotTo,
+        realPlotUseHa,
+      ]);
 
   const applyRes = useCallback(
     (
@@ -656,7 +700,10 @@ function FeedPage({ session }: { session: Session }) {
         realAreaTo ||
         realFloor ||
         realFloorsTotal ||
-        realRooms,
+        realRooms ||
+        realPlotFrom ||
+        realPlotTo ||
+        realPlotUseHa,
     );
   const quickCategories = useMemo(() => CATEGORIES.slice(0, 8), []);
 
@@ -682,6 +729,9 @@ function FeedPage({ session }: { session: Session }) {
     setRealFloor("");
     setRealFloorsTotal("");
     setRealRooms("");
+    setRealPlotFrom("");
+    setRealPlotTo("");
+    setRealPlotUseHa(false);
     setCitySheetOpen(false);
     setCategorySheetOpen(false);
     setFiltersSheetOpen(false);
@@ -703,8 +753,21 @@ function FeedPage({ session }: { session: Session }) {
       realAreaTo,
       realFloor,
       realFloorsTotal,
+      realPlotFrom,
+      realPlotTo,
+      realPlotUseHa,
     });
-  }, [city, selectedCategory, realAreaFrom, realAreaTo, realFloor, realFloorsTotal]);
+  }, [
+    city,
+    selectedCategory,
+    realAreaFrom,
+    realAreaTo,
+    realFloor,
+    realFloorsTotal,
+    realPlotFrom,
+    realPlotTo,
+    realPlotUseHa,
+  ]);
 
   return (
     <main className="safe-pt min-h-screen bg-main">
@@ -1043,6 +1106,48 @@ function FeedPage({ session }: { session: Session }) {
                     <input value={realFloor} onChange={(e) => setRealFloor(e.target.value)} inputMode="numeric" placeholder="Этаж" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
                     <input value={realFloorsTotal} onChange={(e) => setRealFloorsTotal(e.target.value)} inputMode="numeric" placeholder="Этажность" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
                     <input value={realRooms} onChange={(e) => setRealRooms(e.target.value)} inputMode="numeric" placeholder="Комнаты" className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted" />
+                  </div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                    Участок (площадь)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={realPlotFrom}
+                      onChange={(e) => setRealPlotFrom(e.target.value)}
+                      inputMode="decimal"
+                      placeholder={realPlotUseHa ? "От, га" : "От, сот."}
+                      className="min-w-[108px] flex-1 rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                    />
+                    <input
+                      value={realPlotTo}
+                      onChange={(e) => setRealPlotTo(e.target.value)}
+                      inputMode="decimal"
+                      placeholder={realPlotUseHa ? "До, га" : "До, сот."}
+                      className="min-w-[108px] flex-1 rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                    />
+                    <label className="flex shrink-0 cursor-pointer select-none items-center gap-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={realPlotUseHa}
+                        aria-label="Площадь участка в гектарах"
+                        onClick={() => setRealPlotUseHa((v) => !v)}
+                        className={`relative inline-flex h-8 w-[52px] shrink-0 items-center rounded-full border transition-colors duration-200 ${
+                          realPlotUseHa
+                            ? "border-accent bg-accent"
+                            : "border-line bg-elev-2"
+                        }`}
+                      >
+                        <span
+                          className={`absolute left-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-full bg-white shadow transition-transform duration-200 ${
+                            realPlotUseHa ? "translate-x-[22px]" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                        ГА
+                      </span>
+                    </label>
                   </div>
                 </>
               ) : null}
