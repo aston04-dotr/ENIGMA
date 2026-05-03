@@ -36,6 +36,11 @@ type StoredFeedState = {
   category?: string;
   scrollY?: number;
   timestamp?: number;
+  /** Фильтры недвижимости в ленте → префилл формы «Снять». */
+  realAreaFrom?: string;
+  realAreaTo?: string;
+  realFloor?: string;
+  realFloorsTotal?: string;
 };
 type FeedSort = "newest" | "price_asc" | "price_desc";
 
@@ -234,10 +239,14 @@ function FeedPage({ session }: { session: Session }) {
   const [autoTransmission, setAutoTransmission] = useState("");
   const [autoClearedOnly, setAutoClearedOnly] = useState(false);
   const [autoDamagedOnly, setAutoDamagedOnly] = useState(false);
-  const [realAreaFrom, setRealAreaFrom] = useState("");
-  const [realAreaTo, setRealAreaTo] = useState("");
-  const [realFloor, setRealFloor] = useState("");
-  const [realFloorsTotal, setRealFloorsTotal] = useState("");
+  const [realAreaFrom, setRealAreaFrom] = useState(() =>
+    String(feedStateSeed?.realAreaFrom ?? "").trim(),
+  );
+  const [realAreaTo, setRealAreaTo] = useState(() => String(feedStateSeed?.realAreaTo ?? "").trim());
+  const [realFloor, setRealFloor] = useState(() => String(feedStateSeed?.realFloor ?? "").trim());
+  const [realFloorsTotal, setRealFloorsTotal] = useState(() =>
+    String(feedStateSeed?.realFloorsTotal ?? "").trim(),
+  );
   const [realRooms, setRealRooms] = useState("");
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
@@ -284,6 +293,22 @@ function FeedPage({ session }: { session: Session }) {
       window.setTimeout(restore, 80);
     }
   }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      persistFeedState({
+        city,
+        category: selectedCategory,
+        scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+        timestamp: Date.now(),
+        realAreaFrom,
+        realAreaTo,
+        realFloor,
+        realFloorsTotal,
+      });
+    }, FILTERS_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [city, selectedCategory, realAreaFrom, realAreaTo, realFloor, realFloorsTotal]);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -674,8 +699,12 @@ function FeedPage({ session }: { session: Session }) {
       category: selectedCategory,
       scrollY: typeof window !== "undefined" ? window.scrollY : 0,
       timestamp: Date.now(),
+      realAreaFrom,
+      realAreaTo,
+      realFloor,
+      realFloorsTotal,
     });
-  }, [city, selectedCategory]);
+  }, [city, selectedCategory, realAreaFrom, realAreaTo, realFloor, realFloorsTotal]);
 
   return (
     <main className="safe-pt min-h-screen bg-main">

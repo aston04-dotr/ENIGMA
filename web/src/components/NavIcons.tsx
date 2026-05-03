@@ -18,6 +18,15 @@ export function IconPlus({ className }: IconProps) {
   );
 }
 
+export function IconKey({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
+      <circle cx="8" cy="16" r="3.25" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 13.5 21 3v5h-4v4h-3" />
+    </svg>
+  );
+}
+
 export function IconChat({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>

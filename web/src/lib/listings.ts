@@ -848,6 +848,18 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     const priceNum = Number(payload.price);
     const payloadContactPhone = (payload as ListingInsertPayload & { contact_phone?: string | null })
       .contact_phone;
+    const payloadExtended = payload as ListingInsertPayload & {
+      commercial_type?: string | null;
+      has_gas?: boolean;
+      has_water?: boolean;
+      has_electricity?: boolean;
+      has_sewage?: boolean;
+      comms_gas?: boolean;
+      comms_water?: boolean;
+      comms_electricity?: string | null;
+      comms_sewage?: boolean;
+      deal_type?: string | null;
+    };
     const payloadParams =
       payload.params && typeof payload.params === "object"
         ? payload.params
@@ -856,7 +868,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     if (!normalizedCity) {
       return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
-    const insertPayload = {
+    const insertPayload: Record<string, unknown> = {
       user_id: payload.user_id || effectiveUserId,
       owner_id: payload.owner_id || effectiveUserId,
       title: payload.title?.trim() || "",
@@ -867,6 +879,36 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       params: payloadParams,
       contact_phone: payloadContactPhone || null,
     };
+    if (payloadExtended.commercial_type != null && payloadExtended.commercial_type !== "") {
+      insertPayload.commercial_type = payloadExtended.commercial_type;
+    }
+    if (typeof payloadExtended.has_gas === "boolean") {
+      insertPayload.has_gas = payloadExtended.has_gas;
+    }
+    if (typeof payloadExtended.has_water === "boolean") {
+      insertPayload.has_water = payloadExtended.has_water;
+    }
+    if (typeof payloadExtended.has_electricity === "boolean") {
+      insertPayload.has_electricity = payloadExtended.has_electricity;
+    }
+    if (typeof payloadExtended.has_sewage === "boolean") {
+      insertPayload.has_sewage = payloadExtended.has_sewage;
+    }
+    if (typeof payloadExtended.comms_gas === "boolean") {
+      insertPayload.comms_gas = payloadExtended.comms_gas;
+    }
+    if (typeof payloadExtended.comms_water === "boolean") {
+      insertPayload.comms_water = payloadExtended.comms_water;
+    }
+    if (payloadExtended.comms_electricity != null && payloadExtended.comms_electricity !== "") {
+      insertPayload.comms_electricity = payloadExtended.comms_electricity;
+    }
+    if (typeof payloadExtended.comms_sewage === "boolean") {
+      insertPayload.comms_sewage = payloadExtended.comms_sewage;
+    }
+    if (payloadExtended.deal_type === "rent" || payloadExtended.deal_type === "sale") {
+      insertPayload.deal_type = payloadExtended.deal_type;
+    }
 
     console.log("INSERT PHONE:", payloadContactPhone);
     console.log("INSERT PAYLOAD:", insertPayload);
@@ -877,13 +919,13 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       return { error: "Укажите название объявления" };
     }
     
-    if (!Number.isFinite(insertPayload.price) || insertPayload.price < 0) {
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
       console.error("VALIDATION ERROR: invalid price", payload.price);
       return { error: "Укажите корректную цену" };
     }
     
-    if (!isAllowedListingCity(insertPayload.city)) {
-      console.error("VALIDATION ERROR: invalid city", insertPayload.city);
+    if (!isAllowedListingCity(normalizedCity)) {
+      console.error("VALIDATION ERROR: invalid city", normalizedCity);
       return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     

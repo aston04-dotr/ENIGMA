@@ -32,6 +32,18 @@ export type ListingInsertPayload = {
   params?: Record<string, unknown> | null;
   /** Контактный телефон продавца (копируется из profiles.phone). */
   contact_phone?: string | null;
+  /** Недвижимость: подтип коммерческого помещения. */
+  commercial_type?: string | null;
+  has_gas?: boolean;
+  has_water?: boolean;
+  has_electricity?: boolean;
+  has_sewage?: boolean;
+  comms_gas?: boolean;
+  comms_water?: boolean;
+  comms_electricity?: string | null;
+  comms_sewage?: boolean;
+  /** sale | rent */
+  deal_type?: string | null;
 };
 
 export type ListingRow = {
@@ -60,6 +72,16 @@ export type ListingRow = {
   favorite_count?: number;
   /** Контактный телефон продавца (копируется из profiles.phone при создании). */
   contact_phone?: string | null;
+  commercial_type?: string | null;
+  deal_type?: string | null;
+  has_gas?: boolean | null;
+  has_water?: boolean | null;
+  has_electricity?: boolean | null;
+  has_sewage?: boolean | null;
+  comms_gas?: boolean | null;
+  comms_water?: boolean | null;
+  comms_electricity?: string | null;
+  comms_sewage?: boolean | null;
   /** Структурированные параметры объявления (jsonb). */
   params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];
