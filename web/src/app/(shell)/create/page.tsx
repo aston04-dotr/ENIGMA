@@ -1060,31 +1060,37 @@ export default function CreatePage() {
             <option value="Обувь">Обувь</option>
           </select>
           <select
-            value={categoryParams.fashion.size || ""}
+            value={categoryParams.fashion.itemType ? categoryParams.fashion.size || "" : ""}
             onChange={(e) => updateCategoryParam("fashion", "size", e.target.value)}
-            className={`${inputClass} ${categoryParams.fashion.size ? "text-fg" : "text-muted"}`}
+            className={`${inputClass} ${categoryParams.fashion.itemType ? (categoryParams.fashion.size ? "text-fg" : "text-muted") : "text-muted"} disabled:cursor-not-allowed disabled:opacity-[0.65]`}
             disabled={!categoryParams.fashion.itemType}
           >
-            <option value="" className="text-muted">
-              Выберите размер
-            </option>
-            {categoryParams.fashion.itemType === "Одежда"
-              ? FASHION_CLOTHING_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))
-              : null}
-            {categoryParams.fashion.itemType === "Обувь"
-              ? Array.from({ length: 14 }, (_, idx) => String(35 + idx)).map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))
-              : null}
-            <option value="__other__" className="text-fg">
-              Другой
-            </option>
+            {!categoryParams.fashion.itemType ? (
+              <option value="">Сначала выберите тип</option>
+            ) : (
+              <>
+                <option value="" className="text-muted">
+                  Выберите размер
+                </option>
+                {categoryParams.fashion.itemType === "Одежда"
+                  ? FASHION_CLOTHING_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))
+                  : null}
+                {categoryParams.fashion.itemType === "Обувь"
+                  ? Array.from({ length: 14 }, (_, idx) => String(35 + idx)).map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))
+                  : null}
+                <option value="__other__" className="text-fg">
+                  Другой
+                </option>
+              </>
+            )}
           </select>
           {categoryParams.fashion.size === "__other__" ? (
             <input
