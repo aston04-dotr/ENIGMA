@@ -31,6 +31,28 @@ function compositeCursorOrClause(c: FeedListingsCursor): string {
   return `created_at.lt.${ts},and(created_at.eq.${ts},id.lt.${id})`;
 }
 
+/** Колонки недвижимости из PostgREST (* включает их при наличии в схеме). */
+function applyListingRealEstateColumns(row: ListingRow, data: Record<string, unknown>): void {
+  const plot = data.plot_area;
+  if (plot != null && String(plot).trim() !== "") {
+    row.plot_area = String(plot).trim();
+  }
+  const landType = data.land_type;
+  if (landType != null && String(landType).trim() !== "") {
+    row.land_type = String(landType).trim();
+  }
+  const landOwn = data.land_ownership_status;
+  if (landOwn != null && String(landOwn).trim() !== "") {
+    row.land_ownership_status = String(landOwn).trim();
+  }
+  if (typeof data.comms_gas === "boolean") row.comms_gas = data.comms_gas;
+  if (typeof data.comms_water === "boolean") row.comms_water = data.comms_water;
+  if (data.comms_electricity != null && String(data.comms_electricity).trim() !== "") {
+    row.comms_electricity = String(data.comms_electricity).trim();
+  }
+  if (typeof data.comms_sewage === "boolean") row.comms_sewage = data.comms_sewage;
+}
+
 function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
   const seen = new Set<string>();
   const out: ListingRow[] = [];
@@ -67,6 +89,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     data.params && typeof data.params === "object"
       ? (data.params as Record<string, unknown>)
       : null;
+  applyListingRealEstateColumns(row, data);
   return row;
 }
 
@@ -727,6 +750,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     data.params && typeof data.params === "object"
       ? (data.params as Record<string, unknown>)
       : null;
+  applyListingRealEstateColumns(row, data);
   return row;
 }
 
@@ -859,6 +883,8 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       comms_electricity?: string | null;
       comms_sewage?: boolean;
       plot_area?: string | null;
+      land_type?: string | null;
+      land_ownership_status?: string | null;
       deal_type?: string | null;
     };
     const payloadParams =
@@ -909,6 +935,15 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     if (payloadExtended.plot_area != null && String(payloadExtended.plot_area).trim() !== "") {
       insertPayload.plot_area = String(payloadExtended.plot_area).trim();
+    }
+    if (payloadExtended.land_type != null && String(payloadExtended.land_type).trim() !== "") {
+      insertPayload.land_type = String(payloadExtended.land_type).trim();
+    }
+    if (
+      payloadExtended.land_ownership_status != null &&
+      String(payloadExtended.land_ownership_status).trim() !== ""
+    ) {
+      insertPayload.land_ownership_status = String(payloadExtended.land_ownership_status).trim();
     }
     if (payloadExtended.deal_type === "rent" || payloadExtended.deal_type === "sale") {
       insertPayload.deal_type = payloadExtended.deal_type;

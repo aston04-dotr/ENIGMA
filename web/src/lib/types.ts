@@ -44,6 +44,10 @@ export type ListingInsertPayload = {
   comms_sewage?: boolean;
   /** Площадь участка (текст). */
   plot_area?: string | null;
+  /** Участок: вид разрешённого использования. */
+  land_type?: string | null;
+  /** Участок: статус собственности / аренды. */
+  land_ownership_status?: string | null;
   /** sale | rent */
   deal_type?: string | null;
 };
@@ -85,6 +89,8 @@ export type ListingRow = {
   comms_electricity?: string | null;
   comms_sewage?: boolean | null;
   plot_area?: string | null;
+  land_type?: string | null;
+  land_ownership_status?: string | null;
   /** Структурированные параметры объявления (jsonb). */
   params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];

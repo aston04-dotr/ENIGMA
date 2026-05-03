@@ -17,11 +17,18 @@ export function formatRealEstateListingFacts(row: ListingRow): string | null {
     if (Number.isFinite(n)) areaM2 = n;
   }
   const plot = String(row.plot_area ?? params.plot_area ?? "").trim();
-  const comms = String(row.comms_electricity ?? "").trim();
+  const landType = String(row.land_type ?? params.land_type ?? "").trim();
+  const landOwn = String(row.land_ownership_status ?? params.land_ownership_status ?? "").trim();
+  const commsElec = String(row.comms_electricity ?? "").trim();
   const parts: string[] = [];
   if (typeLabel) parts.push(typeLabel);
   if (areaM2 != null && areaM2 > 0) parts.push(`${areaM2} м²`);
   if (plot) parts.push(`участок ${plot}`);
-  if (comms) parts.push(comms);
+  if (landType) parts.push(landType);
+  if (landOwn) parts.push(landOwn);
+  if (row.comms_gas === true) parts.push("газ");
+  if (row.comms_water === true) parts.push("вода");
+  if (commsElec) parts.push(commsElec);
+  if (row.comms_sewage === true) parts.push("канализация");
   return parts.length > 0 ? parts.join(" · ") : null;
 }
