@@ -1,5 +1,6 @@
 import { BottomNav } from "@/components/BottomNav";
 import { ShellGate } from "@/components/ShellGate";
+import { SiteLegalFooter } from "@/components/SiteLegalFooter";
 
 export default function ShellLayout({
   children,
@@ -8,9 +9,10 @@ export default function ShellLayout({
 }) {
   return (
     <ShellGate>
-      <div className="pb-[calc(64px+env(safe-area-inset-bottom))]">
+      <div className="pb-[calc(104px+env(safe-area-inset-bottom))]">
         {children}
       </div>
+      <SiteLegalFooter />
       <BottomNav />
     </ShellGate>
   );

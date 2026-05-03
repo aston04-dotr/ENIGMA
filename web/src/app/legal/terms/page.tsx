@@ -24,6 +24,8 @@ export default function TermsPage() {
 
 2.1. Платформа предоставляет технологическую возможность размещения объявлений, обмена информацией и взаимодействия между пользователями.
 
+2.1.1. Сервис Enigma — интернет-платформа объявлений: размещение, поиск и установление контакта между пользователями. Платформа не является стороной сделок между пользователями и не выступает их представителем, если иное прямо не следует из функционала сервиса.
+
 2.2. Платформа не является:
 — продавцом товаров
 — исполнителем услуг
@@ -144,7 +146,7 @@ export default function TermsPage() {
 
 6.4.3. Оплата является платой за доступ к функционалу, а не гарантией результата.
 
-6.4.4. Денежные средства за цифровые услуги не подлежат возврату, за исключением случаев, прямо предусмотренных законодательством Российской Федерации.
+6.4.4. Денежные средства за цифровые услуги не подлежат возврату, за исключением случаев, прямо предусмотренных законодательством Российской Федерации, а также случаев технической ошибки оплаты или непредоставления оплаченной функции, указанных в п. 6.7 настоящего Соглашения.
 
 6.4.5. В случае технических сбоев Платформа вправе:
 — продлить срок услуги
@@ -164,6 +166,20 @@ export default function TermsPage() {
 6.5.3. Оплата осуществляется через платёжные системы, подключённые к Платформе.
 
 6.5.4. После успешной оплаты доступ к функции предоставляется автоматически.
+
+6.6. ОПЛАТА И ПОДПИСКА
+
+6.6.1. Приём платежей за платные функции сервиса Enigma осуществляется через платёжный сервис ЮKassa в соответствии с правилами платёжной системы, банка Пользователя и настоящего Соглашения.
+
+6.6.2. При оформлении услуг с периодическим списанием (подписка, автопродление и аналогичные сценарии в интерфейсе сервиса) Пользователь подтверждает согласие на автоматическое списание денежных средств в размере и с периодичностью, указанными до оплаты, до момента отмены в порядке, предусмотренном платёжным провайдером и интерфейсом сервиса.
+
+6.6.3. Платформа не хранит полные реквизиты банковских карт Пользователя; обработка платёжных данных выполняется платёжным провайдером в объёме, необходимом для проведения операции.
+
+6.7. ВОЗВРАТЫ
+
+6.7.1. При технической ошибке при оплате (в том числе двойном списании) или при отсутствии предоставления оплаченной функции по причинам, связанным с работой сервиса или платёжного посредника, Пользователь вправе направить обращение на support@enigma-app.online для рассмотрения возврата или иной компенсации в порядке, предусмотренном законодательством Российской Федерации и правилами платёжной системы.
+
+6.7.2. К обращению рекомендуется приложить описание инцидента и данные операции (квитанция банка, идентификатор платежа в ЮKassa или иные подтверждающие сведения при наличии).
 
 7. БЛОКИРОВКА И УДАЛЕНИЕ
 
@@ -216,16 +232,27 @@ export default function TermsPage() {
 
 13. РЕКВИЗИТЫ ПЛАТФОРМЫ
 
-Владелец Платформы:
-[ФИО или название ИП/ООО]
+Владелец платформы:
+ИП Мхоян Микаэл Гайкович
+
+ИНН: 231906786407
+ОГРНИП: 324237500336512
 
 Email поддержки:
 support@enigma-app.online
 
-Контакт для связи:
-[Telegram / WhatsApp по желанию]
+Телефон для связи:
++7 938 451-09-87
 
-Платформа осуществляет деятельность в соответствии с законодательством Российской Федерации.`;
+Платформа осуществляет деятельность в соответствии с законодательством Российской Федерации.
+
+14. КОНТАКТЫ
+
+14.1. Email поддержки: support@enigma-app.online
+
+14.2. Телефон для связи: +7 938 451-09-87
+
+14.3. По вопросам работы сервиса, оплаты и возвратов используйте указанные каналы связи. Ответ предоставляется в разумный срок с учётом сложности обращения.`;
 
   const toc = [
     { id: "section-1", label: "1. Общие положения" },
@@ -237,6 +264,8 @@ support@enigma-app.online
     { id: "section-6", label: "6. Ограничение ответственности" },
     { id: "section-64", label: "6.4. Платные услуги" },
     { id: "section-65", label: "6.5. Порядок оплаты" },
+    { id: "section-66", label: "6.6. Оплата и подписка" },
+    { id: "section-67", label: "6.7. Возвраты" },
     { id: "section-7", label: "7. Блокировка" },
     { id: "section-8", label: "8. Права" },
     { id: "section-9", label: "9. Данные" },
@@ -244,6 +273,7 @@ support@enigma-app.online
     { id: "section-11", label: "11. Убытки" },
     { id: "section-12", label: "12. Заключение" },
     { id: "section-13", label: "13. Реквизиты платформы" },
+    { id: "section-14", label: "14. Контакты" },
   ] as const;
 
   const extractSection = (start: string, end?: string): string => {
@@ -299,7 +329,17 @@ support@enigma-app.online
     {
       id: "section-65",
       title: "6.5. ПОРЯДОК ОПЛАТЫ",
-      body: extractSection("6.5. ПОРЯДОК ОПЛАТЫ", "7. БЛОКИРОВКА И УДАЛЕНИЕ"),
+      body: extractSection("6.5. ПОРЯДОК ОПЛАТЫ", "6.6. ОПЛАТА И ПОДПИСКА"),
+    },
+    {
+      id: "section-66",
+      title: "6.6. ОПЛАТА И ПОДПИСКА",
+      body: extractSection("6.6. ОПЛАТА И ПОДПИСКА", "6.7. ВОЗВРАТЫ"),
+    },
+    {
+      id: "section-67",
+      title: "6.7. ВОЗВРАТЫ",
+      body: extractSection("6.7. ВОЗВРАТЫ", "7. БЛОКИРОВКА И УДАЛЕНИЕ"),
     },
     {
       id: "section-7",
@@ -334,49 +374,102 @@ support@enigma-app.online
     {
       id: "section-13",
       title: "13. РЕКВИЗИТЫ ПЛАТФОРМЫ",
-      body: extractSection("13. РЕКВИЗИТЫ ПЛАТФОРМЫ"),
+      body: extractSection("13. РЕКВИЗИТЫ ПЛАТФОРМЫ", "14. КОНТАКТЫ"),
+    },
+    {
+      id: "section-14",
+      title: "14. КОНТАКТЫ",
+      body: extractSection("14. КОНТАКТЫ"),
     },
   ] as const;
 
   return (
-    <main className="min-h-screen bg-main">
-      <div className="max-w-3xl mx-auto px-4 py-8">
+    <main className="min-h-screen bg-white text-[#1d1d1f] selection:bg-[#007AFF]/15">
+      <div className="mx-auto max-w-[660px] px-5 pb-20 pt-12 sm:px-8 sm:pb-28 sm:pt-16">
         <Link
           href="/"
-          className="mb-8 inline-block text-sm font-medium text-accent transition-colors duration-ui hover:text-accent-hover"
+          className="mb-10 inline-flex text-[15px] font-normal tracking-[-0.01em] text-[#007AFF] transition-opacity duration-200 hover:opacity-[0.65] active:opacity-50"
         >
-          ← На ленту
+          ← На сайт
         </Link>
 
-        <h1 className="text-2xl font-bold tracking-tight text-fg">
-          Пользовательское соглашение
-        </h1>
-        <p className="mb-6 text-xs text-muted">Последнее обновление: 2026</p>
+        <header className="mb-14 border-b border-black/[0.08] pb-10">
+          <h1 className="text-[34px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d1d1f] sm:text-[40px]">
+            Пользовательское соглашение
+          </h1>
+          <p className="mt-4 text-[13px] leading-relaxed text-[#6e6e73]">Последнее обновление: 2026</p>
+        </header>
 
-        <div className="mb-6">
-          <h2 className="mb-3 text-lg font-semibold text-fg">Содержание</h2>
-          <div className="flex flex-col gap-2 text-sm text-blue-500">
+        <nav
+          className="mb-14 rounded-2xl border border-black/[0.06] bg-[#f5f5f7]/80 px-5 py-5 sm:px-6"
+          aria-label="Содержание документа"
+        >
+          <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6e6e73]">Содержание</p>
+          <ul className="flex flex-col gap-2.5">
             {toc.map((item) => (
-              <a key={item.id} href={`#${item.id}`} className="hover:underline">
-                {item.label}
-              </a>
+              <li key={item.id}>
+                <a
+                  href={`#${item.id}`}
+                  className="text-[15px] leading-snug text-[#007AFF] tracking-[-0.01em] transition-opacity duration-200 hover:opacity-[0.65]"
+                >
+                  {item.label}
+                </a>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </nav>
 
-        <div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-          <p className="mb-6 text-muted">ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ{`\n`}(редакция от 2026 г.)</p>
+        <div className="text-[17px] leading-[1.47] tracking-[-0.022em] text-[#1d1d1f]">
+          <p className="mb-14 whitespace-pre-line text-[15px] leading-relaxed text-[#6e6e73]">
+            ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ{"\n"}(редакция от 2026 г.)
+          </p>
           {sections.map((section) => (
-            <section key={section.id} className="mb-8">
-              <h2 id={section.id} className="mb-3 scroll-mt-24 text-base font-semibold text-fg">
+            <section key={section.id} className="mb-14 scroll-mt-20 last:mb-0">
+              <h2
+                id={section.id}
+                className="mb-4 text-[21px] font-semibold leading-snug tracking-[-0.02em] text-[#1d1d1f]"
+              >
                 {section.title}
               </h2>
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
+              <pre className="whitespace-pre-wrap font-sans text-[17px] leading-[1.47] tracking-[-0.022em] text-[#1d1d1f]">
                 {section.body}
               </pre>
             </section>
           ))}
         </div>
+
+        <aside className="mt-16 rounded-2xl border border-black/[0.08] bg-[#f5f5f7] px-6 py-7 sm:px-8 sm:py-9">
+          <h2 className="mb-6 text-[13px] font-semibold uppercase tracking-[0.06em] text-[#6e6e73]">Реквизиты</h2>
+          <div className="space-y-5 text-[17px] leading-[1.47] tracking-[-0.022em] text-[#1d1d1f]">
+            <div>
+              <p className="text-[13px] font-medium text-[#6e6e73]">Владелец платформы</p>
+              <p className="mt-1">ИП Мхоян Микаэл Гайкович</p>
+            </div>
+            <div className="space-y-1">
+              <p>ИНН: 231906786407</p>
+              <p>ОГРНИП: 324237500336512</p>
+            </div>
+            <div>
+              <p className="text-[13px] font-medium text-[#6e6e73]">Email поддержки</p>
+              <p className="mt-1">
+                <a href="mailto:support@enigma-app.online" className="text-[#007AFF] transition-opacity hover:opacity-[0.65]">
+                  support@enigma-app.online
+                </a>
+              </p>
+            </div>
+            <div>
+              <p className="text-[13px] font-medium text-[#6e6e73]">Телефон для связи</p>
+              <p className="mt-1">
+                <a href="tel:+79384510987" className="text-[#007AFF] transition-opacity hover:opacity-[0.65]">
+                  +7 938 451-09-87
+                </a>
+              </p>
+            </div>
+            <p className="border-t border-black/[0.08] pt-5 text-[15px] leading-relaxed text-[#6e6e73]">
+              Платформа осуществляет деятельность в соответствии с законодательством Российской Федерации.
+            </p>
+          </div>
+        </aside>
       </div>
     </main>
   );

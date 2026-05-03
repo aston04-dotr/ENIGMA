@@ -51,6 +51,9 @@ export async function middleware(request: NextRequest) {
   const user = session?.user ?? null;
 
   const isAuthPath = pathname === "/login" || pathname.startsWith("/auth");
+  const isPublicPath =
+    pathname.startsWith("/legal") ||
+    pathname === "/offline";
 
   // Не вмешиваемся в auth flow (включая /auth/verify и callback-пути).
   if (pathname.startsWith("/auth")) {
@@ -61,7 +64,7 @@ export async function middleware(request: NextRequest) {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
 
-  if (!user && !isAuthPath) {
+  if (!user && !isAuthPath && !isPublicPath) {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/login")));
   }
 
