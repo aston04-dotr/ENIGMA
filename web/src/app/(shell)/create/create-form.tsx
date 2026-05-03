@@ -506,7 +506,7 @@ export function CreateListingForm() {
         return "Выберите тип помещения";
       }
 
-      if (!isLand) {
+      if (!isLand && !isCommercial) {
         const floor = parseNonNegativeInt(p.floor);
         const floorsTotal = parsePositiveInt(p.floorsTotal);
         if (floor === null) {
@@ -520,7 +520,7 @@ export function CreateListingForm() {
         }
       }
 
-      if (listingIntent === "rent" && !isLand) {
+      if (listingIntent === "rent" && !isLand && !isCommercial) {
         const rooms = parseNonNegativeInt(p.rooms);
         if (rooms === null) {
           return "Укажите количество комнат (целое число ≥ 0)";
@@ -628,19 +628,20 @@ export function CreateListingForm() {
         specs.push(
           ["Этаж", p.floor],
           ["Этажность здания", p.floorsTotal],
-          ["Количество комнат", p.rooms],
-          ["Парковка", p.parking],
-          ["Ремонт", p.renovation],
         );
-      } else {
+        if (p.propertyType !== COMMERCIAL_PROPERTY_LABEL) {
+          specs.push(["Количество комнат", p.rooms]);
+        }
         specs.push(["Парковка", p.parking], ["Ремонт", p.renovation]);
       }
-      if (p.commsGas) specs.push(["Газ", "Есть"]);
-      if (p.commsWater) specs.push(["Вода", "Есть"]);
-      if (p.commsLight) {
-        specs.push(["Свет", p.commsElectricityDetail.trim() || "Есть"]);
+      if (p.propertyType !== LAND_PLOT_LABEL) {
+        if (p.commsGas) specs.push(["Газ", "Есть"]);
+        if (p.commsWater) specs.push(["Вода", "Есть"]);
+        if (p.commsLight) {
+          specs.push(["Свет", p.commsElectricityDetail.trim() || "Есть"]);
+        }
+        if (p.commsSewage) specs.push(["Канализация", "Есть"]);
       }
-      if (p.commsSewage) specs.push(["Канализация", "Есть"]);
     }
     if (category === "electronics") {
       const p = categoryParams.electronics;
@@ -718,10 +719,11 @@ export function CreateListingForm() {
     if (category === "realestate") {
       const p = categoryParams.realestate;
       const isLand = p.propertyType === LAND_PLOT_LABEL;
+      const isCommercial = p.propertyType === COMMERCIAL_PROPERTY_LABEL;
       const areaNum = isLand ? null : parsePositiveAreaM2(p.area);
       const area_m2 = areaNum != null ? Math.round(areaNum) : null;
       const commercialType =
-        p.propertyType === COMMERCIAL_PROPERTY_LABEL ? p.commercialPremisesType.trim() || null : null;
+        isCommercial ? p.commercialPremisesType.trim() || null : null;
       const plotTrim = p.plotArea.trim();
       const electricityCol = resolveCommsElectricityColumn(p);
       return {
@@ -732,10 +734,10 @@ export function CreateListingForm() {
         plot_area: plotTrim || null,
         floor: isLand ? null : toIntOrNull(p.floor),
         floors_total: isLand ? null : toIntOrNull(p.floorsTotal),
-        rooms: isLand ? null : toIntOrNull(p.rooms),
+        rooms: isLand || isCommercial ? null : toIntOrNull(p.rooms),
         price: normalizedPrice,
-        has_parking: toBoolOrNull(p.parking),
-        renovation: p.renovation.trim() || null,
+        has_parking: isLand ? null : toBoolOrNull(p.parking),
+        renovation: isLand ? null : p.renovation.trim() || null,
         communications: {
           gas: p.commsGas,
           water: p.commsWater,
@@ -1257,7 +1259,7 @@ export function CreateListingForm() {
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры недвижимости</label>
           {listingIntent === "rent" ? (
             <p className="text-[13px] leading-snug text-muted">
-              Режим аренды: категория «Недвижимость». Для домов и квартир — площадь, этаж и этажность обязательны; для аренды также укажите число комнат (кроме участка). Участок — только площадь участка. Для коммерции мощность (кВт) необязательна. Значения из фильтров ленты подставляются автоматически.
+              Режим аренды: категория «Недвижимость». Участок — только площадь участка. Коммерция — без поля «комнаты», мощность (кВт) необязательна. Для квартир и домов нужны площадь, этаж и этажность; для аренды также комнаты (кроме участка и коммерции). Значения из фильтров ленты подставляются автоматически.
             </p>
           ) : null}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1265,21 +1267,44 @@ export function CreateListingForm() {
               value={categoryParams.realestate.propertyType}
               onChange={(e) => {
                 const v = e.target.value;
-                setCategoryParams((prev) => ({
-                  ...prev,
-                  realestate: {
-                    ...prev.realestate,
-                    propertyType: v,
-                    commercialPremisesType:
-                      v === COMMERCIAL_PROPERTY_LABEL ? prev.realestate.commercialPremisesType : "",
-                    commercialPowerKw:
-                      v === COMMERCIAL_PROPERTY_LABEL ? prev.realestate.commercialPowerKw : "",
-                    plotArea:
-                      v === HOUSE_LABEL || v === LAND_PLOT_LABEL ? prev.realestate.plotArea : "",
-                    area:
-                      v === LAND_PLOT_LABEL ? "" : prev.realestate.area,
-                  },
-                }));
+                setCategoryParams((prev) => {
+                  const r = prev.realestate;
+                  const base: RealEstateParams = { ...r, propertyType: v };
+
+                  if (v !== COMMERCIAL_PROPERTY_LABEL) {
+                    base.commercialPremisesType = "";
+                    base.commercialPowerKw = "";
+                  }
+
+                  if (v === HOUSE_LABEL || v === LAND_PLOT_LABEL) {
+                    if (r.propertyType !== HOUSE_LABEL && r.propertyType !== LAND_PLOT_LABEL) {
+                      base.plotArea = "";
+                    }
+                  } else {
+                    base.plotArea = "";
+                  }
+
+                  if (v === LAND_PLOT_LABEL) {
+                    base.area = "";
+                    base.floor = "";
+                    base.floorsTotal = "";
+                    base.rooms = "";
+                    base.parking = "";
+                    base.renovation = "";
+                    base.commsGas = false;
+                    base.commsWater = false;
+                    base.commsLight = false;
+                    base.commsElectricityDetail = "";
+                    base.commsSewage = false;
+                  }
+
+                  if (v === COMMERCIAL_PROPERTY_LABEL) {
+                    base.plotArea = "";
+                    base.rooms = "";
+                  }
+
+                  return { ...prev, realestate: base };
+                });
               }}
               className={inputClass}
             >
@@ -1299,9 +1324,7 @@ export function CreateListingForm() {
                 }
                 className={inputClass}
               />
-            ) : (
-              <div className="hidden sm:block" aria-hidden />
-            )}
+            ) : null}
           </div>
           {needsPlotAreaField ? (
             <input
@@ -1331,46 +1354,56 @@ export function CreateListingForm() {
               ))}
             </select>
           ) : null}
-          {isCommercialProp && categoryParams.realestate.commercialPremisesType.trim() ? (
+          {isCommercialProp ? (
             <input
               value={categoryParams.realestate.commercialPowerKw}
               onChange={(e) => updateCategoryParam("realestate", "commercialPowerKw", e.target.value)}
               inputMode="decimal"
-              placeholder="Мощность (кВт)"
+              placeholder="Мощность (кВт), необязательно"
               className={inputClass}
             />
           ) : null}
           {!isLandPlotProp ? (
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={categoryParams.realestate.floor}
-              onChange={(e) => updateCategoryParam("realestate", "floor", e.target.value)}
-              inputMode="numeric"
-              placeholder="Этаж *"
-              className={inputClass}
-            />
-            <input
-              value={categoryParams.realestate.floorsTotal}
-              onChange={(e) => updateCategoryParam("realestate", "floorsTotal", e.target.value)}
-              inputMode="numeric"
-              placeholder="Этажность здания *"
-              className={inputClass}
-            />
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={categoryParams.realestate.floor}
+                onChange={(e) => updateCategoryParam("realestate", "floor", e.target.value)}
+                inputMode="numeric"
+                placeholder="Этаж *"
+                className={inputClass}
+              />
+              <input
+                value={categoryParams.realestate.floorsTotal}
+                onChange={(e) => updateCategoryParam("realestate", "floorsTotal", e.target.value)}
+                inputMode="numeric"
+                placeholder="Этажность здания *"
+                className={inputClass}
+              />
+            </div>
           ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={categoryParams.realestate.rooms}
-              onChange={(e) => updateCategoryParam("realestate", "rooms", e.target.value)}
-              inputMode="numeric"
-              placeholder={
-                listingIntent === "rent" && !isLandPlotProp
-                  ? "Количество комнат *"
-                  : "Количество комнат"
-              }
-              className={inputClass}
-              disabled={isLandPlotProp}
-            />
+          {!isLandPlotProp && !isCommercialProp ? (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={categoryParams.realestate.rooms}
+                onChange={(e) => updateCategoryParam("realestate", "rooms", e.target.value)}
+                inputMode="numeric"
+                placeholder={
+                  listingIntent === "rent" ? "Количество комнат *" : "Количество комнат"
+                }
+                className={inputClass}
+              />
+              <select
+                value={categoryParams.realestate.parking}
+                onChange={(e) => updateCategoryParam("realestate", "parking", e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Парковка</option>
+                <option value="Да">Да</option>
+                <option value="Нет">Нет</option>
+              </select>
+            </div>
+          ) : null}
+          {!isLandPlotProp && isCommercialProp ? (
             <select
               value={categoryParams.realestate.parking}
               onChange={(e) => updateCategoryParam("realestate", "parking", e.target.value)}
@@ -1380,18 +1413,21 @@ export function CreateListingForm() {
               <option value="Да">Да</option>
               <option value="Нет">Нет</option>
             </select>
-          </div>
-          <select
-            value={categoryParams.realestate.renovation}
-            onChange={(e) => updateCategoryParam("realestate", "renovation", e.target.value)}
-            className={inputClass}
-          >
-            <option value="">Ремонт</option>
-            <option value="Нет">Нет</option>
-            <option value="Косметический">Косметический</option>
-            <option value="Евро">Евро</option>
-          </select>
+          ) : null}
+          {!isLandPlotProp ? (
+            <select
+              value={categoryParams.realestate.renovation}
+              onChange={(e) => updateCategoryParam("realestate", "renovation", e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Ремонт</option>
+              <option value="Нет">Нет</option>
+              <option value="Косметический">Косметический</option>
+              <option value="Евро">Евро</option>
+            </select>
+          ) : null}
 
+          {!isLandPlotProp ? (
           <div className="border-t border-line pt-3">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Коммуникации</label>
             <p className="mt-1 text-[12px] text-muted">По желанию отметьте, что есть на объекте.</p>
@@ -1452,6 +1488,7 @@ export function CreateListingForm() {
               />
             ) : null}
           </div>
+          ) : null}
         </div>
       ) : null}
       {category === "electronics" ? (
