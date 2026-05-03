@@ -118,6 +118,8 @@ export default function EditListingPage() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
@@ -426,6 +428,54 @@ export default function EditListingPage() {
     }
   }
 
+  async function executeDeleteListing() {
+    const uid = session?.user?.id;
+    if (!uid || !id) return;
+    const listingId = String(id).trim();
+    if (!listingId) return;
+
+    setDeleteBusy(true);
+    try {
+      const { data: listingImages, error: listingImagesError } = await supabase
+        .from("images")
+        .select("url")
+        .eq("listing_id", listingId);
+      if (listingImagesError) {
+        console.warn("EDIT LISTING IMAGES LOAD ERROR", listingImagesError);
+      }
+      const imageUrls = Array.isArray(listingImages)
+        ? listingImages
+            .map((row) => String((row as { url?: unknown })?.url ?? "").trim())
+            .filter(Boolean)
+        : [];
+
+      const { error } = await supabase
+        .from("listings")
+        .delete()
+        .eq("id", listingId)
+        .eq("user_id", uid);
+
+      if (error) throw error;
+
+      try {
+        await removeListingImagesFromStorage(imageUrls);
+      } catch (storageError) {
+        console.warn("EDIT LISTING STORAGE DELETE ERROR", storageError);
+      }
+
+      setDeleteConfirmOpen(false);
+      setToast({ message: "Объявление удалено", type: "success" });
+      window.setTimeout(() => {
+        router.replace("/profile");
+      }, 450);
+    } catch (deleteError) {
+      console.error("DELETE LISTING ERROR", deleteError);
+      setToast({ message: "Не удалось удалить объявление", type: "error" });
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const hasImageChanges = useMemo(() => {
     if (!originalData) return false;
     if (pendingImages.length > 0) return true;
@@ -617,7 +667,53 @@ export default function EditListingPage() {
         >
           Отмена
         </button>
+
+        <button
+          type="button"
+          disabled={saving || deleteBusy}
+          onClick={() => setDeleteConfirmOpen(true)}
+          className="w-full min-h-[48px] rounded-card border border-[#FF3B30]/30 bg-[#FF3B30]/[0.08] py-3 text-[15px] font-medium text-[#FF3B30] transition-all duration-200 hover:bg-[#FF3B30]/[0.14] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Удалить объявление
+        </button>
       </div>
+
+      {deleteConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 px-4 pb-8 pt-12 sm:items-center sm:p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="listing-delete-title"
+          aria-describedby="listing-delete-desc"
+        >
+          <div className="w-full max-w-[360px] rounded-2xl border border-line bg-elevated p-5 shadow-2xl">
+            <h2 id="listing-delete-title" className="text-[17px] font-semibold leading-snug text-fg">
+              Удаление
+            </h2>
+            <p id="listing-delete-desc" className="mt-3 text-[15px] leading-relaxed text-muted">
+              Вы уверены, что хотите безвозвратно удалить это объявление?
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="min-h-[48px] rounded-xl border border-line bg-elev-2 px-3 text-[15px] font-semibold text-fg transition-colors hover:bg-elevated disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void executeDeleteListing()}
+                className="min-h-[48px] rounded-xl bg-[#FF3B30] px-3 text-[15px] font-semibold text-white transition-colors hover:bg-[#e6352b] disabled:opacity-50"
+              >
+                {deleteBusy ? "…" : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
