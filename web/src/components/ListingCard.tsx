@@ -120,7 +120,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   const numericPrice = Number(safeItem?.price ?? 0);
   const reFacts =
     safeItem?.category === "realestate" && safeItem
-      ? formatRealEstateListingFacts(safeItem as ListingRow)
+      ? formatRealEstateListingFacts(safeItem as ListingRow, { compact: true })
       : null;
 
   const imageHeightClass = compact
@@ -192,7 +192,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             {itemTitle}
           </p>
           {reFacts ? (
-            <p className="line-clamp-2 text-[12px] leading-snug text-muted">{reFacts}</p>
+            <p className="line-clamp-2 break-words text-[12px] leading-snug text-muted">{reFacts}</p>
           ) : null}
           <p
             className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${

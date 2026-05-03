@@ -395,7 +395,7 @@ export default function ListingDetailPage() {
             {title}
           </h1>
           {listingFacts ? (
-            <p className="mt-2 text-[13px] leading-snug text-muted">{listingFacts}</p>
+            <p className="mt-2 break-words text-[13px] leading-snug text-muted">{listingFacts}</p>
           ) : null}
           <p className="mt-3 text-sm text-muted">{city} · {categoryLabel(category)}</p>
           <div className="mt-2">
