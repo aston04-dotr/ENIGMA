@@ -80,18 +80,18 @@ function navChrome(theme: UiTheme): { navClass: string; bg: string; badgeRing: s
   };
 }
 
-function tabColors(theme: UiTheme, active: boolean): { icon: string; label: string; sub?: string } {
+function tabColors(theme: UiTheme, active: boolean): { icon: string; label: string } {
   if (theme === "light") {
     return active
-      ? { icon: "text-[#1793e6]", label: "text-[#1793e6]" }
+      ? { icon: "text-[#0eaefe]", label: "text-[#0eaefe]" }
       : {
-          icon: "text-[#1793e6]/45",
-          label: "text-neutral-500",
+          icon: "text-[#26b5ff]/88",
+          label: "text-neutral-400",
         };
   }
   return active
-    ? { icon: "text-[#7ee8ff]", label: "text-[#7ee8ff]" }
-    : { icon: "text-[#22d3ee]/50", label: "text-[#22d3ee]/50" };
+    ? { icon: "text-[#c8fbff]", label: "text-[#c8fbff]" }
+    : { icon: "text-[#72f3ff]/92", label: "text-[#72f3ff]/92" };
 }
 
 function BottomNavInner() {
@@ -148,11 +148,11 @@ function BottomNavInner() {
                   className={
                     theme === "light"
                       ? active
-                        ? "text-[8px] font-medium leading-none text-[#1793e6]/75"
+                        ? "text-[8px] font-medium leading-none text-[#0eaefe]/92"
                         : "text-[8px] font-medium leading-none text-neutral-400"
                       : active
-                        ? "text-[8px] font-medium leading-none text-[#7ee8ff]/80"
-                        : "text-[8px] font-medium leading-none text-[#22d3ee]/40"
+                        ? "text-[8px] font-medium leading-none text-[#c8fbff]/92"
+                        : "text-[8px] font-medium leading-none text-[#72f3ff]/72"
                   }
                 >
                   жилья·авто
