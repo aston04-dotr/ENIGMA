@@ -37,14 +37,19 @@ const config: Config = {
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
         listingSheetUp: {
-          "0%": { opacity: "0.85", transform: "translateY(100%)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
+          "0%": { opacity: "0", transform: "translate3d(0,100%,0)" },
+          "100%": { opacity: "1", transform: "translate3d(0,0,0)" },
+        },
+        listingBackdropIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
         },
       },
       animation: {
         receiptPop: "receiptPop 0.2s ease-out both",
         messageAppear: "messageAppear 0.15s ease-out both",
-        listingSheetUp: "listingSheetUp 0.32s cubic-bezier(0.22,1,0.36,1) both",
+        listingSheetUp: "listingSheetUp 0.36s cubic-bezier(0.22,1,0.36,1) both",
+        listingBackdropIn: "listingBackdropIn 0.28s ease-out both",
       },
     },
   },

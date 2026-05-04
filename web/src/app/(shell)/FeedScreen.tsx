@@ -836,18 +836,21 @@ export function FeedPage({
             </div>
           </div>
           <div className="mt-6 space-y-2.5">
-            <div className="rounded-[14px] border border-neutral-200/90 bg-neutral-100/95 p-1 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] dark:border-white/15 dark:bg-[#12151c] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <div className="grid grid-cols-2 gap-1">
+            <div
+              className="rounded-[14px] border border-white/[0.14] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+              style={{ backgroundColor: "#000000" }}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
                     setFeedDealSegment("sale");
                     trackEvent("feed_deal_segment", { segment: "sale", variant: feedVariant });
                   }}
-                  className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
+                  className={`min-h-[44px] rounded-[11px] text-[15px] font-bold leading-none tracking-tight transition-all duration-300 ease-out active:scale-[0.98] ${
                     feedDealSegment === "sale"
-                      ? "bg-white text-neutral-900 shadow-[0_1px_8px_rgba(15,23,42,0.12)] ring-1 ring-neutral-200/80 dark:bg-[#2f3542] dark:text-white dark:shadow-[0_2px_14px_rgba(0,0,0,0.42)] dark:ring-white/12"
-                      : "text-neutral-500 hover:text-neutral-800 dark:text-white/45 dark:hover:text-white/75"
+                      ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_6px_24px_rgba(139,95,255,0.38)]"
+                      : "bg-transparent text-white/40 hover:text-white/72"
                   }`}
                 >
                   Продажа
@@ -858,10 +861,10 @@ export function FeedPage({
                     setFeedDealSegment("rent");
                     trackEvent("feed_deal_segment", { segment: "rent", variant: feedVariant });
                   }}
-                  className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
+                  className={`min-h-[44px] rounded-[11px] text-[15px] font-bold leading-none tracking-tight transition-all duration-300 ease-out active:scale-[0.98] ${
                     feedDealSegment === "rent"
-                      ? "bg-white text-neutral-900 shadow-[0_1px_8px_rgba(15,23,42,0.12)] ring-1 ring-neutral-200/80 dark:bg-[#2f3542] dark:text-white dark:shadow-[0_2px_14px_rgba(0,0,0,0.42)] dark:ring-white/12"
-                      : "text-neutral-500 hover:text-neutral-800 dark:text-white/45 dark:hover:text-white/75"
+                      ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_6px_24px_rgba(139,95,255,0.38)]"
+                      : "bg-transparent text-white/40 hover:text-white/72"
                   }`}
                 >
                   Аренда
