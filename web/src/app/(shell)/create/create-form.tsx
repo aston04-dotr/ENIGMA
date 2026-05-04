@@ -195,6 +195,9 @@ const KIDS_SHOE_SIZE_OPTIONS = Array.from({ length: 14 }, (_, idx) => String(35 
 
 const COMMERCIAL_PROPERTY_LABEL = "Коммерческая";
 
+/** Отдельное здание целиком — без поля «Этаж». */
+const COMMERCIAL_SHOPPING_CENTER_LABEL = "Торговый центр";
+
 const COMMERCIAL_PREMISES_OPTIONS = [
   "Офис",
   "Склад",
@@ -231,10 +234,11 @@ function resolveCommsElectricityColumn(p: RealEstateParams): string | null {
   if (p.propertyType === COMMERCIAL_PROPERTY_LABEL) {
     const kw = parsePositiveKw(p.commercialPowerKw);
     if (kw != null) return `${kw} кВт`;
+    if (p.commsLight) return "Есть";
+    return null;
   }
   if (!p.commsLight) return null;
-  const detail = p.commsElectricityDetail.trim();
-  return detail.length > 0 ? detail : "Есть";
+  return "Есть";
 }
 
 function parsePositiveAreaM2(raw: string): number | null {
@@ -280,6 +284,13 @@ function formatPersistPlotArea(p: RealEstateParams): string {
     return formatPlotAreaForListingFromSotkiString(t);
   }
   return t;
+}
+
+function isCommercialShoppingCenter(p: RealEstateParams): boolean {
+  return (
+    p.propertyType === COMMERCIAL_PROPERTY_LABEL &&
+    p.commercialPremisesType.trim() === COMMERCIAL_SHOPPING_CENTER_LABEL
+  );
 }
 
 export function CreateListingForm() {
@@ -545,6 +556,7 @@ export function CreateListingForm() {
       const isLand = p.propertyType === LAND_PLOT_LABEL;
       const isHouse = p.propertyType === HOUSE_LABEL;
       const isCommercial = p.propertyType === COMMERCIAL_PROPERTY_LABEL;
+      const isShoppingCenterCommercial = isCommercialShoppingCenter(p);
 
       if (!isLand) {
         const areaNum = parsePositiveAreaM2(p.area);
@@ -588,6 +600,13 @@ export function CreateListingForm() {
         }
         if (floorsTotal < floor) {
           return "Этажность здания не может быть меньше номера этажа";
+        }
+      }
+
+      if (!isLand && isShoppingCenterCommercial) {
+        const floorsTotal = parsePositiveInt(p.floorsTotal);
+        if (floorsTotal === null) {
+          return "Укажите этажность здания (целое число от 1)";
         }
       }
 
@@ -702,10 +721,10 @@ export function CreateListingForm() {
         if (kw != null) specs.push(["Мощность", `${kw} кВт`]);
       }
       if (p.propertyType !== LAND_PLOT_LABEL) {
-        specs.push(
-          ["Этаж", p.floor],
-          ["Этажность здания", p.floorsTotal],
-        );
+        if (!isCommercialShoppingCenter(p)) {
+          specs.push(["Этаж", p.floor]);
+        }
+        specs.push(["Этажность здания", p.floorsTotal]);
         if (p.propertyType !== COMMERCIAL_PROPERTY_LABEL) {
           specs.push(["Количество комнат", p.rooms]);
         }
@@ -714,7 +733,7 @@ export function CreateListingForm() {
       if (p.commsGas) specs.push(["Газ", "Есть"]);
       if (p.commsWater) specs.push(["Вода", "Есть"]);
       if (p.commsLight) {
-        specs.push(["Электричество", p.commsElectricityDetail.trim() || "Есть"]);
+        specs.push(["Электричество", "Есть"]);
       }
       if (p.commsSewage) specs.push(["Канализация", "Есть"]);
     }
@@ -804,6 +823,7 @@ export function CreateListingForm() {
       const electricityCol = resolveCommsElectricityColumn(p);
       const landTypeTrim = isLand ? p.landType.trim() || null : null;
       const landOwnTrim = isLand ? p.landOwnershipStatus.trim() || null : null;
+      const isShoppingCenterCommercial = isCommercialShoppingCenter(p);
       return {
         type: p.propertyType.trim() || null,
         commercial_type: commercialType,
@@ -812,7 +832,7 @@ export function CreateListingForm() {
         plot_area: plotPersist || null,
         land_type: landTypeTrim,
         land_ownership_status: landOwnTrim,
-        floor: isLand ? null : toIntOrNull(p.floor),
+        floor: isLand || isShoppingCenterCommercial ? null : toIntOrNull(p.floor),
         floors_total: isLand ? null : toIntOrNull(p.floorsTotal),
         rooms: isLand || isCommercial ? null : toIntOrNull(p.rooms),
         price: normalizedPrice,
@@ -1525,9 +1545,20 @@ export function CreateListingForm() {
           {isCommercialProp ? (
             <select
               value={categoryParams.realestate.commercialPremisesType}
-              onChange={(e) =>
-                updateCategoryParam("realestate", "commercialPremisesType", e.target.value)
-              }
+              onChange={(e) => {
+                const v = e.target.value;
+                setCategoryParams((prev) => {
+                  const r = prev.realestate;
+                  return {
+                    ...prev,
+                    realestate: {
+                      ...r,
+                      commercialPremisesType: v,
+                      floor: v === COMMERCIAL_SHOPPING_CENTER_LABEL ? "" : r.floor,
+                    },
+                  };
+                });
+              }}
               className={inputClass}
             >
               <option value="">Тип помещения *</option>
@@ -1548,14 +1579,7 @@ export function CreateListingForm() {
             />
           ) : null}
           {!isLandPlotProp ? (
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                value={categoryParams.realestate.floor}
-                onChange={(e) => updateCategoryParam("realestate", "floor", e.target.value)}
-                inputMode="numeric"
-                placeholder="Этаж *"
-                className={inputClass}
-              />
+            isCommercialProp && isCommercialShoppingCenter(categoryParams.realestate) ? (
               <input
                 value={categoryParams.realestate.floorsTotal}
                 onChange={(e) => updateCategoryParam("realestate", "floorsTotal", e.target.value)}
@@ -1563,7 +1587,24 @@ export function CreateListingForm() {
                 placeholder="Этажность здания *"
                 className={inputClass}
               />
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={categoryParams.realestate.floor}
+                  onChange={(e) => updateCategoryParam("realestate", "floor", e.target.value)}
+                  inputMode="numeric"
+                  placeholder="Этаж *"
+                  className={inputClass}
+                />
+                <input
+                  value={categoryParams.realestate.floorsTotal}
+                  onChange={(e) => updateCategoryParam("realestate", "floorsTotal", e.target.value)}
+                  inputMode="numeric"
+                  placeholder="Этажность здания *"
+                  className={inputClass}
+                />
+              </div>
+            )
           ) : null}
           {!isLandPlotProp && !isCommercialProp ? (
             <div className="grid grid-cols-2 gap-2">
@@ -1638,17 +1679,7 @@ export function CreateListingForm() {
                 <input
                   type="checkbox"
                   checked={categoryParams.realestate.commsLight}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setCategoryParams((prev) => ({
-                      ...prev,
-                      realestate: {
-                        ...prev.realestate,
-                        commsLight: checked,
-                        commsElectricityDetail: checked ? prev.realestate.commsElectricityDetail : "",
-                      },
-                    }));
-                  }}
+                  onChange={(e) => updateCategoryParam("realestate", "commsLight", e.target.checked)}
                   className="h-[18px] w-[18px] shrink-0 rounded border-line accent-accent"
                 />
                 Электричество
@@ -1663,14 +1694,6 @@ export function CreateListingForm() {
                 Канализация
               </label>
             </div>
-            {categoryParams.realestate.commsLight ? (
-              <input
-                value={categoryParams.realestate.commsElectricityDetail}
-                onChange={(e) => updateCategoryParam("realestate", "commsElectricityDetail", e.target.value)}
-                placeholder=""
-                className={`mt-3 ${inputClass}`}
-              />
-            ) : null}
           </div>
         </div>
       ) : null}
