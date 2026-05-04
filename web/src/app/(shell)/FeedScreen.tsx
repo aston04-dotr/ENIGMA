@@ -836,7 +836,7 @@ export function FeedPage({
             </div>
           </div>
           <div className="mt-6 space-y-2.5">
-            <div className="rounded-[14px] bg-black/[0.045] p-1 dark:bg-white/[0.06]">
+            <div className="rounded-[14px] border border-neutral-200/90 bg-neutral-100/95 p-1 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] dark:border-white/15 dark:bg-[#12151c] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
               <div className="grid grid-cols-2 gap-1">
                 <button
                   type="button"
@@ -846,8 +846,8 @@ export function FeedPage({
                   }}
                   className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
                     feedDealSegment === "sale"
-                      ? "bg-white text-fg shadow-[0_1px_8px_rgba(15,23,42,0.12)] dark:bg-[#1a1d24] dark:text-white dark:shadow-[0_1px_12px_rgba(0,0,0,0.35)]"
-                      : "text-muted hover:text-fg/90"
+                      ? "bg-white text-neutral-900 shadow-[0_1px_8px_rgba(15,23,42,0.12)] ring-1 ring-neutral-200/80 dark:bg-[#2f3542] dark:text-white dark:shadow-[0_2px_14px_rgba(0,0,0,0.42)] dark:ring-white/12"
+                      : "text-neutral-500 hover:text-neutral-800 dark:text-white/45 dark:hover:text-white/75"
                   }`}
                 >
                   Продажа
@@ -860,8 +860,8 @@ export function FeedPage({
                   }}
                   className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
                     feedDealSegment === "rent"
-                      ? "bg-white text-fg shadow-[0_1px_8px_rgba(15,23,42,0.12)] dark:bg-[#1a1d24] dark:text-white dark:shadow-[0_1px_12px_rgba(0,0,0,0.35)]"
-                      : "text-muted hover:text-fg/90"
+                      ? "bg-white text-neutral-900 shadow-[0_1px_8px_rgba(15,23,42,0.12)] ring-1 ring-neutral-200/80 dark:bg-[#2f3542] dark:text-white dark:shadow-[0_2px_14px_rgba(0,0,0,0.42)] dark:ring-white/12"
+                      : "text-neutral-500 hover:text-neutral-800 dark:text-white/45 dark:hover:text-white/75"
                   }`}
                 >
                   Аренда

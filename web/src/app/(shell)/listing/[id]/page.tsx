@@ -3,6 +3,7 @@
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
 import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
+import { SimpleToast } from "@/components/SimpleToast";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { useAuth } from "@/context/auth-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
@@ -22,6 +23,7 @@ import { reportListingTrustPenalty } from "@/lib/trust";
 import { trackEvent } from "@/lib/analytics";
 import { categoryLabel } from "@/lib/categories";
 import { hideListingInFeed } from "@/lib/feedHiddenListings";
+import { shareListingUrl } from "@/lib/shareListing";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import Image from "next/image";
 import Link from "next/link";
@@ -29,37 +31,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 const FEED_STATE_KEY = "feed_state";
-
-// Simple toast component
-function Toast({
-  message,
-  type,
-  onClose,
-}: {
-  message: string;
-  type: "success" | "error" | "info";
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  const bgColor =
-    type === "success"
-      ? "bg-[#22c55e]"
-      : type === "error"
-        ? "bg-danger"
-        : "bg-accent";
-
-  return (
-    <div
-      className={`fixed top-4 left-4 right-4 z-[100] ${bgColor} text-white px-4 py-3 rounded-xl shadow-lg transition-all duration-300 animate-fade-in`}
-    >
-      <p className="text-sm font-medium text-center">{message}</p>
-    </div>
-  );
-}
 
 export default function ListingDetailPage() {
   const params = useParams<{ id?: string | string[] }>();
@@ -290,16 +261,23 @@ export default function ListingDetailPage() {
     if (!id) return [];
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const shareUrl = `${origin}/listing/${id}`;
+    const shareTitle =
+      typeof safeItem.title === "string" && safeItem.title.trim()
+        ? safeItem.title.trim()
+        : "Объявление Enigma";
 
     const actions: ListingSheetAction[] = [
       {
         id: "share",
         label: "Поделиться",
-        onSelect: () => {
-          void navigator.clipboard.writeText(shareUrl).then(
-            () => setToast({ message: "Ссылка скопирована", type: "success" }),
-            () => setToast({ message: "Не удалось скопировать ссылку", type: "error" }),
-          );
+        variant: "cta",
+        onSelect: async () => {
+          const r = await shareListingUrl({ url: shareUrl, title: shareTitle });
+          if (r === "copied") {
+            setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
+          } else if (r === "failed") {
+            setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
+          }
         },
       },
     ];
@@ -325,7 +303,7 @@ export default function ListingDetailPage() {
         },
         {
           id: "hide",
-          label: "Скрыть объявление",
+          label: "Скрыть из ленты",
           onSelect: () => {
             hideListingInFeed(id);
             trackEvent("listing_hide_feed", { listing_id: id });
@@ -375,7 +353,7 @@ export default function ListingDetailPage() {
     }
 
     return actions;
-  }, [isOwnListing, router, rowId, viewerId]);
+  }, [isOwnListing, router, rowId, viewerId, safeItem.title]);
 
   if (loading) {
     return (
@@ -482,13 +460,9 @@ export default function ListingDetailPage() {
       <main
         className="safe-pt pb-8"
       >
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onClose={() => setToast(null)}
-          />
-        )}
+        {toast ? (
+          <SimpleToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        ) : null}
         <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
         <div className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
@@ -510,14 +484,23 @@ export default function ListingDetailPage() {
               {safeIndex + 1} из {imgs.length}
             </div>
           ) : null}
-          <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+          <div
+            className="absolute right-3 top-3 z-30 flex items-center gap-2"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             {!isOwnListing ? (
               <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={handleToggleFavorite} />
             ) : null}
             <button
               type="button"
               aria-label="Действия"
-              onClick={() => setActionsOpen(true)}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setActionsOpen(true);
+              }}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-[18px] w-[18px]" aria-hidden>

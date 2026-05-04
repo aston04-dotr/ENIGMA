@@ -7,7 +7,9 @@ export type ListingSheetAction = {
   label: string;
   destructive?: boolean;
   disabled?: boolean;
-  onSelect: () => void;
+  /** Градиентная «главная» кнопка (например «Поделиться»). */
+  variant?: "default" | "cta";
+  onSelect: () => void | Promise<void>;
 };
 
 type Props = {
@@ -48,25 +50,37 @@ export function ListingActionsSheet({ open, title = "Действия", actions,
           {title}
         </h2>
         <div className="overflow-hidden rounded-xl border border-line/60 bg-elev-2/40">
-          {actions.map((a, idx) => (
-            <button
-              key={a.id}
-              type="button"
-              disabled={a.disabled}
-              onClick={() => {
-                if (a.disabled) return;
-                a.onSelect();
-                onClose();
-              }}
-              className={`flex w-full min-h-[50px] items-center px-4 text-left text-[17px] font-normal transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                a.destructive
-                  ? "text-[#FF3B30] hover:bg-[#FF3B30]/[0.08] active:bg-[#FF3B30]/[0.12]"
-                  : "text-fg hover:bg-white/[0.06] active:bg-white/[0.1]"
-              } ${idx > 0 ? "border-t border-line/50" : ""}`}
-            >
-              {a.label}
-            </button>
-          ))}
+          {actions.map((a, idx) => {
+            const isCta = a.variant === "cta";
+            const roundedTop = idx === 0 ? "rounded-t-[11px]" : "";
+            const roundedBot = idx === actions.length - 1 ? "rounded-b-[11px]" : "";
+            return (
+              <button
+                key={a.id}
+                type="button"
+                disabled={a.disabled}
+                onClick={async () => {
+                  if (a.disabled) return;
+                  try {
+                    await Promise.resolve(a.onSelect());
+                  } catch (err) {
+                    console.warn("ListingActionsSheet action error:", err);
+                  } finally {
+                    onClose();
+                  }
+                }}
+                className={`flex w-full min-h-[50px] items-center px-4 text-left text-[17px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${roundedTop} ${roundedBot} ${
+                  isCta
+                    ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] font-semibold text-white hover:brightness-[1.06] active:brightness-[0.98]"
+                    : a.destructive
+                      ? "font-normal text-[#FF3B30] hover:bg-[#FF3B30]/[0.08] active:bg-[#FF3B30]/[0.12]"
+                      : "font-normal text-fg hover:bg-white/[0.06] active:bg-white/[0.1]"
+                } ${idx > 0 ? "border-t border-line/50" : ""}`}
+              >
+                {a.label}
+              </button>
+            );
+          })}
         </div>
         <button
           type="button"

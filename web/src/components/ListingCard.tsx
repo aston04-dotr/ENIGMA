@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { categoryLabel } from "@/lib/categories";
 import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
 import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
+import { SimpleToast } from "@/components/SimpleToast";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
@@ -15,6 +16,7 @@ import { hideListingInFeed } from "@/lib/feedHiddenListings";
 import { ownerArchiveListing, ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
+import { shareListingUrl } from "@/lib/shareListing";
 import { reportListingTrustPenalty } from "@/lib/trust";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { useAuth } from "@/context/auth-context";
@@ -95,6 +97,10 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   const [isFavoritedLocal, setIsFavoritedLocal] = useState(isFavorited);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
   const priceRub = defaultBoostCtaPriceRub();
 
   const listingSheetActions = useMemo((): ListingSheetAction[] => {
@@ -107,8 +113,14 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
       {
         id: "share",
         label: "Поделиться",
-        onSelect: () => {
-          void navigator.clipboard?.writeText(shareUrl).catch(() => {});
+        variant: "cta",
+        onSelect: async () => {
+          const r = await shareListingUrl({ url: shareUrl, title: itemTitle });
+          if (r === "copied") {
+            setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
+          } else if (r === "failed") {
+            setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
+          }
         },
       },
     ];
@@ -133,7 +145,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
         },
         {
           id: "hide",
-          label: "Скрыть объявление",
+          label: "Скрыть из ленты",
           onSelect: () => {
             hideListingInFeed(id);
             trackEvent("listing_hide_feed", { listing_id: id });
@@ -181,7 +193,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
     }
 
     return actions;
-  }, [isOwn, lid, router, viewerId]);
+  }, [isOwn, itemTitle, lid, router, viewerId]);
 
   useEffect(() => {
     setFavoriteCountLocal(favorites);
@@ -248,7 +260,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
 
   return (
     <div
-      className="feed-card-enter group mb-4 overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:mb-5 md:hover:-translate-y-[3px]"
+      className="feed-card-enter group relative mb-4 overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:mb-5 md:hover:-translate-y-[3px]"
       style={{
         borderColor: "rgba(255,255,255,0.04)",
         backgroundImage:
@@ -303,14 +315,23 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             В топе
           </span>
         ) : null}
-        <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5">
+        <div
+          className="absolute right-2 top-2 z-20 flex items-center gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           {!isOwn ? (
             <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={() => handleToggleFavorite()} />
           ) : null}
           <button
             type="button"
             aria-label="Действия"
-            onClick={() => setActionsOpen(true)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setActionsOpen(true);
+            }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
           >
             <svg viewBox="0 0 24 24" fill="currentColor" className="h-[18px] w-[18px]" aria-hidden>
@@ -377,6 +398,9 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           </div>
         </div>
       </Link>
+      {toast ? (
+        <SimpleToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+      ) : null}
       <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
       {isOwn && !partner ? (
         <div className="space-y-2.5 px-[14px] pb-[14px] pt-1">
