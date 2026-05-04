@@ -417,7 +417,7 @@ export async function fetchListings(filters: {
  */
 export async function fetchListingsForUser(userId: string): Promise<ListingRow[]> {
   if (!userId?.trim()) return [];
-  const fullSelect = "*, images:images(url)";
+  const fullSelect = FEED_SELECT;
   const { data, error } = await supabase
     .from("listings")
     .select(fullSelect)
@@ -448,12 +448,24 @@ export async function getMyListings(userId: string): Promise<ListingRow[]> {
 
   const { data, error } = await supabase
     .from("listings")
-    .select("*")
+    .select(FEED_SELECT)
     .eq("user_id", uid)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
-  return (data as ListingRow[] | null) ?? [];
+  if (!error && data) {
+    return (data as unknown[]).map((r) => parseListingRow(r as Record<string, unknown>));
+  }
+  if (isSchemaNotInCache(error)) {
+    return [];
+  }
+
+  const { data: plain, error: errPlain } = await supabase
+    .from("listings")
+    .select("*")
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false });
+  if (errPlain) throw errPlain;
+  return (plain as unknown[]).map((r) => parseListingRow(r as Record<string, unknown>));
 }
 
 /** Одно объявление: число избранных (RPC, SECURITY DEFINER). */
