@@ -729,8 +729,32 @@ export function FeedPage({
   const categoryTitle =
     selectedCategory === ALL_CATEGORY ? "Все" : categoryLabel(selectedCategory);
   const foundCountLabel = new Intl.NumberFormat("ru-RU").format(filtered.length);
+
   const filterRowClass =
-    "pressable flex w-full items-center justify-between rounded-card border border-line bg-elevated px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.995]";
+    theme === "light"
+      ? "pressable flex w-full items-center justify-between rounded-card border border-neutral-200 bg-[#FFFFFF] px-4 py-3 text-left shadow-[0_1px_2px_rgba(13,148,136,0.04)] transition-colors hover:border-[#22d3ee]/30 hover:bg-[#FAFCFF] active:scale-[0.995]"
+      : "pressable flex w-full items-center justify-between rounded-card border border-white/12 bg-transparent px-4 py-3 text-left transition-colors hover:bg-white/[0.05] active:scale-[0.995]";
+  const filterRowLabelClass =
+    theme === "light" ? "text-sm font-medium text-[#1793e6]" : "text-sm font-medium text-white";
+  const filterRowChevronClass =
+    theme === "light" ? "text-sm font-semibold text-[#22d3ee]" : "text-sm font-semibold text-white";
+
+  function categoryQuickChipClass(active: boolean): string {
+    const base =
+      "pressable shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors";
+    if (theme === "light") {
+      return `${base} ${
+        active
+          ? "border-[#22d3ee]/45 bg-[#e8f6fc] text-[#0b7cbf]"
+          : "border-neutral-200 bg-[#FFFFFF] text-[#1793e6] hover:border-[#22d3ee]/28 hover:bg-[#FAFCFF]"
+      }`;
+    }
+    return `${base} ${
+      active
+        ? "border-white/28 bg-white/[0.07] text-white"
+        : "border-white/12 bg-transparent text-white hover:bg-white/[0.05]"
+    }`;
+  }
   const hasActiveFilters =
     city !== ALLOWED_LISTING_CITIES[0] ||
     selectedCategory !== ALL_CATEGORY ||
@@ -886,24 +910,24 @@ export function FeedPage({
                 onClick={() => setCitySheetOpen(true)}
                 className={filterRowClass}
               >
-                <span className="text-sm text-fg">Город: {city}</span>
-                <span className="text-sm font-semibold text-muted">{">"}</span>
+                <span className={filterRowLabelClass}>Город: {city}</span>
+                <span className={filterRowChevronClass}>{">"}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setCategorySheetOpen(true)}
                 className={filterRowClass}
               >
-                <span className="text-sm text-fg">Категория: {categoryTitle}</span>
-                <span className="text-sm font-semibold text-muted">{">"}</span>
+                <span className={filterRowLabelClass}>Категория: {categoryTitle}</span>
+                <span className={filterRowChevronClass}>{">"}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setFiltersSheetOpen(true)}
                 className={filterRowClass}
               >
-                <span className="text-sm text-fg">Фильтры: {sortLabel}</span>
-                <span className="text-sm font-semibold text-muted">{">"}</span>
+                <span className={filterRowLabelClass}>Фильтры: {sortLabel}</span>
+                <span className={filterRowChevronClass}>{">"}</span>
               </button>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -925,11 +949,7 @@ export function FeedPage({
                   trackEvent("category_quick_select", { category: ALL_CATEGORY });
                   setSelectedCategory(ALL_CATEGORY);
                 }}
-                className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                  selectedCategory === ALL_CATEGORY
-                    ? "border-accent/40 bg-accent/10 text-accent"
-                    : "border-line bg-elevated text-fg hover:bg-elev-2"
-                }`}
+                className={categoryQuickChipClass(selectedCategory === ALL_CATEGORY)}
               >
                 Все
               </button>
@@ -941,11 +961,7 @@ export function FeedPage({
                     trackEvent("category_quick_select", { category: cat.id });
                     setSelectedCategory(cat.id);
                   }}
-                  className={`pressable shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                    selectedCategory === cat.id
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-line bg-elevated text-fg hover:bg-elev-2"
-                  }`}
+                  className={categoryQuickChipClass(selectedCategory === cat.id)}
                 >
                   {cat.label}
                 </button>
