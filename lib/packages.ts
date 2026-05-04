@@ -84,7 +84,7 @@ export function parsePackageKind(s: string | undefined | null): PackageKind | nu
 /** Категория объявления (id из CATEGORIES) → какой пакет списывается. */
 export function listingCategoryToPackageKind(categoryId: string): PackageKind {
   if (categoryId === "realestate") return "real_estate";
-  if (categoryId === "auto") return "auto";
+  if (categoryId === "auto" || categoryId === "moto") return "auto";
   return "other";
 }
 

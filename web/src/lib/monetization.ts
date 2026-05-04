@@ -7,6 +7,7 @@ export const CATEGORY_RULES: Record<
   { freeLimit: number; periodDays: number; priceRub: number }
 > = {
   auto: { freeLimit: 1, periodDays: 30, priceRub: 1000 },
+  moto: { freeLimit: 1, periodDays: 30, priceRub: 1000 },
   realestate: { freeLimit: 1, periodDays: 90, priceRub: 1500 },
   default: { freeLimit: 2, periodDays: 30, priceRub: 200 },
 };

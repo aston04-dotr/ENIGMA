@@ -25,9 +25,26 @@ import {
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CreatableSelect from "react-select/creatable";
-import type { SingleValue } from "react-select";
 import Select from "react-select";
+import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
+import {
+  buildAutoParamsRecord,
+  buildAutoSpecsSection,
+  buildMotoParamsRecord,
+  buildMotoSpecsSection,
+  validateEngineHp,
+  validateEngineVolumeAuto,
+  validateEngineVolumeMoto,
+} from "@/lib/listingVehicleForm";
+import {
+  AUTO_ENGINE_VOLUME_OPTIONS,
+  ENGINE_HP_OPTIONS,
+  MOTO_ENGINE_VOLUME_OPTIONS,
+  VehicleEngineCombo,
+} from "@/components/listing/VehicleEngineCombo";
+
+type AutoParams = AutoParamsShape;
+type MotoParams = MotoParamsShape;
 
 function parseUnknownError(error: unknown): string {
   if (!error) return "Не удалось создать объявление. Попробуй снова.";
@@ -53,121 +70,6 @@ const MAX_LISTING_PHOTOS = Math.min(10, Math.max(1, getMaxListingPhotos()));
 const CREATE_FORM_STORAGE_KEY = "create_form";
 /** Совпадает с ключом ленты (`page.tsx`): фильтры недвижимости для префилла «Снять». */
 const FEED_SESSION_STORAGE_KEY = "feed_state";
-
-const AUTO_ENGINE_VOLUME_PRESETS = [
-  "1.0",
-  "1.2",
-  "1.4",
-  "1.5",
-  "1.6",
-  "1.8",
-  "2.0",
-  "2.5",
-  "3.0",
-  "3.5",
-  "4.0",
-  "4.4",
-  "5.0",
-  "5.5",
-  "6.0",
-  "6.7",
-] as const;
-
-const AUTO_ENGINE_POWER_PRESETS = [
-  "75",
-  "90",
-  "100",
-  "109",
-  "120",
-  "125",
-  "136",
-  "150",
-  "156",
-  "163",
-  "174",
-  "180",
-  "190",
-  "200",
-  "211",
-  "218",
-  "224",
-  "249",
-  "275",
-  "300",
-  "340",
-  "400",
-  "450",
-  "510",
-  "550",
-] as const;
-
-type AutoComboOption = { value: string; label: string };
-
-const AUTO_VOLUME_OPTIONS: AutoComboOption[] = AUTO_ENGINE_VOLUME_PRESETS.map((v) => ({
-  value: v,
-  label: `${v} л`,
-}));
-
-const AUTO_HP_OPTIONS: AutoComboOption[] = AUTO_ENGINE_POWER_PRESETS.map((v) => ({
-  value: v,
-  label: `${v} л.с.`,
-}));
-
-function AutoEngineCreatable({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-  options: readonly AutoComboOption[];
-  placeholder: string;
-}) {
-  const trimmed = value.trim();
-  const selected: AutoComboOption | null = trimmed
-    ? options.some((o) => o.value === trimmed)
-      ? options.find((o) => o.value === trimmed)!
-      : { value: trimmed, label: trimmed }
-    : null;
-
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</label>
-      <CreatableSelect<AutoComboOption, false>
-        className="react-select-container"
-        classNamePrefix="react-select"
-        placeholder={placeholder}
-        isClearable
-        options={[...options]}
-        value={selected}
-        formatCreateLabel={(inputValue) => `Добавить «${inputValue}»`}
-        onChange={(opt: SingleValue<AutoComboOption>) => {
-          onChange(String(opt?.value ?? "").trim());
-        }}
-      />
-    </div>
-  );
-}
-
-type AutoParams = {
-  brand: string;
-  model: string;
-  year: string;
-  mileage: string;
-  owners: string;
-  fuel: string;
-  transmission: string;
-  drive: string;
-  /** Мощность, л.с. — пресет или свой текст */
-  enginePowerHp: string;
-  /** Объём двигателя, л — пресет или свой текст */
-  engineVolumeL: string;
-  customsCleared: string;
-  damaged: string;
-};
 
 type RealEstateParams = {
   propertyType: string;
@@ -211,6 +113,7 @@ type HomeParams = { itemType: string; condition: string };
 
 type CategoryFormParams = {
   auto: AutoParams;
+  moto: MotoParams;
   realestate: RealEstateParams;
   electronics: ElectronicsParams;
   fashion: FashionParams;
@@ -234,6 +137,15 @@ const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
     engineVolumeL: "",
     customsCleared: "",
     damaged: "",
+  },
+  moto: {
+    bikeType: "",
+    engineKind: "",
+    engineVolumeL: "",
+    mileageKm: "",
+    customsCleared: "",
+    ownersPts: "",
+    enginePowerHp: "",
   },
   realestate: {
     propertyType: "",
@@ -438,7 +350,9 @@ export function CreateListingForm() {
 
   useEffect(() => {
     if (listingIntent === "rent") {
-      setCategory("realestate");
+      setCategory((prev) =>
+        prev === "auto" || prev === "moto" || prev === "realestate" ? prev : "realestate",
+      );
     }
   }, [listingIntent]);
 
@@ -653,6 +567,20 @@ export function CreateListingForm() {
       if (!p.brand.trim() || !p.model.trim() || !p.year.trim() || !p.mileage.trim()) {
         return "Заполните обязательные параметры авто: марка, модель, год, пробег";
       }
+      const hpErr = validateEngineHp(p.enginePowerHp);
+      if (hpErr) return hpErr;
+      const volErr = validateEngineVolumeAuto(p.engineVolumeL);
+      if (volErr) return volErr;
+    }
+    if (category === "moto") {
+      const p = categoryParams.moto;
+      if (!p.bikeType.trim() || !p.engineKind.trim() || !p.mileageKm.trim()) {
+        return "Заполните тип мотоцикла, тип двигателя и пробег";
+      }
+      const hpErr = validateEngineHp(p.enginePowerHp);
+      if (hpErr) return hpErr;
+      const volErr = validateEngineVolumeMoto(p.engineVolumeL);
+      if (volErr) return volErr;
     }
     if (category === "realestate") {
       const p = categoryParams.realestate;
@@ -783,24 +711,13 @@ export function CreateListingForm() {
   }, [category, categoryParams, listingIntent, resolveFashionSize, resolveKidsSize]);
 
   const buildSpecsSummary = useCallback((): string => {
-    const specs: Array<[string, string]> = [];
     if (category === "auto") {
-      const p = categoryParams.auto;
-      specs.push(
-        ["Марка", p.brand],
-        ["Модель", p.model],
-        ["Год выпуска", p.year],
-        ["Пробег (км)", p.mileage],
-        ["Количество владельцев", p.owners],
-        ["Тип топлива", p.fuel],
-        ["Коробка передач", p.transmission],
-        ["Привод", p.drive],
-        ["Мощность (л.с.)", p.enginePowerHp],
-        ["Объем (л)", p.engineVolumeL],
-        ["Растаможен", p.customsCleared],
-        ["Битый", p.damaged],
-      );
+      return buildAutoSpecsSection(categoryParams.auto);
     }
+    if (category === "moto") {
+      return buildMotoSpecsSection(categoryParams.moto);
+    }
+    const specs: Array<[string, string]> = [];
     if (category === "realestate") {
       const p = categoryParams.realestate;
       specs.push(
@@ -903,22 +820,10 @@ export function CreateListingForm() {
     };
     const normalizedPrice = toIntOrNull(price);
     if (category === "auto") {
-      const p = categoryParams.auto;
-      return {
-        brand: p.brand.trim() || null,
-        model: p.model.trim() || null,
-        year: toIntOrNull(p.year),
-        mileage: toIntOrNull(p.mileage),
-        owners: toIntOrNull(p.owners),
-        price: normalizedPrice,
-        fuel: p.fuel.trim() || null,
-        transmission: p.transmission.trim() || null,
-        drive: p.drive.trim() || null,
-        engine_power: p.enginePowerHp.trim() || null,
-        engine_volume: p.engineVolumeL.trim() || null,
-        is_cleared: toBoolOrNull(p.customsCleared),
-        is_damaged: toBoolOrNull(p.damaged),
-      };
+      return buildAutoParamsRecord(categoryParams.auto, normalizedPrice);
+    }
+    if (category === "moto") {
+      return buildMotoParamsRecord(categoryParams.moto, normalizedPrice);
     }
     if (category === "realestate") {
       const p = categoryParams.realestate;
@@ -1160,6 +1065,19 @@ export function CreateListingForm() {
             }
           : null;
 
+      const motoExtras =
+        category === "moto"
+          ? {
+              engine_power: categoryParams.moto.enginePowerHp.trim() || null,
+              engine_volume: categoryParams.moto.engineVolumeL.trim() || null,
+              moto_type: categoryParams.moto.bikeType.trim() || null,
+              moto_engine: categoryParams.moto.engineKind.trim() || null,
+              moto_mileage: categoryParams.moto.mileageKm.trim() || null,
+              moto_customs_cleared: categoryParams.moto.customsCleared.trim() || null,
+              moto_owners_pts: categoryParams.moto.ownersPts.trim() || null,
+            }
+          : null;
+
       const res = await insertListingRow({
         title: title.trim(),
         description: finalDescription,
@@ -1170,7 +1088,9 @@ export function CreateListingForm() {
         user_id: uid,
         owner_id: uid,
         contact_phone: profile?.phone || null,
+        deal_type: listingIntent,
         ...(autoExtras ?? {}),
+        ...(motoExtras ?? {}),
         ...(realestateExtras ?? {}),
       });
       console.log("CREATE LISTING RESULT", res);
@@ -1299,7 +1219,7 @@ export function CreateListingForm() {
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <div className="space-y-2">
         <h1 className="text-[26px] font-bold tracking-tight text-fg">
-          {listingIntent === "rent" ? "Снять недвижимость" : "Новое объявление"}
+          {listingIntent === "rent" ? "Новое объявление (аренда)" : "Новое объявление"}
         </h1>
         <button
           type="button"
@@ -1420,9 +1340,8 @@ export function CreateListingForm() {
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Категория</label>
         <select
           value={category}
-          disabled={listingIntent === "rent"}
           onChange={(e) => setCategory(e.target.value)}
-          className={`mt-2 ${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+          className={`mt-2 ${inputClass}`}
         >
           {(safeCategories || []).map((c) => (
             <option key={c.id} value={c.id}>
@@ -1472,19 +1391,21 @@ export function CreateListingForm() {
             </select>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <AutoEngineCreatable
+            <VehicleEngineCombo
               label="Мощность (л.с.)"
+              unit="hp"
               value={categoryParams.auto.enginePowerHp}
               onChange={(next) => updateCategoryParam("auto", "enginePowerHp", next)}
-              options={AUTO_HP_OPTIONS}
-              placeholder="Выберите или введите"
+              options={ENGINE_HP_OPTIONS}
+              placeholder="Выберите или введите, л.с."
             />
-            <AutoEngineCreatable
+            <VehicleEngineCombo
               label="Объем (л)"
+              unit="liters"
               value={categoryParams.auto.engineVolumeL}
               onChange={(next) => updateCategoryParam("auto", "engineVolumeL", next)}
-              options={AUTO_VOLUME_OPTIONS}
-              placeholder="Выберите или введите"
+              options={AUTO_ENGINE_VOLUME_OPTIONS}
+              placeholder="Выберите или введите, л"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -1499,6 +1420,84 @@ export function CreateListingForm() {
               <option value="Нет">Нет</option>
             </select>
           </div>
+        </div>
+      ) : null}
+      {category === "moto" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры мотоцикла</label>
+          <select
+            value={categoryParams.moto.bikeType}
+            onChange={(e) => updateCategoryParam("moto", "bikeType", e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Тип *</option>
+            <option value="Спортивный">Спортивный</option>
+            <option value="Чоппер">Чоппер</option>
+            <option value="Эндуро">Эндуро</option>
+            <option value="Скутер">Скутер</option>
+            <option value="Квадроцикл">Квадроцикл</option>
+          </select>
+          <select
+            value={categoryParams.moto.engineKind}
+            onChange={(e) => updateCategoryParam("moto", "engineKind", e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Двигатель *</option>
+            <option value="Бензиновый">Бензиновый</option>
+            <option value="Электрический">Электрический</option>
+          </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <VehicleEngineCombo
+              label="Объем (л)"
+              unit="liters"
+              value={categoryParams.moto.engineVolumeL}
+              onChange={(next) => updateCategoryParam("moto", "engineVolumeL", next)}
+              options={MOTO_ENGINE_VOLUME_OPTIONS}
+              placeholder="До 2.5 л, свой ввод"
+            />
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Пробег (км)</label>
+              <input
+                value={categoryParams.moto.mileageKm}
+                onChange={(e) => updateCategoryParam("moto", "mileageKm", e.target.value)}
+                inputMode="text"
+                placeholder="Пробег *"
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <VehicleEngineCombo
+              label="Мощность (л.с.)"
+              unit="hp"
+              value={categoryParams.moto.enginePowerHp}
+              onChange={(next) => updateCategoryParam("moto", "enginePowerHp", next)}
+              options={ENGINE_HP_OPTIONS}
+              placeholder="Выберите или введите, л.с."
+            />
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Владельцев по ПТС</label>
+              <select
+                value={categoryParams.moto.ownersPts}
+                onChange={(e) => updateCategoryParam("moto", "ownersPts", e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Владельцев по ПТС</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3+">3+</option>
+              </select>
+            </div>
+          </div>
+          <select
+            value={categoryParams.moto.customsCleared}
+            onChange={(e) => updateCategoryParam("moto", "customsCleared", e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Растаможен</option>
+            <option value="Да">Да</option>
+            <option value="Нет">Нет</option>
+          </select>
         </div>
       ) : null}
       {category === "realestate" ? (

@@ -54,6 +54,16 @@ export type ListingInsertPayload = {
   engine_power?: string | null;
   /** Авто: объём двигателя (л), текст. */
   engine_volume?: string | null;
+  /** Мото: тип (Спортивный, Чоппер, …). */
+  moto_type?: string | null;
+  /** Мото: двигатель (Бензиновый / Электрический). */
+  moto_engine?: string | null;
+  /** Мото: пробег (текст, км). */
+  moto_mileage?: string | null;
+  /** Мото: растаможен (Да / Нет). */
+  moto_customs_cleared?: string | null;
+  /** Мото: владельцев по ПТС (1, 2, 3+). */
+  moto_owners_pts?: string | null;
 };
 
 export type ListingRow = {
@@ -97,6 +107,11 @@ export type ListingRow = {
   land_ownership_status?: string | null;
   engine_power?: string | null;
   engine_volume?: string | null;
+  moto_type?: string | null;
+  moto_engine?: string | null;
+  moto_mileage?: string | null;
+  moto_customs_cleared?: string | null;
+  moto_owners_pts?: string | null;
   /** Структурированные параметры объявления (jsonb). */
   params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];

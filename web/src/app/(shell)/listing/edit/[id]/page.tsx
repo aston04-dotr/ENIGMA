@@ -28,6 +28,26 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
+import {
+  buildAutoParamsRecord,
+  buildAutoSpecsSection,
+  buildMotoParamsRecord,
+  buildMotoSpecsSection,
+  hydrateAutoParamsShape,
+  hydrateMotoParamsShape,
+  mergeDescriptionWithSpecsSection,
+  toIntOrNull,
+  validateEngineHp,
+  validateEngineVolumeAuto,
+  validateEngineVolumeMoto,
+} from "@/lib/listingVehicleForm";
+import {
+  AUTO_ENGINE_VOLUME_OPTIONS,
+  ENGINE_HP_OPTIONS,
+  MOTO_ENGINE_VOLUME_OPTIONS,
+  VehicleEngineCombo,
+} from "@/components/listing/VehicleEngineCombo";
 
 // Toast component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error" | "info"; onClose: () => void }) {
@@ -139,6 +159,11 @@ export default function EditListingPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [listingCategory, setListingCategory] = useState("");
+  const [autoParams, setAutoParams] = useState<AutoParamsShape | null>(null);
+  const [motoParams, setMotoParams] = useState<MotoParamsShape | null>(null);
+  const originalAutoJsonRef = useRef("");
+  const originalMotoJsonRef = useRef("");
   const [originalData, setOriginalData] = useState<{
     title: string;
     description: string;
@@ -187,6 +212,27 @@ export default function EditListingPage() {
           price: res.row.price,
           imageUrls: urls,
         });
+
+        const cat = String(res.row.category ?? "").trim();
+        setListingCategory(cat);
+        if (cat === "auto") {
+          const h = hydrateAutoParamsShape(res.row);
+          setAutoParams(h);
+          originalAutoJsonRef.current = JSON.stringify(h);
+          setMotoParams(null);
+          originalMotoJsonRef.current = "";
+        } else if (cat === "moto") {
+          const h = hydrateMotoParamsShape(res.row);
+          setMotoParams(h);
+          originalMotoJsonRef.current = JSON.stringify(h);
+          setAutoParams(null);
+          originalAutoJsonRef.current = "";
+        } else {
+          setAutoParams(null);
+          setMotoParams(null);
+          originalAutoJsonRef.current = "";
+          originalMotoJsonRef.current = "";
+        }
       } catch (e) {
         console.error("FETCH ERROR", e);
         setErr("Не удалось загрузить объявление");
@@ -331,11 +377,12 @@ export default function EditListingPage() {
 
   async function save() {
     if (!session?.user || !id) return;
-    
+
     const titleTrim = title.trim();
-    const descriptionTrim = description.trim();
+    let descriptionTrim = description.trim();
     const priceNum = Number(price);
-    
+    const normalizedPrice = toIntOrNull(price.trim());
+
     if (!titleTrim) {
       setToast({ message: "Введите название", type: "error" });
       return;
@@ -348,17 +395,92 @@ export default function EditListingPage() {
       setToast({ message: "Введите корректную цену", type: "error" });
       return;
     }
-    
+
+    if (listingCategory === "auto") {
+      if (!autoParams) {
+        setToast({ message: "Не удалось прочитать параметры авто", type: "error" });
+        return;
+      }
+      const hpErr = validateEngineHp(autoParams.enginePowerHp);
+      if (hpErr) {
+        setToast({ message: hpErr, type: "error" });
+        return;
+      }
+      const volErr = validateEngineVolumeAuto(autoParams.engineVolumeL);
+      if (volErr) {
+        setToast({ message: volErr, type: "error" });
+        return;
+      }
+      if (
+        !autoParams.brand.trim() ||
+        !autoParams.model.trim() ||
+        !autoParams.year.trim() ||
+        !autoParams.mileage.trim()
+      ) {
+        setToast({ message: "Заполните марку, модель, год и пробег", type: "error" });
+        return;
+      }
+      descriptionTrim = mergeDescriptionWithSpecsSection(
+        descriptionTrim,
+        buildAutoSpecsSection(autoParams),
+      );
+    } else if (listingCategory === "moto") {
+      if (!motoParams) {
+        setToast({ message: "Не удалось прочитать параметры мотоцикла", type: "error" });
+        return;
+      }
+      const hpErr = validateEngineHp(motoParams.enginePowerHp);
+      if (hpErr) {
+        setToast({ message: hpErr, type: "error" });
+        return;
+      }
+      const volErr = validateEngineVolumeMoto(motoParams.engineVolumeL);
+      if (volErr) {
+        setToast({ message: volErr, type: "error" });
+        return;
+      }
+      if (!motoParams.bikeType.trim() || !motoParams.engineKind.trim() || !motoParams.mileageKm.trim()) {
+        setToast({ message: "Заполните тип, двигатель и пробег", type: "error" });
+        return;
+      }
+      descriptionTrim = mergeDescriptionWithSpecsSection(
+        descriptionTrim,
+        buildMotoSpecsSection(motoParams),
+      );
+    }
+
     setSaving(true);
     try {
+      const listingPatch: Record<string, unknown> = {
+        title: titleTrim,
+        description: descriptionTrim,
+        price: priceNum,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (listingCategory === "auto" && autoParams) {
+        listingPatch.params = buildAutoParamsRecord(autoParams, normalizedPrice);
+        listingPatch.engine_power = autoParams.enginePowerHp.trim() || null;
+        listingPatch.engine_volume = autoParams.engineVolumeL.trim() || null;
+        listingPatch.moto_type = null;
+        listingPatch.moto_engine = null;
+        listingPatch.moto_mileage = null;
+        listingPatch.moto_customs_cleared = null;
+        listingPatch.moto_owners_pts = null;
+      } else if (listingCategory === "moto" && motoParams) {
+        listingPatch.params = buildMotoParamsRecord(motoParams, normalizedPrice);
+        listingPatch.engine_power = motoParams.enginePowerHp.trim() || null;
+        listingPatch.engine_volume = motoParams.engineVolumeL.trim() || null;
+        listingPatch.moto_type = motoParams.bikeType.trim() || null;
+        listingPatch.moto_engine = motoParams.engineKind.trim() || null;
+        listingPatch.moto_mileage = motoParams.mileageKm.trim() || null;
+        listingPatch.moto_customs_cleared = motoParams.customsCleared.trim() || null;
+        listingPatch.moto_owners_pts = motoParams.ownersPts.trim() || null;
+      }
+
       const { error } = await supabase
         .from("listings")
-        .update({
-          title: titleTrim,
-          description: descriptionTrim,
-          price: priceNum,
-          updated_at: new Date().toISOString(),
-        })
+        .update(listingPatch as never)
         .eq("id", id)
         .eq("user_id", session.user.id);
 
@@ -413,12 +535,19 @@ export default function EditListingPage() {
       setExistingImageUrls(finalUrls);
       setImageOrder(finalUrls.map(makeExistingKey));
 
+      setDescription(descriptionTrim);
       setOriginalData({
         title: titleTrim,
         description: descriptionTrim,
         price: priceNum,
         imageUrls: finalUrls,
       });
+      if (listingCategory === "auto" && autoParams) {
+        originalAutoJsonRef.current = JSON.stringify(autoParams);
+      }
+      if (listingCategory === "moto" && motoParams) {
+        originalMotoJsonRef.current = JSON.stringify(motoParams);
+      }
       setToast({ message: "✓ Объявление обновлено", type: "success" });
     } catch (saveError) {
       console.error("UPDATE ERROR", saveError);
@@ -486,11 +615,23 @@ export default function EditListingPage() {
     return existingInOrder.some((url, idx) => url !== originalData.imageUrls[idx]);
   }, [imageOrder, originalData, pendingImages.length]);
 
-  const hasChanges = originalData && (
-    title.trim() !== originalData.title ||
-    description.trim() !== originalData.description ||
-    Number(price) !== originalData.price ||
-    hasImageChanges
+  const vehicleParamsDirty = useMemo(() => {
+    if (listingCategory === "auto" && autoParams) {
+      return JSON.stringify(autoParams) !== originalAutoJsonRef.current;
+    }
+    if (listingCategory === "moto" && motoParams) {
+      return JSON.stringify(motoParams) !== originalMotoJsonRef.current;
+    }
+    return false;
+  }, [listingCategory, autoParams, motoParams]);
+
+  const hasChanges = Boolean(
+    originalData &&
+      (title.trim() !== originalData.title ||
+        description.trim() !== originalData.description ||
+        Number(price) !== originalData.price ||
+        hasImageChanges ||
+        vehicleParamsDirty),
   );
   const isDirty = Boolean(hasChanges);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
@@ -650,7 +791,219 @@ export default function EditListingPage() {
             disabled={saving}
           />
         </div>
-        
+
+        {listingCategory === "auto" && autoParams ? (
+          <div className="space-y-3 rounded-card border border-line bg-elev-2/40 p-4">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры авто</label>
+            <input
+              value={autoParams.brand}
+              onChange={(e) => setAutoParams((p) => (p ? { ...p, brand: e.target.value } : p))}
+              placeholder="Марка *"
+              className={inputClass}
+              disabled={saving}
+            />
+            <input
+              value={autoParams.model}
+              onChange={(e) => setAutoParams((p) => (p ? { ...p, model: e.target.value } : p))}
+              placeholder="Модель *"
+              className={inputClass}
+              disabled={saving}
+            />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                value={autoParams.year}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, year: e.target.value } : p))}
+                inputMode="numeric"
+                placeholder="Год выпуска *"
+                className={inputClass}
+                disabled={saving}
+              />
+              <input
+                value={autoParams.mileage}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, mileage: e.target.value } : p))}
+                inputMode="numeric"
+                placeholder="Пробег (км) *"
+                className={inputClass}
+                disabled={saving}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                value={autoParams.owners}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, owners: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Владельцев</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3+</option>
+              </select>
+              <select
+                value={autoParams.fuel}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, fuel: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Тип топлива</option>
+                <option value="Бензин">Бензин</option>
+                <option value="Дизель">Дизель</option>
+                <option value="Гибрид">Гибрид</option>
+                <option value="Электро">Электро</option>
+                <option value="Газ">Газ</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                value={autoParams.transmission}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, transmission: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Коробка передач</option>
+                <option value="Механика">Механика</option>
+                <option value="Автомат">Автомат</option>
+                <option value="Робот">Робот</option>
+                <option value="Вариатор">Вариатор</option>
+              </select>
+              <select
+                value={autoParams.drive}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, drive: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Привод</option>
+                <option value="Передний">Передний</option>
+                <option value="Задний">Задний</option>
+                <option value="Полный">Полный</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <VehicleEngineCombo
+                label="Мощность (л.с.)"
+                unit="hp"
+                value={autoParams.enginePowerHp}
+                onChange={(next) => setAutoParams((p) => (p ? { ...p, enginePowerHp: next } : p))}
+                options={ENGINE_HP_OPTIONS}
+                placeholder="Выберите или введите, л.с."
+              />
+              <VehicleEngineCombo
+                label="Объем (л)"
+                unit="liters"
+                value={autoParams.engineVolumeL}
+                onChange={(next) => setAutoParams((p) => (p ? { ...p, engineVolumeL: next } : p))}
+                options={AUTO_ENGINE_VOLUME_OPTIONS}
+                placeholder="Выберите или введите, л"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                value={autoParams.customsCleared}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, customsCleared: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Растаможен</option>
+                <option value="Да">Да</option>
+                <option value="Нет">Нет</option>
+              </select>
+              <select
+                value={autoParams.damaged}
+                onChange={(e) => setAutoParams((p) => (p ? { ...p, damaged: e.target.value } : p))}
+                className={inputClass}
+                disabled={saving}
+              >
+                <option value="">Битый</option>
+                <option value="Да">Да</option>
+                <option value="Нет">Нет</option>
+              </select>
+            </div>
+          </div>
+        ) : null}
+
+        {listingCategory === "moto" && motoParams ? (
+          <div className="space-y-3 rounded-card border border-line bg-elev-2/40 p-4">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры мотоцикла</label>
+            <select
+              value={motoParams.bikeType}
+              onChange={(e) => setMotoParams((p) => (p ? { ...p, bikeType: e.target.value } : p))}
+              className={inputClass}
+              disabled={saving}
+            >
+              <option value="">Тип *</option>
+              <option value="Спортивный">Спортивный</option>
+              <option value="Чоппер">Чоппер</option>
+              <option value="Эндуро">Эндуро</option>
+              <option value="Скутер">Скутер</option>
+              <option value="Квадроцикл">Квадроцикл</option>
+            </select>
+            <select
+              value={motoParams.engineKind}
+              onChange={(e) => setMotoParams((p) => (p ? { ...p, engineKind: e.target.value } : p))}
+              className={inputClass}
+              disabled={saving}
+            >
+              <option value="">Двигатель *</option>
+              <option value="Бензиновый">Бензиновый</option>
+              <option value="Электрический">Электрический</option>
+            </select>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <VehicleEngineCombo
+                label="Объем (л)"
+                unit="liters"
+                value={motoParams.engineVolumeL}
+                onChange={(next) => setMotoParams((p) => (p ? { ...p, engineVolumeL: next } : p))}
+                options={MOTO_ENGINE_VOLUME_OPTIONS}
+                placeholder="До 2.5 л, свой ввод"
+              />
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Пробег (км)</label>
+                <input
+                  value={motoParams.mileageKm}
+                  onChange={(e) => setMotoParams((p) => (p ? { ...p, mileageKm: e.target.value } : p))}
+                  placeholder="Пробег *"
+                  className={inputClass}
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <VehicleEngineCombo
+                label="Мощность (л.с.)"
+                unit="hp"
+                value={motoParams.enginePowerHp}
+                onChange={(next) => setMotoParams((p) => (p ? { ...p, enginePowerHp: next } : p))}
+                options={ENGINE_HP_OPTIONS}
+                placeholder="Выберите или введите, л.с."
+              />
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">Владельцев по ПТС</label>
+                <select
+                  value={motoParams.ownersPts}
+                  onChange={(e) => setMotoParams((p) => (p ? { ...p, ownersPts: e.target.value } : p))}
+                  className={inputClass}
+                  disabled={saving}
+                >
+                  <option value="">Владельцев по ПТС</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3+">3+</option>
+                </select>
+              </div>
+            </div>
+            <select
+              value={motoParams.customsCleared}
+              onChange={(e) => setMotoParams((p) => (p ? { ...p, customsCleared: e.target.value } : p))}
+              className={inputClass}
+              disabled={saving}
+            >
+              <option value="">Растаможен</option>
+              <option value="Да">Да</option>
+              <option value="Нет">Нет</option>
+            </select>
+          </div>
+        ) : null}
+
         <button
           type="button"
           disabled={saving || !hasChanges}

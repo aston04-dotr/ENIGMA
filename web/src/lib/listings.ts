@@ -64,6 +64,29 @@ function applyListingAutoEngineColumns(row: ListingRow, data: Record<string, unk
   }
 }
 
+function applyListingMotoColumns(row: ListingRow, data: Record<string, unknown>): void {
+  const mt = data.moto_type;
+  if (mt != null && String(mt).trim() !== "") {
+    row.moto_type = String(mt).trim();
+  }
+  const me = data.moto_engine;
+  if (me != null && String(me).trim() !== "") {
+    row.moto_engine = String(me).trim();
+  }
+  const mm = data.moto_mileage;
+  if (mm != null && String(mm).trim() !== "") {
+    row.moto_mileage = String(mm).trim();
+  }
+  const mc = data.moto_customs_cleared;
+  if (mc != null && String(mc).trim() !== "") {
+    row.moto_customs_cleared = String(mc).trim();
+  }
+  const mo = data.moto_owners_pts;
+  if (mo != null && String(mo).trim() !== "") {
+    row.moto_owners_pts = String(mo).trim();
+  }
+}
+
 function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
   const seen = new Set<string>();
   const out: ListingRow[] = [];
@@ -102,6 +125,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
       : null;
   applyListingRealEstateColumns(row, data);
   applyListingAutoEngineColumns(row, data);
+  applyListingMotoColumns(row, data);
   return row;
 }
 
@@ -764,6 +788,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
       : null;
   applyListingRealEstateColumns(row, data);
   applyListingAutoEngineColumns(row, data);
+  applyListingMotoColumns(row, data);
   return row;
 }
 
@@ -901,6 +926,11 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       deal_type?: string | null;
       engine_power?: string | null;
       engine_volume?: string | null;
+      moto_type?: string | null;
+      moto_engine?: string | null;
+      moto_mileage?: string | null;
+      moto_customs_cleared?: string | null;
+      moto_owners_pts?: string | null;
     };
     const payloadParams =
       payload.params && typeof payload.params === "object"
@@ -968,6 +998,24 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     if (payloadExtended.engine_volume != null && String(payloadExtended.engine_volume).trim() !== "") {
       insertPayload.engine_volume = String(payloadExtended.engine_volume).trim();
+    }
+    if (payloadExtended.moto_type != null && String(payloadExtended.moto_type).trim() !== "") {
+      insertPayload.moto_type = String(payloadExtended.moto_type).trim();
+    }
+    if (payloadExtended.moto_engine != null && String(payloadExtended.moto_engine).trim() !== "") {
+      insertPayload.moto_engine = String(payloadExtended.moto_engine).trim();
+    }
+    if (payloadExtended.moto_mileage != null && String(payloadExtended.moto_mileage).trim() !== "") {
+      insertPayload.moto_mileage = String(payloadExtended.moto_mileage).trim();
+    }
+    if (
+      payloadExtended.moto_customs_cleared != null &&
+      String(payloadExtended.moto_customs_cleared).trim() !== ""
+    ) {
+      insertPayload.moto_customs_cleared = String(payloadExtended.moto_customs_cleared).trim();
+    }
+    if (payloadExtended.moto_owners_pts != null && String(payloadExtended.moto_owners_pts).trim() !== "") {
+      insertPayload.moto_owners_pts = String(payloadExtended.moto_owners_pts).trim();
     }
 
     console.log("INSERT PHONE:", payloadContactPhone);

@@ -4,6 +4,7 @@ export const CATEGORIES = [
   { id: "home", label: "Дом и сад" },
   { id: "realestate", label: "Недвижимость" },
   { id: "auto", label: "Авто" },
+  { id: "moto", label: "Мотоциклы" },
   { id: "services", label: "Услуги" },
   { id: "kids", label: "Детям" },
   { id: "sport", label: "Спорт" },
