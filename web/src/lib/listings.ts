@@ -240,6 +240,12 @@ function listingsFeedSelectBase() {
 
 type ListingsFeedQuery = ReturnType<typeof listingsFeedSelectBase>;
 
+/** Колонки вне строгих типов клиента Supabase — только через строковые фильтры. */
+type LooseFeedQuery = ListingsFeedQuery & {
+  eq: (column: string, value: string) => ListingsFeedQuery;
+  or: (filters: string) => ListingsFeedQuery;
+};
+
 function applySafeFilters(
   query: ListingsFeedQuery,
   filters: ListingFilters,
@@ -248,6 +254,7 @@ function applySafeFilters(
 ): ListingsFeedQuery {
   try {
     let q = query;
+    const loose = () => q as unknown as LooseFeedQuery;
     const city = normalizeAllowedListingCity(filters.city);
     if (city) {
       q = q.eq("city", city);
@@ -258,16 +265,19 @@ function applySafeFilters(
     } else if (category) {
       q = q.eq("category", category);
     }
-type LooseFeedQuery = ListingsFeedQuery & {
-  eq: (column: string, value: string) => ListingsFeedQuery;
-};
 
-    if (filters.dealType === "sale" || filters.dealType === "rent") {
-      q = (q as unknown as LooseFeedQuery).eq("deal_type", filters.dealType);
+    if (filters.listingKind === "seeking") {
+      q = loose().eq("listing_kind", "seeking");
+    } else if (filters.listingKind === "offer") {
+      q = loose().or("listing_kind.eq.offer,listing_kind.is.null");
     }
-    if (filters.listingKind === "offer" || filters.listingKind === "seeking") {
-      q = (q as unknown as LooseFeedQuery).eq("listing_kind", filters.listingKind);
+
+    if (filters.dealType === "rent") {
+      q = loose().eq("deal_type", "rent");
+    } else if (filters.dealType === "sale") {
+      q = loose().or("deal_type.eq.sale,deal_type.is.null");
     }
+
     if (searchActive) {
       const safe = searchTrim
         .replace(/%/g, "")

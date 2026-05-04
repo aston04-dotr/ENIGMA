@@ -384,11 +384,12 @@ export function FeedPage({
       if (hiddenIds.has(String(x.id ?? "").trim())) return false;
       if (!listingIsRussiaForFeed(x)) return false;
       if (x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
-      const rowDeal =
+      const rowDealRaw =
         String(x.deal_type ?? "").trim() ||
-        String(getParamsObject(x).deal_type ?? "").trim() ||
-        "sale";
-      const rowKind = String(x.listing_kind ?? "").trim() || "offer";
+        String(getParamsObject(x).deal_type ?? "").trim();
+      const rowDeal = rowDealRaw || "sale";
+      const rowKindRaw = String(x.listing_kind ?? "").trim();
+      const rowKind = rowKindRaw || "offer";
       if (feedVariant === "offers") {
         if (rowKind !== "offer") return false;
         if (feedDealSegment === "sale" && rowDeal !== "sale") return false;

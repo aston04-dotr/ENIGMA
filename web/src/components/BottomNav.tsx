@@ -27,9 +27,9 @@ const tabs: TabDef[] = [
     key: "wanted",
     href: "/wanted",
     label: (
-      <span className="flex flex-col items-center justify-center gap-0">
+      <span className="flex flex-col items-center justify-center gap-0 text-[#FFFFFF]">
         <span>Поиск</span>
-        <span className="text-[8px] font-medium leading-none opacity-75">жилья·авто</span>
+        <span className="text-[8px] font-medium leading-none text-[#FFFFFF]/75">жилья·авто</span>
       </span>
     ),
     Icon: IconSearch,
@@ -64,22 +64,21 @@ function formatUnreadBadge(count: number): string {
 }
 
 function BottomNavInner() {
-  const { loading, user } = useAuth();
+  const { loading } = useAuth();
   const { totalUnread } = useChatUnread();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const intent = searchParams.get("intent");
 
-  const authed = Boolean(user);
-  const dimmed = loading || !authed;
-
   return (
     <nav
       className={
-        "fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb view-mode-nav transition-opacity duration-200 sm:max-w-none " +
-        (dimmed ? "opacity-75" : "opacity-100")
+        "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-[#333] safe-pb view-mode-nav sm:max-w-none"
       }
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 10px)" }}
+      style={{
+        paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
+        backgroundColor: "#000000",
+      }}
       aria-busy={loading}
     >
       {tabs.map((t) => {
@@ -93,22 +92,23 @@ function BottomNavInner() {
             key={t.key}
             href={t.href}
             prefetch
-            className={`pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-medium tracking-wide transition-colors duration-ui sm:text-[10px] ${
-              active ? "text-accent" : "text-muted"
+            className={`pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-medium tracking-wide sm:text-[10px] ${
+              active ? "font-semibold" : "font-normal opacity-90"
             }`}
+            style={{ color: "#FFFFFF" }}
           >
-            <span className="relative inline-flex">
-              <Icon className="h-6 w-6 shrink-0" />
+            <span className="relative inline-flex text-[#FFFFFF]">
+              <Icon className="h-6 w-6 shrink-0 text-[#FFFFFF]" />
               {isChatTab && unread > 0 ? (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_rgba(14,17,20,0.95)]"
+                  className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_#000000]"
                   aria-label={`Непрочитанных сообщений: ${unread}`}
                 >
                   {formatUnreadBadge(unread)}
                 </span>
               ) : null}
             </span>
-            <span className="leading-tight">{t.label}</span>
+            <span className="leading-tight text-[#FFFFFF]">{t.label}</span>
           </Link>
         );
       })}
@@ -119,8 +119,11 @@ function BottomNavInner() {
 function BottomNavFallback() {
   return (
     <nav
-      className="fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-line bg-elevated/90 backdrop-blur-xl safe-pb sm:max-w-none"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 10px)" }}
+      className="bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-[#333] safe-pb sm:max-w-none"
+      style={{
+        paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
+        backgroundColor: "#000000",
+      }}
       aria-hidden
     />
   );

@@ -304,7 +304,9 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           </span>
         ) : null}
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5">
-          <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={() => handleToggleFavorite()} />
+          {!isOwn ? (
+            <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={() => handleToggleFavorite()} />
+          ) : null}
           <button
             type="button"
             aria-label="Действия"

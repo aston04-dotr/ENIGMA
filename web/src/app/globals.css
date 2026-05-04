@@ -345,6 +345,12 @@ html {
   max-width: 100%;
 }
 
+/* Bottom tab bar: contrast locked (theme-independent). */
+.bottom-nav-root {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
 /* Skeleton pulse — subtle */
 @keyframes skeleton-pulse {
   50% {

@@ -511,7 +511,9 @@ export default function ListingDetailPage() {
             </div>
           ) : null}
           <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
-            <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={handleToggleFavorite} />
+            {!isOwnListing ? (
+              <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={handleToggleFavorite} />
+            ) : null}
             <button
               type="button"
               aria-label="Действия"
