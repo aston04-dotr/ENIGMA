@@ -4,8 +4,11 @@ import { Suspense, type ComponentType, type ReactNode } from "react";
 import { IconChat, IconHome, IconPlus, IconSearch, IconUser } from "@/components/NavIcons";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
+import { useTheme } from "@/context/theme-context";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+
+type UiTheme = "light" | "dark";
 
 type TabDef = {
   key: string;
@@ -13,6 +16,8 @@ type TabDef = {
   label: ReactNode;
   Icon: ComponentType<{ className?: string }>;
   isActive: (pathname: string, intent: string | null) => boolean;
+  /** Двухстрочная подпись «Поиск / жилья·авто». */
+  stackedLabel?: boolean;
 };
 
 const tabs: TabDef[] = [
@@ -26,12 +31,8 @@ const tabs: TabDef[] = [
   {
     key: "wanted",
     href: "/wanted",
-    label: (
-      <span className="flex flex-col items-center justify-center gap-0 text-[#FFFFFF]">
-        <span>Поиск</span>
-        <span className="text-[8px] font-medium leading-none text-[#FFFFFF]/75">жилья·авто</span>
-      </span>
-    ),
+    label: "Поиск",
+    stackedLabel: true,
     Icon: IconSearch,
     isActive: (p) => p === "/wanted",
   },
@@ -63,21 +64,52 @@ function formatUnreadBadge(count: number): string {
   return String(count);
 }
 
+function navChrome(theme: UiTheme): { navClass: string; bg: string; badgeRing: string } {
+  if (theme === "light") {
+    return {
+      navClass: "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
+      bg: "#FFFFFF",
+      badgeRing: "#FFFFFF",
+    };
+  }
+  return {
+    navClass:
+      "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-transparent safe-pb view-mode-nav sm:max-w-none",
+    bg: "#000000",
+    badgeRing: "#000000",
+  };
+}
+
+function tabColors(theme: UiTheme, active: boolean): { icon: string; label: string; sub?: string } {
+  if (theme === "light") {
+    return active
+      ? { icon: "text-[#1793e6]", label: "text-[#1793e6]" }
+      : {
+          icon: "text-[#1793e6]/45",
+          label: "text-neutral-500",
+        };
+  }
+  return active
+    ? { icon: "text-[#7ee8ff]", label: "text-[#7ee8ff]" }
+    : { icon: "text-[#22d3ee]/50", label: "text-[#22d3ee]/50" };
+}
+
 function BottomNavInner() {
   const { loading } = useAuth();
+  const { theme } = useTheme();
   const { totalUnread } = useChatUnread();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const intent = searchParams.get("intent");
 
+  const chrome = navChrome(theme);
+
   return (
     <nav
-      className={
-        "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-[#333] safe-pb view-mode-nav sm:max-w-none"
-      }
+      className={chrome.navClass}
       style={{
         paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
-        backgroundColor: "#000000",
+        backgroundColor: chrome.bg,
       }}
       aria-busy={loading}
     >
@@ -86,6 +118,7 @@ function BottomNavInner() {
         const isChatTab = t.key === "chat";
         const unread = isChatTab ? totalUnread : 0;
         const { Icon } = t;
+        const c = tabColors(theme, active);
 
         return (
           <Link
@@ -93,22 +126,41 @@ function BottomNavInner() {
             href={t.href}
             prefetch
             className={`pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-medium tracking-wide sm:text-[10px] ${
-              active ? "font-semibold" : "font-normal opacity-90"
+              active ? "font-semibold" : "font-normal"
             }`}
-            style={{ color: "#FFFFFF" }}
           >
-            <span className="relative inline-flex text-[#FFFFFF]">
-              <Icon className="h-6 w-6 shrink-0 text-[#FFFFFF]" />
+            <span className={`relative inline-flex ${c.icon}`}>
+              <Icon className={`h-6 w-6 shrink-0 ${c.icon}`} />
               {isChatTab && unread > 0 ? (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_#000000]"
+                  className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white"
+                  style={{ boxShadow: `0 0 0 2px ${chrome.badgeRing}` }}
                   aria-label={`Непрочитанных сообщений: ${unread}`}
                 >
                   {formatUnreadBadge(unread)}
                 </span>
               ) : null}
             </span>
-            <span className="leading-tight text-[#FFFFFF]">{t.label}</span>
+            {t.stackedLabel ? (
+              <span className={`flex flex-col items-center justify-center gap-0 leading-tight ${c.label}`}>
+                <span>Поиск</span>
+                <span
+                  className={
+                    theme === "light"
+                      ? active
+                        ? "text-[8px] font-medium leading-none text-[#1793e6]/75"
+                        : "text-[8px] font-medium leading-none text-neutral-400"
+                      : active
+                        ? "text-[8px] font-medium leading-none text-[#7ee8ff]/80"
+                        : "text-[8px] font-medium leading-none text-[#22d3ee]/40"
+                  }
+                >
+                  жилья·авто
+                </span>
+              </span>
+            ) : (
+              <span className={`leading-tight ${c.label}`}>{t.label}</span>
+            )}
           </Link>
         );
       })}
@@ -119,7 +171,7 @@ function BottomNavInner() {
 function BottomNavFallback() {
   return (
     <nav
-      className="bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-[#333] safe-pb sm:max-w-none"
+      className="bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-transparent safe-pb sm:max-w-none"
       style={{
         paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
         backgroundColor: "#000000",

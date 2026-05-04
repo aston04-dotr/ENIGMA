@@ -345,10 +345,13 @@ html {
   max-width: 100%;
 }
 
-/* Bottom tab bar: contrast locked (theme-independent). */
-.bottom-nav-root {
+/* Bottom tab bar: фон по теме (контраст задаётся в компоненте). */
+[data-theme="light"] .bottom-nav-root {
+  background-color: #ffffff !important;
+}
+
+[data-theme="dark"] .bottom-nav-root {
   background-color: #000000 !important;
-  color: #ffffff !important;
 }
 
 /* Skeleton pulse — subtle */
