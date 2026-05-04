@@ -14,6 +14,7 @@ const { url, anonKey, configured } = getSupabasePublicConfig();
  */
 export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
+    /** Явно для стабильности на мобильных (кеш/куки дольше «доезжают»). */
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

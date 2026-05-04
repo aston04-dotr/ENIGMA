@@ -90,7 +90,14 @@ export default function VerifyPage() {
     }
 
     localStorage.removeItem("auth_email");
-    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    const { error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr && process.env.NODE_ENV === "development") {
+      // eslint-disable-next-line no-console
+      console.warn("[verify] refreshSession", refreshErr);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     window.location.assign("/");
   };
 

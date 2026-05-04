@@ -11,6 +11,10 @@ import React, {
   useState,
 } from "react";
 import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
+import {
+  clearAuthSyncGracePending,
+  isAuthSyncGracePending,
+} from "@/lib/deepSyncReset";
 import { supabase } from "@/lib/supabase";
 
 type UserRow = {
@@ -158,45 +162,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     setLoading(true);
 
-    const init = async () => {
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (sessionErr) {
-        console.warn("[auth] getSession", sessionErr);
-      }
+    let bootstrapPromise: Promise<void> | null = null;
 
-      if (!mounted) return;
-      setSession(sessionData.session);
-      setUser(sessionData.session?.user ?? null);
-      setAuthResolved(true);
-      setLoading(false);
-      setReady(true);
-
-      if (sessionData.session) {
-        void (async () => {
+    const ensureBootstrap = (): Promise<void> => {
+      if (!bootstrapPromise) {
+        bootstrapPromise = (async () => {
           try {
-            const { data: userData, error: userErr } = await supabase.auth.getUser();
-            if (!mounted) return;
-            if (userErr) {
-              console.warn("[auth] getUser (refresh in background)", userErr);
-            } else if (userData.user) {
-              setUser(userData.user);
+            const syncGrace = isAuthSyncGracePending();
+            const t0 = Date.now();
+            let { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+            if (sessionErr) {
+              console.warn("[auth] getSession", sessionErr);
             }
-          } catch (e) {
-            console.error("[auth] getUser unexpected", e);
+
+            if (syncGrace) {
+              const elapsed = Date.now() - t0;
+              const waitMs = Math.max(0, 2000 - elapsed);
+              if (waitMs > 0) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+              const second = await supabase.auth.getSession();
+              sessionData = second.data;
+              if (second.error) {
+                console.warn("[auth] getSession (after sync grace)", second.error);
+              }
+              clearAuthSyncGracePending();
+            }
+
+            if (!mounted) return;
+
+            setSession(sessionData.session);
+            setUser(sessionData.session?.user ?? null);
+            setAuthResolved(true);
+            setLoading(false);
+            setReady(true);
+
+            if (sessionData.session) {
+              void (async () => {
+                try {
+                  const { data: userData, error: userErr } = await supabase.auth.getUser();
+                  if (!mounted) return;
+                  if (userErr) {
+                    console.warn("[auth] getUser (refresh in background)", userErr);
+                  } else if (userData.user) {
+                    setUser(userData.user);
+                  }
+                } catch (e) {
+                  console.error("[auth] getUser unexpected", e);
+                }
+              })();
+            }
+          } catch (err) {
+            console.error("[auth-context] bootstrap", err);
+            if (!mounted) return;
+            clearAuthSyncGracePending();
+            setSession(null);
+            setUser(null);
+            setAuthResolved(true);
+            setLoading(false);
+            setReady(true);
           }
         })();
       }
+      return bootstrapPromise;
     };
 
-    void init().catch((err) => {
-      console.error("[auth-context] init", err);
-      if (!mounted) return;
-      setSession(null);
-      setUser(null);
-      setAuthResolved(true);
-      setLoading(false);
-      setReady(true);
+    void ensureBootstrap().catch((err) => {
+      console.error("[auth-context] ensureBootstrap", err);
     });
 
     const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -207,14 +239,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "INITIAL_SESSION") {
-        void supabase.auth.getSession().then(({ data }) => {
+        void ensureBootstrap().catch((err) => {
+          console.error("[auth-context] ensureBootstrap (INITIAL_SESSION)", err);
+        });
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        void (async () => {
+          const { data } = await supabase.auth.getSession();
           if (!mounted) return;
-          const s = data.session ?? nextSession ?? null;
-          setSession(s);
-          setUser(s?.user ?? null);
+          if (data.session?.user) {
+            setSession(data.session);
+            setUser(data.session.user);
+            setLoading(false);
+            setAuthResolved(true);
+            return;
+          }
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setProfileLoading(false);
           setLoading(false);
           setAuthResolved(true);
-        });
+        })();
         return;
       }
 
@@ -222,10 +270,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(nextSession?.user ?? null);
       setLoading(false);
       setAuthResolved(true);
-      if (event === "SIGNED_OUT") {
-        setProfile(null);
-        setProfileLoading(false);
-      }
     });
 
     return () => {

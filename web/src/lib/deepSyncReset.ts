@@ -9,6 +9,39 @@ export const SYNC_BADGE_EXTRA_KEY = "enigma:sync-badge-extra";
 export const SYNC_LAST_DEEP_SYNC_AT_KEY = "enigma:last-deep-sync-at";
 export const SYNC_BADGE_CHANGED_EVENT = "enigma-sync-badge-changed";
 
+/** После «Обновить» AuthProvider даёт сессии до 2 с на восстановление (mobile). JSON: `{ "is_syncing": true }`. */
+export const AUTH_SYNC_STATE_LS_KEY = "enigma_auth_sync_state";
+
+export function markAuthSyncGracePending(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(AUTH_SYNC_STATE_LS_KEY, JSON.stringify({ is_syncing: true }));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearAuthSyncGracePending(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(AUTH_SYNC_STATE_LS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isAuthSyncGracePending(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = localStorage.getItem(AUTH_SYNC_STATE_LS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { is_syncing?: unknown };
+    return parsed?.is_syncing === true;
+  } catch {
+    return false;
+  }
+}
+
 const FEED_LOCALSTORAGE_KEYS = ["cached_listings", "cached_listings_wanted", "feed_category"] as const;
 
 export function getSyncBadgeStoredExtra(): number {
@@ -48,6 +81,8 @@ export function dispatchSyncBadgeChanged(): void {
 
 export function runDeepApplicationSync(): void {
   if (typeof window === "undefined") return;
+
+  markAuthSyncGracePending();
 
   try {
     for (const k of FEED_LOCALSTORAGE_KEYS) {
