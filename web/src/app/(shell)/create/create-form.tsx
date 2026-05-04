@@ -25,6 +25,8 @@ import {
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CreatableSelect from "react-select/creatable";
+import type { SingleValue } from "react-select";
 import Select from "react-select";
 
 function parseUnknownError(error: unknown): string {
@@ -52,6 +54,104 @@ const CREATE_FORM_STORAGE_KEY = "create_form";
 /** Совпадает с ключом ленты (`page.tsx`): фильтры недвижимости для префилла «Снять». */
 const FEED_SESSION_STORAGE_KEY = "feed_state";
 
+const AUTO_ENGINE_VOLUME_PRESETS = [
+  "1.0",
+  "1.2",
+  "1.4",
+  "1.5",
+  "1.6",
+  "1.8",
+  "2.0",
+  "2.5",
+  "3.0",
+  "3.5",
+  "4.0",
+  "4.4",
+  "5.0",
+  "5.5",
+  "6.0",
+  "6.7",
+] as const;
+
+const AUTO_ENGINE_POWER_PRESETS = [
+  "75",
+  "90",
+  "100",
+  "109",
+  "120",
+  "125",
+  "136",
+  "150",
+  "156",
+  "163",
+  "174",
+  "180",
+  "190",
+  "200",
+  "211",
+  "218",
+  "224",
+  "249",
+  "275",
+  "300",
+  "340",
+  "400",
+  "450",
+  "510",
+  "550",
+] as const;
+
+type AutoComboOption = { value: string; label: string };
+
+const AUTO_VOLUME_OPTIONS: AutoComboOption[] = AUTO_ENGINE_VOLUME_PRESETS.map((v) => ({
+  value: v,
+  label: `${v} л`,
+}));
+
+const AUTO_HP_OPTIONS: AutoComboOption[] = AUTO_ENGINE_POWER_PRESETS.map((v) => ({
+  value: v,
+  label: `${v} л.с.`,
+}));
+
+function AutoEngineCreatable({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: readonly AutoComboOption[];
+  placeholder: string;
+}) {
+  const trimmed = value.trim();
+  const selected: AutoComboOption | null = trimmed
+    ? options.some((o) => o.value === trimmed)
+      ? options.find((o) => o.value === trimmed)!
+      : { value: trimmed, label: trimmed }
+    : null;
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</label>
+      <CreatableSelect<AutoComboOption, false>
+        className="react-select-container"
+        classNamePrefix="react-select"
+        placeholder={placeholder}
+        isClearable
+        options={[...options]}
+        value={selected}
+        formatCreateLabel={(inputValue) => `Добавить «${inputValue}»`}
+        onChange={(opt: SingleValue<AutoComboOption>) => {
+          onChange(String(opt?.value ?? "").trim());
+        }}
+      />
+    </div>
+  );
+}
+
 type AutoParams = {
   brand: string;
   model: string;
@@ -61,6 +161,10 @@ type AutoParams = {
   fuel: string;
   transmission: string;
   drive: string;
+  /** Мощность, л.с. — пресет или свой текст */
+  enginePowerHp: string;
+  /** Объём двигателя, л — пресет или свой текст */
+  engineVolumeL: string;
   customsCleared: string;
   damaged: string;
 };
@@ -126,6 +230,8 @@ const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
     fuel: "",
     transmission: "",
     drive: "",
+    enginePowerHp: "",
+    engineVolumeL: "",
     customsCleared: "",
     damaged: "",
   },
@@ -689,6 +795,8 @@ export function CreateListingForm() {
         ["Тип топлива", p.fuel],
         ["Коробка передач", p.transmission],
         ["Привод", p.drive],
+        ["Мощность (л.с.)", p.enginePowerHp],
+        ["Объем (л)", p.engineVolumeL],
         ["Растаможен", p.customsCleared],
         ["Битый", p.damaged],
       );
@@ -806,6 +914,8 @@ export function CreateListingForm() {
         fuel: p.fuel.trim() || null,
         transmission: p.transmission.trim() || null,
         drive: p.drive.trim() || null,
+        engine_power: p.enginePowerHp.trim() || null,
+        engine_volume: p.engineVolumeL.trim() || null,
         is_cleared: toBoolOrNull(p.customsCleared),
         is_damaged: toBoolOrNull(p.damaged),
       };
@@ -1042,6 +1152,14 @@ export function CreateListingForm() {
             })()
           : null;
 
+      const autoExtras =
+        category === "auto"
+          ? {
+              engine_power: categoryParams.auto.enginePowerHp.trim() || null,
+              engine_volume: categoryParams.auto.engineVolumeL.trim() || null,
+            }
+          : null;
+
       const res = await insertListingRow({
         title: title.trim(),
         description: finalDescription,
@@ -1052,6 +1170,7 @@ export function CreateListingForm() {
         user_id: uid,
         owner_id: uid,
         contact_phone: profile?.phone || null,
+        ...(autoExtras ?? {}),
         ...(realestateExtras ?? {}),
       });
       console.log("CREATE LISTING RESULT", res);
@@ -1351,6 +1470,22 @@ export function CreateListingForm() {
               <option value="Задний">Задний</option>
               <option value="Полный">Полный</option>
             </select>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <AutoEngineCreatable
+              label="Мощность (л.с.)"
+              value={categoryParams.auto.enginePowerHp}
+              onChange={(next) => updateCategoryParam("auto", "enginePowerHp", next)}
+              options={AUTO_HP_OPTIONS}
+              placeholder="Выберите или введите"
+            />
+            <AutoEngineCreatable
+              label="Объем (л)"
+              value={categoryParams.auto.engineVolumeL}
+              onChange={(next) => updateCategoryParam("auto", "engineVolumeL", next)}
+              options={AUTO_VOLUME_OPTIONS}
+              placeholder="Выберите или введите"
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <select value={categoryParams.auto.customsCleared} onChange={(e) => updateCategoryParam("auto", "customsCleared", e.target.value)} className={inputClass}>

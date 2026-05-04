@@ -50,6 +50,10 @@ export type ListingInsertPayload = {
   land_ownership_status?: string | null;
   /** sale | rent */
   deal_type?: string | null;
+  /** Авто: мощность (л.с.), текст. */
+  engine_power?: string | null;
+  /** Авто: объём двигателя (л), текст. */
+  engine_volume?: string | null;
 };
 
 export type ListingRow = {
@@ -91,6 +95,8 @@ export type ListingRow = {
   plot_area?: string | null;
   land_type?: string | null;
   land_ownership_status?: string | null;
+  engine_power?: string | null;
+  engine_volume?: string | null;
   /** Структурированные параметры объявления (jsonb). */
   params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];

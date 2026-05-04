@@ -53,6 +53,17 @@ function applyListingRealEstateColumns(row: ListingRow, data: Record<string, unk
   if (typeof data.comms_sewage === "boolean") row.comms_sewage = data.comms_sewage;
 }
 
+function applyListingAutoEngineColumns(row: ListingRow, data: Record<string, unknown>): void {
+  const ep = data.engine_power;
+  if (ep != null && String(ep).trim() !== "") {
+    row.engine_power = String(ep).trim();
+  }
+  const ev = data.engine_volume;
+  if (ev != null && String(ev).trim() !== "") {
+    row.engine_volume = String(ev).trim();
+  }
+}
+
 function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
   const seen = new Set<string>();
   const out: ListingRow[] = [];
@@ -90,6 +101,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
       ? (data.params as Record<string, unknown>)
       : null;
   applyListingRealEstateColumns(row, data);
+  applyListingAutoEngineColumns(row, data);
   return row;
 }
 
@@ -751,6 +763,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
       ? (data.params as Record<string, unknown>)
       : null;
   applyListingRealEstateColumns(row, data);
+  applyListingAutoEngineColumns(row, data);
   return row;
 }
 
@@ -886,6 +899,8 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       land_type?: string | null;
       land_ownership_status?: string | null;
       deal_type?: string | null;
+      engine_power?: string | null;
+      engine_volume?: string | null;
     };
     const payloadParams =
       payload.params && typeof payload.params === "object"
@@ -947,6 +962,12 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     if (payloadExtended.deal_type === "rent" || payloadExtended.deal_type === "sale") {
       insertPayload.deal_type = payloadExtended.deal_type;
+    }
+    if (payloadExtended.engine_power != null && String(payloadExtended.engine_power).trim() !== "") {
+      insertPayload.engine_power = String(payloadExtended.engine_power).trim();
+    }
+    if (payloadExtended.engine_volume != null && String(payloadExtended.engine_volume).trim() !== "") {
+      insertPayload.engine_volume = String(payloadExtended.engine_volume).trim();
     }
 
     console.log("INSERT PHONE:", payloadContactPhone);
