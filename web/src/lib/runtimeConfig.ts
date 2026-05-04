@@ -79,6 +79,18 @@ export function getMaxListingPhotos(): number {
   return clampInt(fromEnv ?? fallback, 1, 30);
 }
 
+/**
+ * Цена продления архивного объявления (₽). 0 = бесплатно через RPC `renew_listing`.
+ * Если > 0 — переход на оплату; подтверждение платежа и продление на сервере нужно связать отдельно (webhook).
+ */
+export function getListingRenewalPriceRub(): number {
+  const raw = process.env.NEXT_PUBLIC_LISTING_RENEWAL_PRICE_RUB?.trim();
+  if (!raw) return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
 export function getSupabasePublicConfig(): { url: string; anonKey: string; configured: boolean } {
   const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
   const rawAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || "";

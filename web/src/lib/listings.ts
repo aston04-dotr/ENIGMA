@@ -87,6 +87,17 @@ function applyListingMotoColumns(row: ListingRow, data: Record<string, unknown>)
   }
 }
 
+function applyListingExpiryColumns(row: ListingRow, data: Record<string, unknown>): void {
+  const st = data.status;
+  if (st != null && String(st).trim() !== "") {
+    row.status = String(st).trim();
+  }
+  const ex = data.expires_at;
+  if (ex != null && String(ex).trim() !== "") {
+    row.expires_at = String(ex).trim();
+  }
+}
+
 function dedupeListingsById(rows: ListingRow[]): ListingRow[] {
   const seen = new Set<string>();
   const out: ListingRow[] = [];
@@ -126,6 +137,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   applyListingRealEstateColumns(row, data);
   applyListingAutoEngineColumns(row, data);
   applyListingMotoColumns(row, data);
+  applyListingExpiryColumns(row, data);
   return row;
 }
 
@@ -153,6 +165,7 @@ function getDemoListings(): ListingRow[] {
       city: "Москва",
       view_count: 0,
       created_at: now,
+      status: "active",
       images: [],
       is_boosted: false,
       is_partner_ad: false,
@@ -198,6 +211,7 @@ function listingsFeedSelectBase() {
   return supabase
     .from("listings")
     .select(FEED_SELECT)
+    .eq("status", "active")
     .in("city", [...ALLOWED_LISTING_CITIES])
     .order("sort_order", { ascending: true, foreignTable: "images" })
     .order("created_at", { ascending: false })
@@ -789,6 +803,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
   applyListingRealEstateColumns(row, data);
   applyListingAutoEngineColumns(row, data);
   applyListingMotoColumns(row, data);
+  applyListingExpiryColumns(row, data);
   return row;
 }
 

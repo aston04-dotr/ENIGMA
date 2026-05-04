@@ -112,6 +112,10 @@ export type ListingRow = {
   moto_mileage?: string | null;
   moto_customs_cleared?: string | null;
   moto_owners_pts?: string | null;
+  /** active — в ленте; expired — архив (не показываем в общей ленте). */
+  status?: string | null;
+  /** Конец периода публикации (ISO UTC с сервера). */
+  expires_at?: string | null;
   /** Структурированные параметры объявления (jsonb). */
   params?: Record<string, unknown> | null;
   images?: { url: string; sort_order?: number }[];

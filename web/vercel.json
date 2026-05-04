@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/listing-expiry",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

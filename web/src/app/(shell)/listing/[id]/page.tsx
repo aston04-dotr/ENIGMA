@@ -13,6 +13,8 @@ import {
   normalizeListingImages,
   toggleFavorite,
 } from "@/lib/listings";
+import { renewListingPublication } from "@/lib/listingRenewal";
+import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { categoryLabel } from "@/lib/categories";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import Image from "next/image";
@@ -69,6 +71,7 @@ export default function ListingDetailPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const chatOpenInFlightRef = useRef(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [renewingPublication, setRenewingPublication] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -147,6 +150,31 @@ export default function ListingDetailPage() {
     row && viewerId && ownerId && ownerId === viewerId,
   );
   const partnerListing = safeItem?.is_partner_ad === true;
+  const listingExpired = String(safeItem.status ?? "") === "expired";
+
+  const handleRenewPublication = useCallback(async () => {
+    if (!rowId) return;
+    const priceRub = getListingRenewalPriceRub();
+    if (priceRub > 0) {
+      router.push(
+        `/payment?type=listing_renew&listingId=${encodeURIComponent(rowId)}&amount=${encodeURIComponent(String(priceRub))}&title=${encodeURIComponent("Продление публикации объявления")}`,
+      );
+      return;
+    }
+    setRenewingPublication(true);
+    const res = await renewListingPublication(rowId);
+    setRenewingPublication(false);
+    if (!res.ok) {
+      setToast({
+        message: res.error ?? "Не удалось продлить публикацию",
+        type: "error",
+      });
+      return;
+    }
+    const refreshed = await fetchListingById(rowId);
+    if (refreshed.row) setRow(refreshed.row);
+    setToast({ message: "Публикация продлена на 30 дней", type: "success" });
+  }, [rowId, router]);
 
   useEffect(() => {
     setFavoriteCountLocal(favoriteCountFromRow);
@@ -430,6 +458,21 @@ export default function ListingDetailPage() {
               }}
             />
           </div>
+          {listingExpired ? (
+            <div className="mt-4 rounded-[14px] border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-[14px] leading-snug text-fg">
+              {isOwnListing ? (
+                <>
+                  <span className="font-semibold text-amber-800 dark:text-amber-200">В архиве.</span>{" "}
+                  Срок публикации истёк — объявление не показывается в ленте. Продлите публикацию, чтобы вернуть его.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold text-amber-800 dark:text-amber-200">Снято с публикации.</span>{" "}
+                  Чат по объявлению недоступен; при необходимости свяжитесь по телефону ниже.
+                </>
+              )}
+            </div>
+          ) : null}
           <p className="mt-6 whitespace-pre-wrap text-[15px] leading-relaxed text-fg opacity-90">
             {description}
           </p>
@@ -438,6 +481,16 @@ export default function ListingDetailPage() {
           {isOwnListing ? (
             /* Owner sees: Edit + Boost */
             <div className="mt-8 space-y-3">
+              {listingExpired ? (
+                <button
+                  type="button"
+                  disabled={renewingPublication}
+                  onClick={() => void handleRenewPublication()}
+                  className="flex w-full min-h-[56px] items-center justify-center rounded-[16px] bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#dc2626] text-[16px] font-bold text-white shadow-[0_8px_28px_rgba(234,88,12,0.38)] transition-all duration-200 hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {renewingPublication ? "Продление…" : "Продлить публикацию"}
+                </button>
+              ) : null}
               <Link
                 href={`/listing/edit/${rowId}`}
                 className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-line bg-elevated py-4 text-[16px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-md active:scale-[0.98]"
@@ -461,14 +514,20 @@ export default function ListingDetailPage() {
           ) : (
             /* Others see: Write + Copy Phone */
             <div className="mt-8 space-y-3">
-              <button
-                type="button"
-                disabled={isChatLoading}
-                onClick={() => void openChat(ownerId)}
-                className="w-full min-h-[56px] rounded-card bg-accent py-4 text-[17px] font-semibold text-white transition-all duration-200 hover:bg-accent-hover hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20"
-              >
-                {isChatLoading ? "Открываем чат…" : "💬 Написать"}
-              </button>
+              {!listingExpired ? (
+                <button
+                  type="button"
+                  disabled={isChatLoading}
+                  onClick={() => void openChat(ownerId)}
+                  className="w-full min-h-[56px] rounded-card bg-accent py-4 text-[17px] font-semibold text-white transition-all duration-200 hover:bg-accent-hover hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20"
+                >
+                  {isChatLoading ? "Открываем чат…" : "💬 Написать"}
+                </button>
+              ) : (
+                <div className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-line bg-elev-2 px-4 py-4 text-center text-[15px] font-semibold text-muted">
+                  Чат недоступен — объявление в архиве
+                </div>
+              )}
               {chatError ? (
                 <p className="text-sm font-medium text-danger">{chatError}</p>
               ) : null}

@@ -182,6 +182,41 @@ export type Database = {
           },
         ]
       }
+      listing_owner_notices: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          kind: string
+          listing_id: string | null
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          kind: string
+          listing_id?: string | null
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          listing_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_owner_notices_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listings: {
         Row: {
           boosted_at: string | null
@@ -191,6 +226,9 @@ export type Database = {
           contact_phone: string | null
           created_at: string | null
           description: string | null
+          expiry_archive_notice_sent_at: string | null
+          expiry_reminder_sent_at: string | null
+          expires_at: string
           id: string
           is_boosted: boolean | null
           is_partner_ad: boolean | null
@@ -198,6 +236,7 @@ export type Database = {
           is_vip: boolean | null
           owner_id: string | null
           price: number | null
+          status: string
           title: string | null
           top_until: string | null
           updated_at: string | null
@@ -213,6 +252,9 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string | null
           description?: string | null
+          expiry_archive_notice_sent_at?: string | null
+          expiry_reminder_sent_at?: string | null
+          expires_at?: string
           id?: string
           is_boosted?: boolean | null
           is_partner_ad?: boolean | null
@@ -220,6 +262,7 @@ export type Database = {
           is_vip?: boolean | null
           owner_id?: string | null
           price?: number | null
+          status?: string
           title?: string | null
           top_until?: string | null
           updated_at?: string | null
@@ -235,6 +278,9 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string | null
           description?: string | null
+          expiry_archive_notice_sent_at?: string | null
+          expiry_reminder_sent_at?: string | null
+          expires_at?: string
           id?: string
           is_boosted?: boolean | null
           is_partner_ad?: boolean | null
@@ -242,6 +288,7 @@ export type Database = {
           is_vip?: boolean | null
           owner_id?: string | null
           price?: number | null
+          status?: string
           title?: string | null
           top_until?: string | null
           updated_at?: string | null
@@ -583,6 +630,8 @@ export type Database = {
         Returns: boolean
       }
       increment_listing_views: { Args: { listing: string }; Returns: undefined }
+      renew_listing: { Args: { p_listing_id: string }; Returns: undefined }
+      run_listing_expiry_jobs: { Args: Record<string, never>; Returns: Json }
       listing_favorites_count: {
         Args: { listing_id_input: string }
         Returns: number

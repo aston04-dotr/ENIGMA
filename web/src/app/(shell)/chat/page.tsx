@@ -6,7 +6,7 @@ import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function formatTimeLabel(value: string | null): string {
   if (!value) return "";
@@ -103,6 +103,26 @@ export default function ChatsPage() {
   const router = useRouter();
   const { session } = useAuth();
   const { rows, loading, error, refreshChats } = useChatUnread();
+  const [systemNotices, setSystemNotices] = useState<
+    import("@/lib/listingNotices").ListingOwnerNoticeRow[]
+  >([]);
+  const [noticesLoading, setNoticesLoading] = useState(false);
+
+  const loadNotices = async () => {
+    if (!session?.user?.id) {
+      setSystemNotices([]);
+      return;
+    }
+    setNoticesLoading(true);
+    try {
+      const { fetchListingOwnerNotices } = await import("@/lib/listingNotices");
+      const list = await fetchListingOwnerNotices(20);
+      setSystemNotices(list);
+    } finally {
+      setNoticesLoading(false);
+    }
+  };
+
   const sortedRows = useMemo(
     () =>
       [...rows].sort((a, b) => {
@@ -118,6 +138,7 @@ export default function ChatsPage() {
   useEffect(() => {
     if (!session?.user) return;
     void refreshChats();
+    void loadNotices();
   }, [refreshChats, session?.user]);
 
   if (!session?.user) {
@@ -140,7 +161,10 @@ export default function ChatsPage() {
         <h1 className="text-[26px] font-bold tracking-tight text-fg">Чаты</h1>
         <button
           type="button"
-          onClick={() => void refreshChats()}
+          onClick={() => {
+            void refreshChats();
+            void loadNotices();
+          }}
           className="pressable min-h-[40px] rounded-full border border-line px-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted transition-colors duration-ui hover:text-fg"
         >
           Обновить
@@ -151,6 +175,27 @@ export default function ChatsPage() {
         <div className="mt-4">
           <ErrorUi text={error} />
         </div>
+      ) : null}
+
+      {systemNotices.length > 0 ? (
+        <section className="mt-6 space-y-2" aria-label="Уведомления по объявлениям">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Уведомления
+          </p>
+          <ul className="space-y-2">
+            {systemNotices.map((n) => (
+              <li
+                key={n.id}
+                className="rounded-card border border-accent/25 bg-accent/8 px-4 py-3 text-left shadow-soft"
+              >
+                <p className="text-[13px] leading-snug text-fg">{n.body}</p>
+                <p className="mt-2 text-[11px] text-muted">{formatTimeLabel(n.created_at)}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : noticesLoading ? (
+        <p className="mt-4 text-xs text-muted">Загрузка уведомлений…</p>
       ) : null}
 
       {loading && sortedRows.length === 0 ? (
@@ -172,7 +217,9 @@ export default function ChatsPage() {
         </ul>
       ) : null}
 
-      <ul className="mt-6 space-y-3">
+      <p className="mt-8 text-[11px] font-semibold uppercase tracking-wider text-muted">Диалоги</p>
+
+      <ul className="mt-3 space-y-3">
         {sortedRows.map((row) => {
           const displayName = buildDisplayName(row);
           const preview = buildPreview(row);

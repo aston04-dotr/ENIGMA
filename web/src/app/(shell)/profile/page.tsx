@@ -6,6 +6,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { getMyListings } from "@/lib/listings";
+import { renewListingPublication } from "@/lib/listingRenewal";
+import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { deleteAccount } from "@/lib/deleteAccount";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { supabase } from "@/lib/supabase";
@@ -13,7 +15,7 @@ import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import type { ListingRow } from "@/lib/types";
 
 type PackageSize = "small" | "base" | "pro";
@@ -129,12 +131,63 @@ export default function ProfilePage() {
   const [myListings, setMyListings] = useState<ListingRow[]>([]);
   const [myListingsLoading, setMyListingsLoading] = useState(true);
   const [myListingsError, setMyListingsError] = useState<string | null>(null);
+  const [listingProfileTab, setListingProfileTab] = useState<"active" | "archive">("active");
+  const [renewingListingId, setRenewingListingId] = useState<string | null>(null);
   const profileNameValue = (profile?.name ?? "").trim();
   const profilePhoneValue = (profile?.phone ?? "").trim();
   const isDirty =
     nameInput.trim() !== profileNameValue ||
     phoneInput.trim() !== profilePhoneValue;
   const { safePush } = useUnsavedChangesGuard(isDirty, { enabled: guardEnabled });
+
+  const reloadMyListings = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid) {
+      setMyListings([]);
+      setMyListingsLoading(false);
+      setMyListingsError(null);
+      return;
+    }
+    setMyListingsLoading(true);
+    setMyListingsError(null);
+    try {
+      const rows = await getMyListings(uid);
+      setMyListings(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error("MY LISTINGS LOAD ERROR", error);
+      setMyListings([]);
+      setMyListingsError("Не удалось загрузить ваши объявления");
+    } finally {
+      setMyListingsLoading(false);
+    }
+  }, [session?.user?.id]);
+
+  const activeProfileListings = useMemo(
+    () =>
+      (myListings || []).filter(
+        (listing) =>
+          listing &&
+          typeof listing === "object" &&
+          Boolean(listing.id) &&
+          String(listing.status ?? "active") !== "expired",
+      ),
+    [myListings],
+  );
+
+  const archiveProfileListings = useMemo(
+    () =>
+      (myListings || []).filter(
+        (listing) =>
+          listing &&
+          typeof listing === "object" &&
+          Boolean(listing.id) &&
+          String(listing.status ?? "") === "expired",
+      ),
+    [myListings],
+  );
+
+  const shownProfileListings =
+    listingProfileTab === "active" ? activeProfileListings : archiveProfileListings;
 
   useEffect(() => {
     if (!authResolved || loading) return;
@@ -151,36 +204,29 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!authResolved || loading) return;
-    const uid = session?.user?.id;
-    if (!uid) {
-      setMyListings([]);
-      setMyListingsLoading(false);
+    void reloadMyListings();
+  }, [authResolved, loading, reloadMyListings]);
+
+  async function handleRenewListing(listingId: string) {
+    const lid = String(listingId ?? "").trim();
+    if (!lid) return;
+    const priceRub = getListingRenewalPriceRub();
+    if (priceRub > 0) {
+      safePush(
+        router,
+        `/payment?type=listing_renew&listingId=${encodeURIComponent(lid)}&amount=${encodeURIComponent(String(priceRub))}&title=${encodeURIComponent("Продление публикации объявления")}`,
+      );
       return;
     }
-
-    let cancelled = false;
-    setMyListingsLoading(true);
-    setMyListingsError(null);
-
-    void (async () => {
-      try {
-        const rows = await getMyListings(uid);
-        if (cancelled) return;
-        setMyListings(Array.isArray(rows) ? rows : []);
-      } catch (error) {
-        if (cancelled) return;
-        console.error("MY LISTINGS LOAD ERROR", error);
-        setMyListings([]);
-        setMyListingsError("Не удалось загрузить ваши объявления");
-      } finally {
-        if (!cancelled) setMyListingsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.user?.id, authResolved, loading]);
+    setRenewingListingId(lid);
+    const res = await renewListingPublication(lid);
+    setRenewingListingId(null);
+    if (!res.ok) {
+      if (typeof window !== "undefined") window.alert(res.error ?? "Не удалось продлить публикацию");
+      return;
+    }
+    await reloadMyListings();
+  }
 
   async function handleDelete(id: string) {
     const uid = session?.user?.id;
@@ -456,7 +502,7 @@ export default function ProfilePage() {
 
       {/* Мои объявления */}
       <section className="pt-0.5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[20px] font-semibold tracking-tight text-fg">Мои объявления</h2>
           <Link
             href="/create"
@@ -470,39 +516,85 @@ export default function ProfilePage() {
           </Link>
         </div>
 
+        {!myListingsLoading && !myListingsError && (myListings || []).length > 0 ? (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setListingProfileTab("active")}
+              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+                listingProfileTab === "active"
+                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  : isDark
+                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
+                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Активные
+              <span className="ml-1.5 font-normal opacity-80">({activeProfileListings.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setListingProfileTab("archive")}
+              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+                listingProfileTab === "archive"
+                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  : isDark
+                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
+                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Архив
+              <span className="ml-1.5 font-normal opacity-80">({archiveProfileListings.length})</span>
+            </button>
+          </div>
+        ) : null}
+
         {myListingsLoading ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка...</div>
         ) : myListingsError ? (
           <div className="rounded-card border border-danger/30 bg-danger/5 p-4 text-sm text-danger">{myListingsError}</div>
         ) : (myListings || []).length === 0 ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
+        ) : shownProfileListings.length === 0 ? (
+          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">
+            {listingProfileTab === "active"
+              ? "Нет активных объявлений — всё в архиве или ещё не создано."
+              : "В архиве пока пусто."}
+          </div>
         ) : (
           <div className="space-y-4">
-            {(myListings || [])
-              .filter(
-                (listing) =>
-                  listing && typeof listing === "object" && Boolean(listing.id),
-              )
-              .map((safeListing) => {
+            {shownProfileListings.map((safeListing) => {
               const isOwner = safeListing.user_id === session?.user?.id;
               return (
                 <div key={safeListing.id} className="rounded-[16px] bg-elevated/28 p-1.5 transition-all duration-200">
                   <ListingCard item={safeListing} compact />
                   {isOwner ? (
-                    <div className="flex gap-2 p-2.5 pt-0">
-                      <Link
-                        href={`/listing/edit/${safeListing.id}`}
-                        className="flex min-h-[42px] flex-1 items-center justify-center rounded-[12px] border border-line/50 bg-elevated px-3 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
-                      >
-                        Редактировать
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(safeListing.id)}
-                        className="min-h-[42px] rounded-[12px] border border-danger/35 bg-danger/5 px-3.5 text-sm font-medium text-danger transition-all duration-200 hover:bg-danger/10 active:scale-[0.98]"
-                      >
-                        Удалить
-                      </button>
+                    <div className="flex flex-col gap-2 p-2.5 pt-0">
+                      {listingProfileTab === "archive" ? (
+                        <button
+                          type="button"
+                          disabled={renewingListingId === safeListing.id}
+                          onClick={() => void handleRenewListing(safeListing.id)}
+                          className="flex min-h-[46px] w-full items-center justify-center rounded-[12px] bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#dc2626] px-3 text-sm font-bold text-white shadow-[0_6px_20px_rgba(234,88,12,0.35)] transition-all duration-200 hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {renewingListingId === safeListing.id ? "Продление…" : "Продлить публикацию"}
+                        </button>
+                      ) : null}
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/listing/edit/${safeListing.id}`}
+                          className="flex min-h-[42px] flex-1 items-center justify-center rounded-[12px] border border-line/50 bg-elevated px-3 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
+                        >
+                          Редактировать
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(safeListing.id)}
+                          className="min-h-[42px] rounded-[12px] border border-danger/35 bg-danger/5 px-3.5 text-sm font-medium text-danger transition-all duration-200 hover:bg-danger/10 active:scale-[0.98]"
+                        >
+                          Удалить
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
