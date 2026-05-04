@@ -7,6 +7,8 @@ type Props = {
   isFavorited?: boolean;
   onToggleFavorite?: () => void;
   variant?: "card" | "detail";
+  /** Не показывать блок избранного (иконка вынесена отдельно). */
+  omitFavorite?: boolean;
 };
 
 function EyeIcon({ className }: { className?: string }) {
@@ -76,6 +78,7 @@ export function ListingMetricsRow({
   isFavorited = false,
   onToggleFavorite,
   variant = "card",
+  omitFavorite = false,
 }: Props) {
   const safeViews = Number.isFinite(Number(views)) ? Number(views) : 0;
   const safeFavorites = Number.isFinite(Number(favorites)) ? Number(favorites) : 0;
@@ -100,26 +103,7 @@ export function ListingMetricsRow({
         </span>
       ) : null}
 
-      {onToggleFavorite ? (
-        <button
-          type="button"
-          onClick={onToggleFavorite}
-          aria-label={
-            isFavorited ? "Убрать из избранного" : "Добавить в избранное"
-          }
-          className={`inline-flex items-center gap-1 leading-none tabular-nums transition-all duration-150 ${
-            isFavorited
-              ? "text-red-500 opacity-100 scale-110"
-              : "text-gray-400 hover:opacity-100 hover:text-gray-500"
-          }`}
-        >
-          <HeartIcon
-            className="h-4 w-4 transition-transform duration-150"
-            filled={isFavorited}
-          />
-          <span>{safeFavorites}</span>
-        </button>
-      ) : (
+      {omitFavorite ? (
         <span
           className={`inline-flex items-center gap-1 leading-none tabular-nums ${
             isFavorited ? "text-red-500 opacity-100" : "text-gray-400"
@@ -128,7 +112,35 @@ export function ListingMetricsRow({
           <HeartIcon className="h-4 w-4" filled={isFavorited} />
           <span>{safeFavorites}</span>
         </span>
-      )}
+      ) : onToggleFavorite ? (
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            aria-label={
+              isFavorited ? "Убрать из избранного" : "Добавить в избранное"
+            }
+            className={`inline-flex items-center gap-1 leading-none tabular-nums transition-all duration-150 ${
+              isFavorited
+                ? "text-red-500 opacity-100 scale-110"
+                : "text-gray-400 hover:opacity-100 hover:text-gray-500"
+            }`}
+          >
+            <HeartIcon
+              className="h-4 w-4 transition-transform duration-150"
+              filled={isFavorited}
+            />
+            <span>{safeFavorites}</span>
+          </button>
+        ) : (
+          <span
+            className={`inline-flex items-center gap-1 leading-none tabular-nums ${
+              isFavorited ? "text-red-500 opacity-100" : "text-gray-400"
+            }`}
+          >
+            <HeartIcon className="h-4 w-4" filled={isFavorited} />
+            <span>{safeFavorites}</span>
+          </span>
+        )}
     </div>
   );
 }

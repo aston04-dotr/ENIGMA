@@ -1,6 +1,8 @@
 "use client";
 
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
+import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
+import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { useAuth } from "@/context/auth-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
@@ -14,13 +16,17 @@ import {
   toggleFavorite,
 } from "@/lib/listings";
 import { renewListingPublication } from "@/lib/listingRenewal";
+import { ownerArchiveListing, ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
+import { reportListingTrustPenalty } from "@/lib/trust";
+import { trackEvent } from "@/lib/analytics";
 import { categoryLabel } from "@/lib/categories";
+import { hideListingInFeed } from "@/lib/feedHiddenListings";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 const FEED_STATE_KEY = "feed_state";
 
@@ -72,6 +78,7 @@ export default function ListingDetailPage() {
   const chatOpenInFlightRef = useRef(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [renewingPublication, setRenewingPublication] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -247,6 +254,129 @@ export default function ListingDetailPage() {
     router.push("/");
   }, [router]);
 
+  const handleToggleFavorite = useCallback(() => {
+    if (favoriteBusy || !rowId) return;
+    if (!viewerId) {
+      router.push("/login");
+      return;
+    }
+    setFavoriteBusy(true);
+    void toggleFavorite({
+      listingId: rowId,
+      state: {
+        isFavorited: isFavoritedLocal,
+        favoriteCount: favoriteCountLocal,
+      },
+      onOptimistic: (next) => {
+        setIsFavoritedLocal(next.isFavorited);
+        setFavoriteCountLocal(next.favoriteCount);
+      },
+      onRollback: (prev) => {
+        setIsFavoritedLocal(prev.isFavorited);
+        setFavoriteCountLocal(prev.favoriteCount);
+      },
+    }).finally(() => setFavoriteBusy(false));
+  }, [
+    favoriteBusy,
+    favoriteCountLocal,
+    isFavoritedLocal,
+    rowId,
+    router,
+    viewerId,
+  ]);
+
+  const listingSheetActions = useMemo((): ListingSheetAction[] => {
+    const id = String(rowId ?? "").trim();
+    if (!id) return [];
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const shareUrl = `${origin}/listing/${id}`;
+
+    const actions: ListingSheetAction[] = [
+      {
+        id: "share",
+        label: "Поделиться",
+        onSelect: () => {
+          void navigator.clipboard.writeText(shareUrl).then(
+            () => setToast({ message: "Ссылка скопирована", type: "success" }),
+            () => setToast({ message: "Не удалось скопировать ссылку", type: "error" }),
+          );
+        },
+      },
+    ];
+
+    if (!isOwnListing) {
+      actions.push(
+        {
+          id: "report",
+          label: "Пожаловаться",
+          onSelect: () => {
+            if (!viewerId) {
+              router.push("/login");
+              return;
+            }
+            if (!window.confirm("Отправить жалобу на это объявление?")) return;
+            void reportListingTrustPenalty(id, "listing_detail_report").then(({ error }) => {
+              setToast({
+                message: error ? error : "Жалоба отправлена",
+                type: error ? "error" : "success",
+              });
+            });
+          },
+        },
+        {
+          id: "hide",
+          label: "Скрыть объявление",
+          onSelect: () => {
+            hideListingInFeed(id);
+            trackEvent("listing_hide_feed", { listing_id: id });
+            setToast({ message: "Скрыто в ленте на этом устройстве", type: "info" });
+          },
+        },
+      );
+    } else {
+      actions.push(
+        {
+          id: "edit",
+          label: "Редактировать",
+          onSelect: () => router.push(`/listing/edit/${id}`),
+        },
+        {
+          id: "archive",
+          label: "В архив",
+          onSelect: () => {
+            if (!window.confirm("Снять объявление с публикации?")) return;
+            void ownerArchiveListing(id).then(async (res) => {
+              if (!res.ok) {
+                setToast({ message: res.error ?? "Не удалось архивировать", type: "error" });
+                return;
+              }
+              const refreshed = await fetchListingById(id);
+              if (refreshed.row) setRow(refreshed.row);
+              setToast({ message: "Объявление снято с публикации", type: "success" });
+            });
+          },
+        },
+        {
+          id: "delete",
+          label: "Удалить",
+          destructive: true,
+          onSelect: () => {
+            if (!window.confirm("Удалить объявление безвозвратно?")) return;
+            void ownerDeleteListing(id).then((res) => {
+              if (!res.ok) {
+                setToast({ message: res.error ?? "Не удалось удалить", type: "error" });
+                return;
+              }
+              router.push("/profile/listings");
+            });
+          },
+        },
+      );
+    }
+
+    return actions;
+  }, [isOwnListing, router, rowId, viewerId]);
+
   if (loading) {
     return (
       <main className="p-5">
@@ -359,6 +489,7 @@ export default function ListingDetailPage() {
             onClose={() => setToast(null)}
           />
         )}
+        <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
         <div className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
             <Image
@@ -379,6 +510,21 @@ export default function ListingDetailPage() {
               {safeIndex + 1} из {imgs.length}
             </div>
           ) : null}
+          <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+            <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={handleToggleFavorite} />
+            <button
+              type="button"
+              aria-label="Действия"
+              onClick={() => setActionsOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-[18px] w-[18px]" aria-hidden>
+                <circle cx="12" cy="6" r="1.65" />
+                <circle cx="12" cy="12" r="1.65" />
+                <circle cx="12" cy="18" r="1.65" />
+              </svg>
+            </button>
+          </div>
           <button
             type="button"
             onClick={handleBackToFeed}
@@ -433,29 +579,7 @@ export default function ListingDetailPage() {
               live={liveViewers ?? undefined}
               isFavorited={isFavoritedLocal}
               variant="detail"
-              onToggleFavorite={() => {
-                if (favoriteBusy || !rowId) return;
-                if (!viewerId) {
-                  router.push("/login");
-                  return;
-                }
-                setFavoriteBusy(true);
-                void toggleFavorite({
-                  listingId: rowId,
-                  state: {
-                    isFavorited: isFavoritedLocal,
-                    favoriteCount: favoriteCountLocal,
-                  },
-                  onOptimistic: (next) => {
-                    setIsFavoritedLocal(next.isFavorited);
-                    setFavoriteCountLocal(next.favoriteCount);
-                  },
-                  onRollback: (prev) => {
-                    setIsFavoritedLocal(prev.isFavorited);
-                    setFavoriteCountLocal(prev.favoriteCount);
-                  },
-                }).finally(() => setFavoriteBusy(false));
-              }}
+              omitFavorite
             />
           </div>
           {listingExpired ? (

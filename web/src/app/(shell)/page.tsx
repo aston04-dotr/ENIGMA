@@ -19,6 +19,10 @@ import {
   getCitiesFromDb,
   type FeedListingsCursor,
 } from "@/lib/listings";
+import {
+  FEED_HIDDEN_CHANGED_EVENT,
+  getHiddenListingIdsSet,
+} from "@/lib/feedHiddenListings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
@@ -338,6 +342,14 @@ function FeedPage({ session }: { session: Session }) {
   ]);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [feedHiddenTick, setFeedHiddenTick] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onHiddenChanged = () => setFeedHiddenTick((n) => n + 1);
+    window.addEventListener(FEED_HIDDEN_CHANGED_EVENT, onHiddenChanged);
+    return () => window.removeEventListener(FEED_HIDDEN_CHANGED_EVENT, onHiddenChanged);
+  }, []);
 
   const prefetchedRef = useRef<FeedCache | null>(null);
   const prefetchKeyRef = useRef<string | null>(null);
@@ -356,7 +368,10 @@ function FeedPage({ session }: { session: Session }) {
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
+    const hiddenIds =
+      typeof window !== "undefined" ? getHiddenListingIdsSet() : new Set<string>();
     const base = items.filter((x) => {
+      if (hiddenIds.has(String(x.id ?? "").trim())) return false;
       if (!listingIsRussiaForFeed(x)) return false;
       if (x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
       if (selectedCategory === ALL_CATEGORY) return true;
@@ -457,6 +472,7 @@ function FeedPage({ session }: { session: Session }) {
     });
     return sorted;
   }, [
+    feedHiddenTick,
     items,
     city,
     selectedCategory,

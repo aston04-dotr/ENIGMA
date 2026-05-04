@@ -138,6 +138,14 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   applyListingAutoEngineColumns(row, data);
   applyListingMotoColumns(row, data);
   applyListingExpiryColumns(row, data);
+  const dtFeed = data.deal_type;
+  if (dtFeed != null && String(dtFeed).trim() !== "") {
+    row.deal_type = String(dtFeed).trim();
+  }
+  const ctFeed = data.commercial_type;
+  if (ctFeed != null && String(ctFeed).trim() !== "") {
+    row.commercial_type = String(ctFeed).trim();
+  }
   return row;
 }
 
@@ -816,6 +824,14 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
   applyListingAutoEngineColumns(row, data);
   applyListingMotoColumns(row, data);
   applyListingExpiryColumns(row, data);
+  const dtDetail = data.deal_type;
+  if (dtDetail != null && String(dtDetail).trim() !== "") {
+    row.deal_type = String(dtDetail).trim();
+  }
+  const ctDetail = data.commercial_type;
+  if (ctDetail != null && String(ctDetail).trim() !== "") {
+    row.commercial_type = String(ctDetail).trim();
+  }
   return row;
 }
 

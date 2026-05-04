@@ -4,17 +4,22 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { categoryLabel } from "@/lib/categories";
+import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
+import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
+import { hideListingInFeed } from "@/lib/feedHiddenListings";
+import { ownerArchiveListing, ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
+import { reportListingTrustPenalty } from "@/lib/trust";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function formatPriceNumber(n: number) {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
@@ -89,7 +94,94 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   const [favoriteCountLocal, setFavoriteCountLocal] = useState(favorites);
   const [isFavoritedLocal, setIsFavoritedLocal] = useState(isFavorited);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const priceRub = defaultBoostCtaPriceRub();
+
+  const listingSheetActions = useMemo((): ListingSheetAction[] => {
+    const id = String(lid ?? "").trim();
+    if (!id) return [];
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const shareUrl = `${origin}/listing/${id}`;
+
+    const actions: ListingSheetAction[] = [
+      {
+        id: "share",
+        label: "Поделиться",
+        onSelect: () => {
+          void navigator.clipboard?.writeText(shareUrl).catch(() => {});
+        },
+      },
+    ];
+
+    if (!isOwn) {
+      actions.push(
+        {
+          id: "report",
+          label: "Пожаловаться",
+          onSelect: () => {
+            if (!viewerId) {
+              router.push("/login");
+              return;
+            }
+            if (!window.confirm("Отправить жалобу на это объявление?")) return;
+            void reportListingTrustPenalty(id, "feed_report").then(({ error }) => {
+              if (error && process.env.NODE_ENV === "development") {
+                console.warn("reportListingTrustPenalty", error);
+              }
+            });
+          },
+        },
+        {
+          id: "hide",
+          label: "Скрыть объявление",
+          onSelect: () => {
+            hideListingInFeed(id);
+            trackEvent("listing_hide_feed", { listing_id: id });
+          },
+        },
+      );
+    } else {
+      actions.push(
+        {
+          id: "edit",
+          label: "Редактировать",
+          onSelect: () => router.push(`/listing/edit/${id}`),
+        },
+        {
+          id: "archive",
+          label: "В архив",
+          onSelect: () => {
+            if (!window.confirm("Снять объявление с публикации?")) return;
+            void ownerArchiveListing(id).then((res) => {
+              if (!res.ok && process.env.NODE_ENV === "development") {
+                console.warn("ownerArchiveListing", res.error);
+              }
+              router.refresh();
+            });
+          },
+        },
+        {
+          id: "delete",
+          label: "Удалить",
+          destructive: true,
+          onSelect: () => {
+            if (!window.confirm("Удалить объявление безвозвратно?")) return;
+            void ownerDeleteListing(id).then((res) => {
+              if (!res.ok) {
+                if (process.env.NODE_ENV === "development") {
+                  console.warn("ownerDeleteListing", res.error);
+                }
+                return;
+              }
+              router.push("/profile/listings");
+            });
+          },
+        },
+      );
+    }
+
+    return actions;
+  }, [isOwn, lid, router, viewerId]);
 
   useEffect(() => {
     setFavoriteCountLocal(favorites);
@@ -128,6 +220,30 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
     : "h-[210px] sm:h-[230px] lg:h-auto lg:aspect-video";
   const contentSpacingClass = compact ? "space-y-1.5 p-3 sm:p-3.5" : "space-y-2 p-4 sm:p-[14px]";
 
+  function handleToggleFavorite() {
+    if (favoriteBusy || !lid) return;
+    if (!viewerId) {
+      router.push("/login");
+      return;
+    }
+    setFavoriteBusy(true);
+    void toggleFavorite({
+      listingId: lid,
+      state: {
+        isFavorited: isFavoritedLocal,
+        favoriteCount: favoriteCountLocal,
+      },
+      onOptimistic: (next) => {
+        setIsFavoritedLocal(next.isFavorited);
+        setFavoriteCountLocal(next.favoriteCount);
+      },
+      onRollback: (prev) => {
+        setIsFavoritedLocal(prev.isFavorited);
+        setFavoriteCountLocal(prev.favoriteCount);
+      },
+    }).finally(() => setFavoriteBusy(false));
+  }
+
   if (!safeItem || !lid) return null;
 
   return (
@@ -142,6 +258,67 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
         animationDelay: `${Math.min(index, 10) * 35}ms`,
       }}
     >
+      <div className={`relative w-full overflow-hidden rounded-t-[16px] bg-elev-2 ${imageHeightClass}`}>
+        {uri ? (
+          <Image
+            src={uri}
+            alt=""
+            fill
+            className="relative z-0 object-cover saturate-[1.06] contrast-[1.04] transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04]"
+            sizes="(max-width: 768px) 100vw, 32rem"
+            unoptimized
+          />
+        ) : (
+          <div className="relative z-0 flex h-full items-center justify-center text-[11px] font-semibold tracking-[0.2em] text-muted">
+            ENIGMA
+          </div>
+        )}
+        <Link
+          href={`/listing/${lid}`}
+          prefetch
+          className="absolute inset-0 z-10"
+          aria-label={itemTitle}
+          onClick={() => {
+            onOpen?.();
+            trackEvent("listing_open", {
+              listing_id: lid,
+              category: safeItem?.category ?? null,
+              city: safeItem?.city ?? null,
+            });
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-16 opacity-80 transition-opacity duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100"
+          style={{
+            background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 100%)",
+          }}
+        />
+        {partner ? (
+          <span className="pointer-events-none absolute left-3 top-3 z-[12] rounded-lg border border-line bg-elevated/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-fg backdrop-blur-sm">
+            Партнёр
+          </span>
+        ) : null}
+        {boosted ? (
+          <span className="pointer-events-none absolute right-3 top-14 z-[12] rounded-lg bg-accent/90 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
+            В топе
+          </span>
+        ) : null}
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5">
+          <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={() => handleToggleFavorite()} />
+          <button
+            type="button"
+            aria-label="Действия"
+            onClick={() => setActionsOpen(true)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-[18px] w-[18px]" aria-hidden>
+              <circle cx="12" cy="6" r="1.65" />
+              <circle cx="12" cy="12" r="1.65" />
+              <circle cx="12" cy="18" r="1.65" />
+            </svg>
+          </button>
+        </div>
+      </div>
       <Link
         href={`/listing/${lid}`}
         prefetch
@@ -155,38 +332,6 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           });
         }}
       >
-        <div className={`relative w-full overflow-hidden rounded-t-[16px] bg-elev-2 ${imageHeightClass}`}>
-          {uri ? (
-            <Image
-              src={uri}
-              alt=""
-              fill
-              className="object-cover saturate-[1.06] contrast-[1.04] transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04]"
-              sizes="(max-width: 768px) 100vw, 32rem"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-[11px] font-semibold tracking-[0.2em] text-muted">
-              ENIGMA
-            </div>
-          )}
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 opacity-80 transition-opacity duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100"
-            style={{
-              background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 100%)",
-            }}
-          />
-          {partner ? (
-            <span className="absolute left-3 top-3 rounded-lg border border-line bg-elevated/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-fg backdrop-blur-sm">
-              Партнёр
-            </span>
-          ) : null}
-          {boosted ? (
-            <span className="absolute right-3 top-3 rounded-lg bg-accent/90 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
-              В топе
-            </span>
-          ) : null}
-        </div>
         <div className={contentSpacingClass}>
           <p className="line-clamp-2 overflow-hidden text-[17px] font-semibold leading-snug text-fg">
             {itemTitle}
@@ -214,29 +359,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             live={liveViewers ?? undefined}
             isFavorited={isFavoritedLocal}
             variant="card"
-            onToggleFavorite={() => {
-              if (favoriteBusy) return;
-              if (!viewerId) {
-                router.push("/login");
-                return;
-              }
-              setFavoriteBusy(true);
-              void toggleFavorite({
-                listingId: lid,
-                state: {
-                  isFavorited: isFavoritedLocal,
-                  favoriteCount: favoriteCountLocal,
-                },
-                onOptimistic: (next) => {
-                  setIsFavoritedLocal(next.isFavorited);
-                  setFavoriteCountLocal(next.favoriteCount);
-                },
-                onRollback: (prev) => {
-                  setIsFavoritedLocal(prev.isFavorited);
-                  setFavoriteCountLocal(prev.favoriteCount);
-                },
-              }).finally(() => setFavoriteBusy(false));
-            }}
+            omitFavorite
           />
           <div className="flex items-center gap-2.5 text-[13px] text-muted/70">
             <span className="inline-flex items-center gap-1 text-muted/70">
@@ -252,6 +375,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           </div>
         </div>
       </Link>
+      <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
       {isOwn && !partner ? (
         <div className="space-y-2.5 px-[14px] pb-[14px] pt-1">
           {/* 1. Boost - Базовый */}

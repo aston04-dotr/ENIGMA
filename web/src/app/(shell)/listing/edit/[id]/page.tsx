@@ -26,6 +26,26 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ListingMiscCategoryFieldsForEdit } from "@/components/listing/ListingMiscCategoryFieldsForEdit";
+import { ListingRealEstateFields } from "@/components/listing/ListingRealEstateFields";
+import { categoryLabel } from "@/lib/categories";
+import {
+  EMPTY_CATEGORY_EDIT_PARAMS,
+  buildParamsRecordForCategoryEdit,
+  buildRealEstateColumnExtras,
+  clearRealEstateColumnsPatch,
+  clearVehicleColumnsPatch,
+  hydrateCategoryEditParams,
+  listingIntentFromRow,
+  mergeDescriptionWithCategorySpecs,
+  validateCategoryEditForm,
+  type CategoryEditParams,
+} from "@/lib/listingCategoryEdit";
+import {
+  ALLOWED_LISTING_CITIES,
+  isAllowedListingCity,
+  normalizeAllowedListingCity,
+} from "@/lib/russianCities";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
@@ -131,6 +151,17 @@ function SortableThumb({
   );
 }
 
+function miscSliceForDirty(cat: string, cp: CategoryEditParams): string {
+  if (cat === "realestate") return JSON.stringify(cp.realestate);
+  if (cat === "electronics") return JSON.stringify(cp.electronics);
+  if (cat === "fashion") return JSON.stringify(cp.fashion);
+  if (cat === "services") return JSON.stringify(cp.services);
+  if (cat === "kids") return JSON.stringify(cp.kids);
+  if (cat === "sport") return JSON.stringify(cp.sport);
+  if (cat === "home") return JSON.stringify(cp.home);
+  return "";
+}
+
 export default function EditListingPage() {
   const { id } = useParams<{ id: string }>();
   const { session, authResolved, loading: authLoading } = useAuth();
@@ -160,10 +191,22 @@ export default function EditListingPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [listingCategory, setListingCategory] = useState("");
+  const [categoryParams, setCategoryParams] = useState<CategoryEditParams>(() =>
+    structuredClone(EMPTY_CATEGORY_EDIT_PARAMS),
+  );
+  const [editCity, setEditCity] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [listingIntent, setListingIntent] = useState<"sale" | "rent">("sale");
   const [autoParams, setAutoParams] = useState<AutoParamsShape | null>(null);
   const [motoParams, setMotoParams] = useState<MotoParamsShape | null>(null);
   const originalAutoJsonRef = useRef("");
   const originalMotoJsonRef = useRef("");
+  const originalExtrasRef = useRef({
+    city: "",
+    phone: "",
+    intent: "sale" as "sale" | "rent",
+    miscJson: "",
+  });
   const [originalData, setOriginalData] = useState<{
     title: string;
     description: string;
@@ -215,6 +258,20 @@ export default function EditListingPage() {
 
         const cat = String(res.row.category ?? "").trim();
         setListingCategory(cat);
+        const cp = hydrateCategoryEditParams(res.row);
+        setCategoryParams(cp);
+        const nc =
+          normalizeAllowedListingCity(res.row.city) ?? ALLOWED_LISTING_CITIES[0] ?? "";
+        setEditCity(nc);
+        setContactPhone(String(res.row.contact_phone ?? "").trim());
+        const intent = listingIntentFromRow(res.row);
+        setListingIntent(intent);
+        originalExtrasRef.current = {
+          city: nc,
+          phone: String(res.row.contact_phone ?? "").trim(),
+          intent,
+          miscJson: miscSliceForDirty(cat, cp),
+        };
         if (cat === "auto") {
           const h = hydrateAutoParamsShape(res.row);
           setAutoParams(h);
@@ -396,6 +453,12 @@ export default function EditListingPage() {
       return;
     }
 
+    const normalizedCitySave = normalizeAllowedListingCity(editCity);
+    if (!normalizedCitySave || !isAllowedListingCity(editCity.trim())) {
+      setToast({ message: "Выберите город из списка", type: "error" });
+      return;
+    }
+
     if (listingCategory === "auto") {
       if (!autoParams) {
         setToast({ message: "Не удалось прочитать параметры авто", type: "error" });
@@ -447,6 +510,18 @@ export default function EditListingPage() {
         descriptionTrim,
         buildMotoSpecsSection(motoParams),
       );
+    } else {
+      const catErr = validateCategoryEditForm(listingCategory, categoryParams, listingIntent);
+      if (catErr) {
+        setToast({ message: catErr, type: "error" });
+        return;
+      }
+      descriptionTrim = mergeDescriptionWithCategorySpecs(
+        descriptionTrim,
+        listingCategory,
+        categoryParams,
+        listingIntent,
+      );
     }
 
     setSaving(true);
@@ -456,6 +531,9 @@ export default function EditListingPage() {
         description: descriptionTrim,
         price: priceNum,
         updated_at: new Date().toISOString(),
+        city: normalizedCitySave,
+        contact_phone: contactPhone.trim() || null,
+        deal_type: listingIntent,
       };
 
       if (listingCategory === "auto" && autoParams) {
@@ -467,6 +545,7 @@ export default function EditListingPage() {
         listingPatch.moto_mileage = null;
         listingPatch.moto_customs_cleared = null;
         listingPatch.moto_owners_pts = null;
+        Object.assign(listingPatch, clearRealEstateColumnsPatch());
       } else if (listingCategory === "moto" && motoParams) {
         listingPatch.params = buildMotoParamsRecord(motoParams, normalizedPrice);
         listingPatch.engine_power = motoParams.enginePowerHp.trim() || null;
@@ -476,6 +555,24 @@ export default function EditListingPage() {
         listingPatch.moto_mileage = motoParams.mileageKm.trim() || null;
         listingPatch.moto_customs_cleared = motoParams.customsCleared.trim() || null;
         listingPatch.moto_owners_pts = motoParams.ownersPts.trim() || null;
+        Object.assign(listingPatch, clearRealEstateColumnsPatch());
+      } else {
+        const params = buildParamsRecordForCategoryEdit(
+          listingCategory,
+          categoryParams,
+          listingIntent,
+          price,
+        );
+        listingPatch.params = params ?? {};
+        Object.assign(listingPatch, clearVehicleColumnsPatch());
+        if (listingCategory === "realestate") {
+          Object.assign(
+            listingPatch,
+            buildRealEstateColumnExtras(categoryParams.realestate, listingIntent),
+          );
+        } else {
+          Object.assign(listingPatch, clearRealEstateColumnsPatch());
+        }
       }
 
       const { error } = await supabase
@@ -548,6 +645,12 @@ export default function EditListingPage() {
       if (listingCategory === "moto" && motoParams) {
         originalMotoJsonRef.current = JSON.stringify(motoParams);
       }
+      originalExtrasRef.current = {
+        city: normalizedCitySave,
+        phone: contactPhone.trim(),
+        intent: listingIntent,
+        miscJson: miscSliceForDirty(listingCategory, categoryParams),
+      };
       setToast({ message: "✓ Объявление обновлено", type: "success" });
     } catch (saveError) {
       console.error("UPDATE ERROR", saveError);
@@ -625,13 +728,29 @@ export default function EditListingPage() {
     return false;
   }, [listingCategory, autoParams, motoParams]);
 
+  const extrasDirty = useMemo(() => {
+    if (!originalData) return false;
+    if (
+      editCity.trim() !== originalExtrasRef.current.city ||
+      contactPhone.trim() !== originalExtrasRef.current.phone ||
+      listingIntent !== originalExtrasRef.current.intent
+    ) {
+      return true;
+    }
+    if (listingCategory === "auto" || listingCategory === "moto") return false;
+    return (
+      miscSliceForDirty(listingCategory, categoryParams) !== originalExtrasRef.current.miscJson
+    );
+  }, [originalData, editCity, contactPhone, listingIntent, listingCategory, categoryParams]);
+
   const hasChanges = Boolean(
     originalData &&
       (title.trim() !== originalData.title ||
         description.trim() !== originalData.description ||
         Number(price) !== originalData.price ||
         hasImageChanges ||
-        vehicleParamsDirty),
+        vehicleParamsDirty ||
+        extrasDirty),
   );
   const isDirty = Boolean(hasChanges);
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
@@ -790,6 +909,71 @@ export default function EditListingPage() {
             inputMode="numeric"
             disabled={saving}
           />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-muted">Категория</label>
+          <div className="min-h-[52px] rounded-card border border-line bg-elev-2/40 px-4 py-3 text-sm text-fg">
+            {listingCategory ? categoryLabel(listingCategory) : "—"}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-muted">Город</label>
+          <select
+            value={editCity}
+            onChange={(e) => setEditCity(e.target.value)}
+            className={inputClass}
+            disabled={saving}
+          >
+            {ALLOWED_LISTING_CITIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-muted">Телефон для связи</label>
+          <input
+            value={contactPhone}
+            onChange={(e) => setContactPhone(e.target.value)}
+            className={inputClass}
+            placeholder="+7…"
+            inputMode="tel"
+            disabled={saving}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <span className="text-sm font-medium text-muted">Тип сделки</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setListingIntent("sale")}
+              className={`min-h-[48px] flex-1 rounded-card border px-3 text-sm font-semibold transition-colors ${
+                listingIntent === "sale"
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-line bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Продажа
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setListingIntent("rent")}
+              className={`min-h-[48px] flex-1 rounded-card border px-3 text-sm font-semibold transition-colors ${
+                listingIntent === "rent"
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-line bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Аренда
+            </button>
+          </div>
         </div>
 
         {listingCategory === "auto" && autoParams ? (
@@ -1003,6 +1187,28 @@ export default function EditListingPage() {
             </select>
           </div>
         ) : null}
+
+        {listingCategory === "realestate" ? (
+          <div className="rounded-card border border-line bg-elev-2/40 p-4">
+            <ListingRealEstateFields
+              value={categoryParams.realestate}
+              onChange={(next) =>
+                setCategoryParams((prev) => ({ ...prev, realestate: next }))
+              }
+              listingIntent={listingIntent}
+              disabled={saving}
+              inputClass={inputClass}
+            />
+          </div>
+        ) : null}
+
+        <ListingMiscCategoryFieldsForEdit
+          category={listingCategory}
+          categoryParams={categoryParams}
+          setCategoryParams={setCategoryParams}
+          inputClass={inputClass}
+          disabled={saving}
+        />
 
         <button
           type="button"

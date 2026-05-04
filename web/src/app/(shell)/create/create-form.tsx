@@ -22,6 +22,15 @@ import {
   parseFlexiblePositiveNumber,
   sotkiToHectaresDisplay,
 } from "@/lib/plotAreaSotki";
+import {
+  COMMERCIAL_PROPERTY_LABEL,
+  COMMERCIAL_SHOPPING_CENTER_LABEL,
+  COMMERCIAL_PREMISES_OPTIONS,
+  HOUSE_LABEL,
+  LAND_PLOT_LABEL,
+  LAND_OWNERSHIP_OPTIONS,
+  LAND_PURPOSE_OPTIONS,
+} from "@/lib/realestateConstants";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -210,35 +219,6 @@ const FASHION_CLOTHING_SIZE_OPTIONS = [
 ] as const;
 
 const KIDS_SHOE_SIZE_OPTIONS = Array.from({ length: 14 }, (_, idx) => String(35 + idx));
-
-const COMMERCIAL_PROPERTY_LABEL = "Коммерческая";
-
-/** Отдельное здание целиком — без поля «Этаж». */
-const COMMERCIAL_SHOPPING_CENTER_LABEL = "Торговый центр";
-
-const COMMERCIAL_PREMISES_OPTIONS = [
-  "Офис",
-  "Склад",
-  "ПСН",
-  "Торговый центр",
-  "Производство",
-  "Общепит",
-  "Гостиница",
-] as const;
-
-const HOUSE_LABEL = "Дом";
-const LAND_PLOT_LABEL = "Участок";
-
-const LAND_PURPOSE_OPTIONS = [
-  { value: "ИЖС", label: "ИЖС (Индивидуальное жилищное строительство)" },
-  { value: "ЛПХ", label: "ЛПХ (Личное подсобное хозяйство)" },
-  { value: "СНТ / ДНП", label: "СНТ / ДНП (Садоводство и дачи)" },
-  { value: "Промназначение", label: "Промназначение (Земли промышленности)" },
-  { value: "Сельхозназначение", label: "Сельхозназначение (СХ)" },
-  { value: "КФХ", label: "КФХ (Крестьянское фермерское хозяйство)" },
-] as const;
-
-const LAND_OWNERSHIP_OPTIONS = ["Собственность", "Аренда", "Субаренда"] as const;
 
 function parsePositiveKw(raw: string): number | null {
   const s = raw.replace(/\s/g, "").replace(",", ".").trim();
