@@ -25,6 +25,7 @@ import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
 import { interleavePartnerFeedMain } from "@/lib/monetization";
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
 import type { ListingRow } from "@/lib/types";
+import { useTheme } from "@/context/theme-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const CACHE_KEY = "cached_listings";
@@ -206,6 +207,7 @@ export function FeedPage({
   session: Session;
   feedVariant?: "offers" | "seeking";
 }) {
+  const { theme } = useTheme();
   const cacheStorageKey = feedVariant === "seeking" ? CACHE_KEY_WANTED : CACHE_KEY;
   const feedSeed = useMemo(() => readFeedCache(cacheStorageKey), [cacheStorageKey]);
   const feedStateSeed = useMemo(() => readFeedState(), []);
@@ -837,8 +839,11 @@ export function FeedPage({
           </div>
           <div className="mt-6 space-y-2.5">
             <div
-              className="rounded-[14px] border border-white/[0.14] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
-              style={{ backgroundColor: "#000000" }}
+              className={
+                theme === "light"
+                  ? "rounded-[14px] border border-neutral-200 bg-[#FFFFFF] p-1.5 shadow-[inset_0_1px_0_rgba(0,0,0,0.04)]"
+                  : "rounded-[14px] border border-white/10 bg-[#000000] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+              }
             >
               <div className="grid grid-cols-2 gap-1.5">
                 <button
@@ -850,7 +855,9 @@ export function FeedPage({
                   className={`min-h-[44px] rounded-[11px] text-[15px] font-bold leading-none tracking-tight transition-all duration-300 ease-out active:scale-[0.98] ${
                     feedDealSegment === "sale"
                       ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_6px_24px_rgba(139,95,255,0.38)]"
-                      : "bg-transparent text-white/40 hover:text-white/72"
+                      : theme === "light"
+                        ? "bg-transparent text-neutral-500 hover:text-neutral-700"
+                        : "bg-transparent text-white/40 hover:text-white/72"
                   }`}
                 >
                   Продажа
@@ -864,7 +871,9 @@ export function FeedPage({
                   className={`min-h-[44px] rounded-[11px] text-[15px] font-bold leading-none tracking-tight transition-all duration-300 ease-out active:scale-[0.98] ${
                     feedDealSegment === "rent"
                       ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_6px_24px_rgba(139,95,255,0.38)]"
-                      : "bg-transparent text-white/40 hover:text-white/72"
+                      : theme === "light"
+                        ? "bg-transparent text-neutral-500 hover:text-neutral-700"
+                        : "bg-transparent text-white/40 hover:text-white/72"
                   }`}
                 >
                   Аренда
