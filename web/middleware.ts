@@ -50,11 +50,6 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getSession();
   const user = session?.user ?? null;
 
-  const isAuthPath = pathname === "/login" || pathname.startsWith("/auth");
-  const isPublicPath =
-    pathname.startsWith("/legal") ||
-    pathname === "/offline";
-
   // Не вмешиваемся в auth flow (включая /auth/verify и callback-пути).
   if (pathname.startsWith("/auth")) {
     return response;
@@ -64,10 +59,12 @@ export async function middleware(request: NextRequest) {
     return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/")));
   }
 
-  if (!user && !isAuthPath && !isPublicPath) {
-    return applyNoCacheHeaders(NextResponse.redirect(publicRequestUrl(request, "/login")));
-  }
-
+  /**
+   * Не отправляем гостей на /login на Edge.
+   * На мобильных после reload JWT в chunked cookies иногда доходит до клиента позже первого
+   * запроса — middleware видел «нет сессии» и выкидывал на логин до гидрации Supabase.
+   * Защита экранов остаётся в клиенте (useAuth + router.replace на нужных страницах).
+   */
   return response;
 }
 
