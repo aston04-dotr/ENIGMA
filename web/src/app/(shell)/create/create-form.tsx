@@ -291,11 +291,67 @@ function isCommercialShoppingCenter(p: RealEstateParams): boolean {
   );
 }
 
+function isCreateListingRole(raw: string | null): raw is "offer" | "seeking" {
+  return raw === "offer" || raw === "seeking";
+}
+
+function CreateListingRolePicker() {
+  const router = useRouter();
+  return (
+    <main className="safe-pt space-y-6 bg-main px-5 pb-28 pt-10">
+      <div className="space-y-2">
+        <h1 className="text-[26px] font-bold tracking-tight text-fg">Новое объявление</h1>
+        <p className="text-sm text-muted">Выберите тип размещения</p>
+      </div>
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={() => router.push("/create?role=offer")}
+          className="flex w-full flex-col items-start rounded-[16px] border border-line bg-elevated px-4 py-4 text-left shadow-sm transition-all duration-200 hover:bg-elev-2 active:scale-[0.99]"
+        >
+          <span className="text-[17px] font-semibold text-fg">Продать / Сдать</span>
+          <span className="mt-1 text-[13px] leading-snug text-muted">
+            Вы предлагаете товар, жильё, авто или услугу
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/create?role=seeking")}
+          className="flex w-full flex-col items-start rounded-[16px] border border-line bg-elevated px-4 py-4 text-left shadow-sm transition-all duration-200 hover:bg-elev-2 active:scale-[0.99]"
+        >
+          <span className="text-[17px] font-semibold text-fg">Купить / Снять</span>
+          <span className="mt-1 text-[13px] leading-snug text-muted">
+            Вы ищете жильё, авто или аренду — арендодатели найдут вас здесь
+          </span>
+        </button>
+      </div>
+    </main>
+  );
+}
+
 export function CreateListingForm() {
   const { session, profile, refreshProfile } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const listingIntent = searchParams.get("intent") === "rent" ? "rent" : "sale";
+  const roleRaw = searchParams.get("role");
+  const listingRoleResolved: "offer" | "seeking" | null = isCreateListingRole(roleRaw)
+    ? roleRaw
+    : null;
+  const intentFromUrl = searchParams.get("intent") === "rent" ? "rent" : "sale";
+  const [listingIntent, setListingIntent] = useState<"sale" | "rent">(() =>
+    listingRoleResolved === "seeking" ? "rent" : intentFromUrl,
+  );
+
+  useEffect(() => {
+    const next = searchParams.get("intent") === "rent" ? "rent" : "sale";
+    setListingIntent(next);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (listingRoleResolved !== "seeking") return;
+    setCategory((c) => (c === "realestate" || c === "auto" || c === "moto" ? c : "realestate"));
+  }, [listingRoleResolved]);
+
   const uid = session?.user?.id;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1069,6 +1125,7 @@ export function CreateListingForm() {
         owner_id: uid,
         contact_phone: profile?.phone || null,
         deal_type: listingIntent,
+        listing_kind: listingRoleResolved === "seeking" ? "seeking" : "offer",
         ...(autoExtras ?? {}),
         ...(motoExtras ?? {}),
         ...(realestateExtras ?? {}),
@@ -1149,6 +1206,7 @@ export function CreateListingForm() {
     buildSpecsSummary,
     buildParamsFromForm,
     validateCategoryRequiredFields,
+    listingRoleResolved,
   ]);
 
   const handlePublishClick = useCallback(() => {
@@ -1194,12 +1252,22 @@ export function CreateListingForm() {
 
   console.log("[CITIES-CREATE DEBUG] options:", cityOptions?.length, cityOptions);
 
+  if (listingRoleResolved === null) {
+    return <CreateListingRolePicker />;
+  }
+
   try {
     return (
     <main className="safe-pt space-y-5 bg-main px-5 pb-10 pt-8">
       <div className="space-y-2">
         <h1 className="text-[26px] font-bold tracking-tight text-fg">
-          {listingIntent === "rent" ? "Новое объявление (аренда)" : "Новое объявление"}
+          {listingRoleResolved === "seeking"
+            ? listingIntent === "rent"
+              ? "Запрос: ищу в аренду"
+              : "Запрос: ищу к покупке"
+            : listingIntent === "rent"
+              ? "Предложение: сдаю в аренду"
+              : "Предложение: продажа"}
         </h1>
         <button
           type="button"
@@ -1220,6 +1288,32 @@ export function CreateListingForm() {
           </svg>
           Назад
         </button>
+      </div>
+      <div className="rounded-[14px] bg-black/[0.045] p-1 dark:bg-white/[0.06]">
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            onClick={() => setListingIntent("sale")}
+            className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
+              listingIntent === "sale"
+                ? "bg-white text-fg shadow-[0_1px_8px_rgba(15,23,42,0.12)] dark:bg-[#1a1d24] dark:text-white"
+                : "text-muted hover:text-fg/90"
+            }`}
+          >
+            Продажа
+          </button>
+          <button
+            type="button"
+            onClick={() => setListingIntent("rent")}
+            className={`min-h-[40px] rounded-[11px] text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] ${
+              listingIntent === "rent"
+                ? "bg-white text-fg shadow-[0_1px_8px_rgba(15,23,42,0.12)] dark:bg-[#1a1d24] dark:text-white"
+                : "text-muted hover:text-fg/90"
+            }`}
+          >
+            Аренда
+          </button>
+        </div>
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Фото</label>

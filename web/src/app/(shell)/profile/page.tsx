@@ -5,7 +5,8 @@ import { ListingCard } from "@/components/ListingCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
-import { getMyListings } from "@/lib/listings";
+import { getMyListings, fetchFavoriteListingsForUser } from "@/lib/listings";
+import { FAVORITES_CHANGED_EVENT } from "@/lib/favoriteEvents";
 import { renewListingPublication } from "@/lib/listingRenewal";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { deleteAccount } from "@/lib/deleteAccount";
@@ -131,7 +132,11 @@ export default function ProfilePage() {
   const [myListings, setMyListings] = useState<ListingRow[]>([]);
   const [myListingsLoading, setMyListingsLoading] = useState(true);
   const [myListingsError, setMyListingsError] = useState<string | null>(null);
-  const [listingProfileTab, setListingProfileTab] = useState<"active" | "archive">("active");
+  const [listingProfileTab, setListingProfileTab] = useState<"active" | "archive" | "favorites">(
+    "active",
+  );
+  const [favoriteListings, setFavoriteListings] = useState<ListingRow[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [renewingListingId, setRenewingListingId] = useState<string | null>(null);
   const profileNameValue = (profile?.name ?? "").trim();
   const profilePhoneValue = (profile?.phone ?? "").trim();
@@ -162,6 +167,35 @@ export default function ProfilePage() {
     }
   }, [session?.user?.id]);
 
+  const reloadFavorites = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid) {
+      setFavoriteListings([]);
+      return;
+    }
+    setFavoritesLoading(true);
+    try {
+      const rows = await fetchFavoriteListingsForUser(uid);
+      setFavoriteListings(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error("FAVORITES LOAD ERROR", error);
+      setFavoriteListings([]);
+    } finally {
+      setFavoritesLoading(false);
+    }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    void reloadFavorites();
+  }, [reloadFavorites]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onFav = () => void reloadFavorites();
+    window.addEventListener(FAVORITES_CHANGED_EVENT, onFav);
+    return () => window.removeEventListener(FAVORITES_CHANGED_EVENT, onFav);
+  }, [reloadFavorites]);
+
   const activeProfileListings = useMemo(
     () =>
       (myListings || []).filter(
@@ -187,7 +221,11 @@ export default function ProfilePage() {
   );
 
   const shownProfileListings =
-    listingProfileTab === "active" ? activeProfileListings : archiveProfileListings;
+    listingProfileTab === "favorites"
+      ? favoriteListings
+      : listingProfileTab === "active"
+        ? activeProfileListings
+        : archiveProfileListings;
 
   useEffect(() => {
     if (!authResolved || loading) return;
@@ -516,7 +554,7 @@ export default function ProfilePage() {
           </Link>
         </div>
 
-        {!myListingsLoading && !myListingsError && (myListings || []).length > 0 ? (
+        {!myListingsLoading && !myListingsError && session?.user?.id ? (
           <div className="mb-4 flex flex-wrap gap-2">
             <button
               type="button"
@@ -546,20 +584,38 @@ export default function ProfilePage() {
               Архив
               <span className="ml-1.5 font-normal opacity-80">({archiveProfileListings.length})</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setListingProfileTab("favorites")}
+              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+                listingProfileTab === "favorites"
+                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  : isDark
+                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
+                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+              }`}
+            >
+              Избранное
+              <span className="ml-1.5 font-normal opacity-80">({favoriteListings.length})</span>
+            </button>
           </div>
         ) : null}
 
-        {myListingsLoading ? (
+        {myListingsLoading && listingProfileTab !== "favorites" ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка...</div>
+        ) : listingProfileTab === "favorites" && favoritesLoading ? (
+          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка избранного...</div>
         ) : myListingsError ? (
           <div className="rounded-card border border-danger/30 bg-danger/5 p-4 text-sm text-danger">{myListingsError}</div>
-        ) : (myListings || []).length === 0 ? (
+        ) : (myListings || []).length === 0 && listingProfileTab !== "favorites" ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
         ) : shownProfileListings.length === 0 ? (
           <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">
             {listingProfileTab === "active"
               ? "Нет активных объявлений — всё в архиве или ещё не создано."
-              : "В архиве пока пусто."}
+              : listingProfileTab === "archive"
+                ? "В архиве пока пусто."
+                : "В избранном пока пусто — нажмите сердечко на карточке в ленте."}
           </div>
         ) : (
           <div className="space-y-4">
@@ -568,7 +624,7 @@ export default function ProfilePage() {
               return (
                 <div key={safeListing.id} className="rounded-[16px] bg-elevated/28 p-1.5 transition-all duration-200">
                   <ListingCard item={safeListing} compact />
-                  {isOwner ? (
+                  {isOwner && listingProfileTab !== "favorites" ? (
                     <div className="flex flex-col gap-2 p-2.5 pt-0">
                       {listingProfileTab === "archive" ? (
                         <button

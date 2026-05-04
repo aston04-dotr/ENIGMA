@@ -50,6 +50,8 @@ export type ListingInsertPayload = {
   land_ownership_status?: string | null;
   /** sale | rent */
   deal_type?: string | null;
+  /** offer — предложение; seeking — запрос (куплю/сниму). */
+  listing_kind?: string | null;
   /** Авто: мощность (л.с.), текст. */
   engine_power?: string | null;
   /** Авто: объём двигателя (л), текст. */
@@ -94,6 +96,8 @@ export type ListingRow = {
   contact_phone?: string | null;
   commercial_type?: string | null;
   deal_type?: string | null;
+  /** offer | seeking */
+  listing_kind?: string | null;
   has_gas?: boolean | null;
   has_water?: boolean | null;
   has_electricity?: boolean | null;

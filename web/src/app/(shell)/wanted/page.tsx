@@ -1,10 +1,10 @@
 "use client";
 
 import { LandingScreen } from "@/components/LandingScreen";
+import { FeedPage } from "@/app/(shell)/FeedScreen";
 import { useAuth } from "@/context/auth-context";
-import { FeedPage } from "./FeedScreen";
 
-export default function HomePage() {
+export default function WantedFeedPage() {
   const { session, loading } = useAuth();
 
   if (loading && !session?.user) {
@@ -17,7 +17,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-main">
-      <FeedPage session={session} />
+      <FeedPage session={session} feedVariant="seeking" />
     </div>
   );
 }

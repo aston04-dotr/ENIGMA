@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, type ComponentType } from "react";
-import { IconChat, IconHome, IconKey, IconPlus, IconUser } from "@/components/NavIcons";
+import { Suspense, type ComponentType, type ReactNode } from "react";
+import { IconChat, IconHome, IconPlus, IconSearch, IconUser } from "@/components/NavIcons";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 type TabDef = {
   key: string;
   href: string;
-  label: string;
+  label: ReactNode;
   Icon: ComponentType<{ className?: string }>;
   isActive: (pathname: string, intent: string | null) => boolean;
 };
@@ -24,18 +24,23 @@ const tabs: TabDef[] = [
     isActive: (p) => p === "/",
   },
   {
-    key: "rent",
-    href: "/create?intent=rent",
-    label: "Снять",
-    Icon: IconKey,
-    isActive: (p, intent) => p === "/create" && intent === "rent",
+    key: "wanted",
+    href: "/wanted",
+    label: (
+      <span className="flex flex-col items-center justify-center gap-0">
+        <span>Поиск</span>
+        <span className="text-[8px] font-medium leading-none opacity-75">жилья·авто</span>
+      </span>
+    ),
+    Icon: IconSearch,
+    isActive: (p) => p === "/wanted",
   },
   {
     key: "create",
     href: "/create",
     label: "Создать",
     Icon: IconPlus,
-    isActive: (p, intent) => p === "/create" && intent !== "rent",
+    isActive: (p) => p === "/create" || p.startsWith("/create/"),
   },
   {
     key: "chat",

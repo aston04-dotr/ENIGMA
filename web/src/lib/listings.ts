@@ -1,6 +1,7 @@
 import { isValidListingUuid } from "./listingParams";
 import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
 import { getListingsPageSize } from "./runtimeConfig";
+import { FAVORITES_CHANGED_EVENT } from "./favoriteEvents";
 import { trackEvent } from "./analytics";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
@@ -146,6 +147,10 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   if (ctFeed != null && String(ctFeed).trim() !== "") {
     row.commercial_type = String(ctFeed).trim();
   }
+  const lkFeed = data.listing_kind;
+  if (lkFeed != null && String(lkFeed).trim() !== "") {
+    row.listing_kind = String(lkFeed).trim();
+  }
   return row;
 }
 
@@ -177,6 +182,8 @@ function getDemoListings(): ListingRow[] {
       images: [],
       is_boosted: false,
       is_partner_ad: false,
+      deal_type: "sale",
+      listing_kind: "offer",
     },
   ];
 }
@@ -209,10 +216,14 @@ function isRealError(error: unknown): error is { message: string } {
 
 type ListingFilters = {
   category?: string;
+  /** Фильтр по нескольким категориям (для ленты запросов). */
+  categoriesIn?: string[];
   minPrice?: number;
   maxPrice?: number;
   search?: string;
   city?: string;
+  dealType?: "sale" | "rent";
+  listingKind?: "offer" | "seeking";
 };
 
 function listingsFeedSelectBase() {
@@ -242,8 +253,20 @@ function applySafeFilters(
       q = q.eq("city", city);
     }
     const category = filters.category?.trim();
-    if (category) {
+    if (filters.categoriesIn && filters.categoriesIn.length > 0) {
+      q = q.in("category", filters.categoriesIn);
+    } else if (category) {
       q = q.eq("category", category);
+    }
+type LooseFeedQuery = ListingsFeedQuery & {
+  eq: (column: string, value: string) => ListingsFeedQuery;
+};
+
+    if (filters.dealType === "sale" || filters.dealType === "rent") {
+      q = (q as unknown as LooseFeedQuery).eq("deal_type", filters.dealType);
+    }
+    if (filters.listingKind === "offer" || filters.listingKind === "seeking") {
+      q = (q as unknown as LooseFeedQuery).eq("listing_kind", filters.listingKind);
     }
     if (searchActive) {
       const safe = searchTrim
@@ -288,10 +311,13 @@ function rpcErrorPayload(error: unknown): Record<string, unknown> {
  */
 export async function fetchListings(filters: {
   category?: string;
+  categoriesIn?: string[];
   minPrice?: number;
   maxPrice?: number;
   search?: string;
   city?: string;
+  dealType?: "sale" | "rent";
+  listingKind?: "offer" | "seeking";
   /** Курсор следующей страницы (composite). Строковый legacy-курсор игнорируется. */
   cursor?: FeedListingsCursor | string | null;
 }): Promise<FetchListingsResult> {
@@ -315,17 +341,26 @@ export async function fetchListings(filters: {
   const filterPayload: ListingFilters = {
     city: filters.city,
     category: filters.category,
+    categoriesIn:
+      Array.isArray(filters.categoriesIn) && filters.categoriesIn.length > 0
+        ? filters.categoriesIn
+        : undefined,
     minPrice: filters.minPrice,
     maxPrice: filters.maxPrice,
     search: filters.search,
+    dealType: filters.dealType,
+    listingKind: filters.listingKind,
   };
 
   const hasFilters = Boolean(
     filters.city?.trim() ||
       filters.category?.trim() ||
+      (filters.categoriesIn && filters.categoriesIn.length > 0) ||
       searchActive ||
       filters.minPrice != null ||
-      filters.maxPrice != null
+      filters.maxPrice != null ||
+      filters.dealType ||
+      filters.listingKind,
   );
 
   try {
@@ -647,6 +682,10 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
 
     syncFavoriteCaches(id, next.favoriteCount);
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(FAVORITES_CHANGED_EVENT));
+    }
+
     return { ok: true, state: next };
   } catch (error) {
     console.error("RPC ERROR toggleFavorite", error);
@@ -659,6 +698,41 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
     };
   } finally {
     favoriteToggleInFlight.delete(id);
+  }
+}
+
+/** Объявления из избранного пользователя (вкладка профиля). */
+export async function fetchFavoriteListingsForUser(userId: string): Promise<ListingRow[]> {
+  const uid = String(userId ?? "").trim();
+  if (!uid || !isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from("listing_favorites")
+    .select(`created_at, listings (${FEED_SELECT})`)
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false });
+
+  if (error || !Array.isArray(data)) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("fetchFavoriteListingsForUser", rpcErrorPayload(error));
+    }
+    return [];
+  }
+
+  const rows: ListingRow[] = [];
+  for (const row of data as { listings?: unknown }[]) {
+    const embedded = row.listings;
+    if (embedded && typeof embedded === "object" && !Array.isArray(embedded)) {
+      const parsed = parseFeedListingRow(embedded as Record<string, unknown>);
+      Object.assign(parsed, { is_favorited: true, isFavorited: true });
+      rows.push(parsed);
+    }
+  }
+
+  try {
+    return await mergeFavoriteCounts(rows);
+  } catch {
+    return rows;
   }
 }
 
@@ -831,6 +905,10 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
   const ctDetail = data.commercial_type;
   if (ctDetail != null && String(ctDetail).trim() !== "") {
     row.commercial_type = String(ctDetail).trim();
+  }
+  const lkDetail = data.listing_kind;
+  if (lkDetail != null && String(lkDetail).trim() !== "") {
+    row.listing_kind = String(lkDetail).trim();
   }
   return row;
 }
@@ -1035,6 +1113,9 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     }
     if (payloadExtended.deal_type === "rent" || payloadExtended.deal_type === "sale") {
       insertPayload.deal_type = payloadExtended.deal_type;
+    }
+    if (payloadExtended.listing_kind === "seeking" || payloadExtended.listing_kind === "offer") {
+      insertPayload.listing_kind = payloadExtended.listing_kind;
     }
     if (payloadExtended.engine_power != null && String(payloadExtended.engine_power).trim() !== "") {
       insertPayload.engine_power = String(payloadExtended.engine_power).trim();

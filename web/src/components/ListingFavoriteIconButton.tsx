@@ -46,7 +46,11 @@ export function ListingFavoriteIconButton({
         e.stopPropagation();
         onClick(e);
       }}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95 disabled:opacity-45 ${filled ? "text-red-400" : "text-white/95"} ${className}`}
+      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all duration-150 active:scale-95 disabled:opacity-45 ${
+        filled
+          ? "border-[#FF3B30]/60 bg-[#FF3B30]/90 text-white shadow-[0_0_22px_rgba(255,59,48,0.55)] hover:bg-[#FF3B30]"
+          : "border-white/25 bg-black/40 text-white hover:bg-black/55"
+      } ${className}`}
     >
       <HeartIcon filled={filled} className="h-[22px] w-[22px]" />
     </button>
