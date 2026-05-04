@@ -72,24 +72,25 @@ export default function VerifyPage() {
     }
 
     let tries = 0;
-    let user: { id: string } | null = null;
-    while (tries < 5) {
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user) {
-        user = userData.user;
+    let ok = false;
+    while (tries < 12) {
+      const { data: sessData } = await supabase.auth.getSession();
+      if (sessData.session?.access_token && sessData.session?.user) {
+        ok = true;
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 120));
       tries++;
     }
 
     setLoading(false);
-    if (!user) {
-      setError("Session not established");
+    if (!ok) {
+      setError("Сессия не успела сохраниться. Обновите страницу или войдите снова.");
       return;
     }
 
     localStorage.removeItem("auth_email");
+    await new Promise((resolve) => setTimeout(resolve, 450));
     window.location.assign("/");
   };
 

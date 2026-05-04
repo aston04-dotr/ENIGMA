@@ -1,11 +1,12 @@
 "use client";
 
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
-import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
+import { ListingActionsMenu, type ListingMenuAction } from "@/components/ListingActionsMenu";
 import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
 import { SimpleToast } from "@/components/SimpleToast";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { useAuth } from "@/context/auth-context";
+import { useTheme } from "@/context/theme-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
@@ -17,12 +18,10 @@ import {
   toggleFavorite,
 } from "@/lib/listings";
 import { renewListingPublication } from "@/lib/listingRenewal";
-import { ownerArchiveListing, ownerDeleteListing } from "@/lib/listingOwnerActions";
+import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { reportListingTrustPenalty } from "@/lib/trust";
-import { trackEvent } from "@/lib/analytics";
 import { categoryLabel } from "@/lib/categories";
-import { hideListingInFeed } from "@/lib/feedHiddenListings";
 import { shareListingUrl } from "@/lib/shareListing";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
@@ -37,6 +36,7 @@ export default function ListingDetailPage() {
   const params = useParams<{ id?: string | string[] }>();
   const id = Array.isArray(params?.id) ? params?.id?.[0] : params?.id;
   const { session } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -51,6 +51,7 @@ export default function ListingDetailPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [renewingPublication, setRenewingPublication] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const listingActionsAnchorRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!id) {
@@ -259,7 +260,7 @@ export default function ListingDetailPage() {
     viewerId,
   ]);
 
-  const listingSheetActions = useMemo((): ListingSheetAction[] => {
+  const listingSheetActions = useMemo((): ListingMenuAction[] => {
     const id = String(rowId ?? "").trim();
     if (!id) return [];
     const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -269,24 +270,21 @@ export default function ListingDetailPage() {
         ? safeItem.title.trim()
         : "Объявление Enigma";
 
-    const actions: ListingSheetAction[] = [
-      {
-        id: "share",
-        label: "Поделиться",
-        variant: "cta",
-        onSelect: async () => {
-          const r = await shareListingUrl({ url: shareUrl, title: shareTitle });
-          if (r === "copied") {
-            setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
-          } else if (r === "failed") {
-            setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
-          }
-        },
+    const shareAction: ListingMenuAction = {
+      id: "share",
+      label: "Поделиться",
+      onSelect: async () => {
+        const r = await shareListingUrl({ url: shareUrl, title: shareTitle });
+        if (r === "copied") {
+          setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
+        } else if (r === "failed") {
+          setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
+        }
       },
-    ];
+    };
 
     if (!isOwnListing) {
-      actions.push(
+      return [
         {
           id: "report",
           label: "Пожаловаться",
@@ -304,58 +302,33 @@ export default function ListingDetailPage() {
             });
           },
         },
-        {
-          id: "hide",
-          label: "Скрыть из ленты",
-          onSelect: () => {
-            hideListingInFeed(id);
-            trackEvent("listing_hide_feed", { listing_id: id });
-            setToast({ message: "Скрыто в ленте на этом устройстве", type: "info" });
-          },
-        },
-      );
-    } else {
-      actions.push(
-        {
-          id: "edit",
-          label: "Редактировать",
-          onSelect: () => router.push(`/listing/edit/${id}`),
-        },
-        {
-          id: "archive",
-          label: "В архив",
-          onSelect: () => {
-            if (!window.confirm("Снять объявление с публикации?")) return;
-            void ownerArchiveListing(id).then(async (res) => {
-              if (!res.ok) {
-                setToast({ message: res.error ?? "Не удалось архивировать", type: "error" });
-                return;
-              }
-              const refreshed = await fetchListingById(id);
-              if (refreshed.row) setRow(refreshed.row);
-              setToast({ message: "Объявление снято с публикации", type: "success" });
-            });
-          },
-        },
-        {
-          id: "delete",
-          label: "Удалить",
-          destructive: true,
-          onSelect: () => {
-            if (!window.confirm("Удалить объявление безвозвратно?")) return;
-            void ownerDeleteListing(id).then((res) => {
-              if (!res.ok) {
-                setToast({ message: res.error ?? "Не удалось удалить", type: "error" });
-                return;
-              }
-              router.push("/profile/listings");
-            });
-          },
-        },
-      );
+        shareAction,
+      ];
     }
 
-    return actions;
+    return [
+      {
+        id: "edit",
+        label: "Редактировать",
+        onSelect: () => router.push(`/listing/edit/${id}`),
+      },
+      {
+        id: "delete",
+        label: "Удалить",
+        destructive: true,
+        onSelect: () => {
+          if (!window.confirm("Удалить объявление безвозвратно?")) return;
+          void ownerDeleteListing(id).then((res) => {
+            if (!res.ok) {
+              setToast({ message: res.error ?? "Не удалось удалить", type: "error" });
+              return;
+            }
+            router.push("/profile/listings");
+          });
+        },
+      },
+      shareAction,
+    ];
   }, [isOwnListing, router, rowId, viewerId, safeItem.title]);
 
   if (loading) {
@@ -466,7 +439,13 @@ export default function ListingDetailPage() {
         {toast ? (
           <SimpleToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
         ) : null}
-        <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
+        <ListingActionsMenu
+          open={actionsOpen}
+          anchorRef={listingActionsAnchorRef}
+          theme={theme}
+          actions={listingSheetActions}
+          onClose={() => setActionsOpen(false)}
+        />
         <div className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
             <Image
@@ -496,13 +475,15 @@ export default function ListingDetailPage() {
               <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={handleToggleFavorite} />
             ) : null}
             <button
+              ref={listingActionsAnchorRef}
               type="button"
               aria-label="Действия"
+              aria-expanded={actionsOpen}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setActionsOpen(true);
+                setActionsOpen((o) => !o);
               }}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
             >

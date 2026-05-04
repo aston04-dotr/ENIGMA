@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { categoryLabel } from "@/lib/categories";
-import { ListingActionsSheet, type ListingSheetAction } from "@/components/ListingActionsSheet";
+import { ListingActionsMenu, type ListingMenuAction } from "@/components/ListingActionsMenu";
 import { ListingFavoriteIconButton } from "@/components/ListingFavoriteIconButton";
 import { SimpleToast } from "@/components/SimpleToast";
 import { ListingMetricsRow } from "@/components/ListingMetricsRow";
@@ -12,8 +12,7 @@ import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
-import { hideListingInFeed } from "@/lib/feedHiddenListings";
-import { ownerArchiveListing, ownerDeleteListing } from "@/lib/listingOwnerActions";
+import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
 import { shareListingUrl } from "@/lib/shareListing";
@@ -22,7 +21,7 @@ import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function formatPriceNumber(n: number) {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
@@ -98,6 +97,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   const [isFavoritedLocal, setIsFavoritedLocal] = useState(isFavorited);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const listingActionsAnchorRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error" | "info";
@@ -106,30 +106,26 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
 
   useListingFavoriteRealtime(lid, setFavoriteCountLocal);
 
-  const listingSheetActions = useMemo((): ListingSheetAction[] => {
+  const listingSheetActions = useMemo((): ListingMenuAction[] => {
     const id = String(lid ?? "").trim();
     if (!id) return [];
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const shareUrl = `${origin}/listing/${id}`;
-
-    const actions: ListingSheetAction[] = [
-      {
-        id: "share",
-        label: "Поделиться",
-        variant: "cta",
-        onSelect: async () => {
-          const r = await shareListingUrl({ url: shareUrl, title: itemTitle });
-          if (r === "copied") {
-            setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
-          } else if (r === "failed") {
-            setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
-          }
-        },
+    const shareAction: ListingMenuAction = {
+      id: "share",
+      label: "Поделиться",
+      onSelect: async () => {
+        const r = await shareListingUrl({ url: shareUrl, title: itemTitle });
+        if (r === "copied") {
+          setToast({ message: "Ссылка скопирована в буфер обмена", type: "success" });
+        } else if (r === "failed") {
+          setToast({ message: "Не удалось открыть «Поделиться» или скопировать ссылку", type: "error" });
+        }
       },
-    ];
+    };
 
     if (!isOwn) {
-      actions.push(
+      return [
         {
           id: "report",
           label: "Пожаловаться",
@@ -146,56 +142,35 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             });
           },
         },
-        {
-          id: "hide",
-          label: "Скрыть из ленты",
-          onSelect: () => {
-            hideListingInFeed(id);
-            trackEvent("listing_hide_feed", { listing_id: id });
-          },
-        },
-      );
-    } else {
-      actions.push(
-        {
-          id: "edit",
-          label: "Редактировать",
-          onSelect: () => router.push(`/listing/edit/${id}`),
-        },
-        {
-          id: "archive",
-          label: "В архив",
-          onSelect: () => {
-            if (!window.confirm("Снять объявление с публикации?")) return;
-            void ownerArchiveListing(id).then((res) => {
-              if (!res.ok && process.env.NODE_ENV === "development") {
-                console.warn("ownerArchiveListing", res.error);
-              }
-              router.refresh();
-            });
-          },
-        },
-        {
-          id: "delete",
-          label: "Удалить",
-          destructive: true,
-          onSelect: () => {
-            if (!window.confirm("Удалить объявление безвозвратно?")) return;
-            void ownerDeleteListing(id).then((res) => {
-              if (!res.ok) {
-                if (process.env.NODE_ENV === "development") {
-                  console.warn("ownerDeleteListing", res.error);
-                }
-                return;
-              }
-              router.push("/profile/listings");
-            });
-          },
-        },
-      );
+        shareAction,
+      ];
     }
 
-    return actions;
+    return [
+      {
+        id: "edit",
+        label: "Редактировать",
+        onSelect: () => router.push(`/listing/edit/${id}`),
+      },
+      {
+        id: "delete",
+        label: "Удалить",
+        destructive: true,
+        onSelect: () => {
+          if (!window.confirm("Удалить объявление безвозвратно?")) return;
+          void ownerDeleteListing(id).then((res) => {
+            if (!res.ok) {
+              if (process.env.NODE_ENV === "development") {
+                console.warn("ownerDeleteListing", res.error);
+              }
+              return;
+            }
+            router.push("/profile/listings");
+          });
+        },
+      },
+      shareAction,
+    ];
   }, [isOwn, itemTitle, lid, router, viewerId]);
 
   useEffect(() => {
@@ -327,13 +302,15 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             <ListingFavoriteIconButton filled={isFavoritedLocal} busy={favoriteBusy} onClick={() => handleToggleFavorite()} />
           ) : null}
           <button
+            ref={listingActionsAnchorRef}
             type="button"
             aria-label="Действия"
+            aria-expanded={actionsOpen}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setActionsOpen(true);
+              setActionsOpen((o) => !o);
             }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/40 text-white shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-black/55 active:scale-95"
           >
@@ -404,7 +381,13 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
       {toast ? (
         <SimpleToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
       ) : null}
-      <ListingActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} actions={listingSheetActions} />
+      <ListingActionsMenu
+        open={actionsOpen}
+        anchorRef={listingActionsAnchorRef}
+        theme={theme}
+        actions={listingSheetActions}
+        onClose={() => setActionsOpen(false)}
+      />
       {isOwn && !partner ? (
         <div className="space-y-2.5 px-[14px] pb-[14px] pt-1">
           {/* 1. Boost - Базовый */}

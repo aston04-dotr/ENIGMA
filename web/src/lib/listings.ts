@@ -336,6 +336,8 @@ export async function fetchListings(filters: {
   /** Курсор следующей страницы (composite). Строковый legacy-курсор игнорируется. */
   cursor?: FeedListingsCursor | string | null;
 }): Promise<FetchListingsResult> {
+  const seekingNoDemo = filters.listingKind === "seeking";
+
   const demo = (notice: string): FetchListingsResult => ({
     listings: getDemoListings(),
     sqlSetupRequired: false,
@@ -344,8 +346,18 @@ export async function fetchListings(filters: {
     nextCursor: null,
   });
 
+  const emptySeeking = (notice: string | null): FetchListingsResult => ({
+    listings: [],
+    sqlSetupRequired: false,
+    error: null,
+    notice,
+    nextCursor: null,
+  });
+
   if (!isSupabaseConfigured) {
-    return demo("Нет ключей Supabase в .env — показаны примеры.");
+    return seekingNoDemo
+      ? emptySeeking("Нет ключей Supabase в .env.")
+      : demo("Нет ключей Supabase в .env — показаны примеры.");
   }
 
   const cursor = normalizeFeedCursor(filters.cursor);
@@ -423,7 +435,11 @@ export async function fetchListings(filters: {
       error = second.error;
       if (isRealError(error) && !data) {
         console.error("REAL LISTINGS ERROR:", error.message);
-        return demo("Не удалось загрузить объявления. Проверь интернет или попробуй позже.");
+        return seekingNoDemo
+          ? emptySeeking(
+              "Не удалось загрузить запросы. Проверь интернет или попробуй позже.",
+            )
+          : demo("Не удалось загрузить объявления. Проверь интернет или попробуй позже.");
       }
     }
 
@@ -431,6 +447,9 @@ export async function fetchListings(filters: {
     let listings = rows.map((r) => parseFeedListingRow(r as Record<string, unknown>));
     listings = dedupeListingsById(listings);
     if (listings.length === 0) {
+      if (seekingNoDemo) {
+        return emptySeeking(null);
+      }
       return demo("Объявлений пока нет — показаны примеры.");
     }
 
@@ -465,7 +484,9 @@ export async function fetchListings(filters: {
     if (isRealError(e)) {
       console.error("REAL LISTINGS ERROR:", e.message);
     }
-    return demo("Ошибка загрузки. Показаны примеры — попробуй обновить страницу.");
+    return seekingNoDemo
+      ? emptySeeking("Ошибка загрузки. Попробуй обновить страницу.")
+      : demo("Ошибка загрузки. Показаны примеры — попробуй обновить страницу.");
   }
 }
 

@@ -850,16 +850,13 @@ export function FeedPage({
       <header className="border-b border-line bg-main">
         <div className="mx-auto w-full max-w-none px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4">
-            <div>
-              <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
-                {feedVariant === "seeking" ? "Поиск жилья и авто" : "Enigma"}
-              </h1>
-              {feedVariant === "seeking" ? (
-                <p className="mt-1 max-w-md text-[13px] leading-snug text-muted">
-                  Запросы от людей: сниму, куплю, возьму в прокат — чтобы вы нашли клиентов.
-                </p>
-              ) : null}
-            </div>
+            {feedVariant !== "seeking" ? (
+              <div>
+                <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
+                  Enigma
+                </h1>
+              </div>
+            ) : null}
           </div>
           <div className="mt-6 space-y-2.5">
             <div

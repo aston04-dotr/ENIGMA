@@ -205,6 +205,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line no-console
         console.log("[auth] event", event);
       }
+
+      if (event === "INITIAL_SESSION") {
+        void supabase.auth.getSession().then(({ data }) => {
+          if (!mounted) return;
+          const s = data.session ?? nextSession ?? null;
+          setSession(s);
+          setUser(s?.user ?? null);
+          setLoading(false);
+          setAuthResolved(true);
+        });
+        return;
+      }
+
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
