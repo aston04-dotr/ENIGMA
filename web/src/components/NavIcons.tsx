@@ -19,6 +19,15 @@ export function IconSearch({ className }: IconProps) {
   );
 }
 
+export function IconRotateCw({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
 export function IconPlus({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>

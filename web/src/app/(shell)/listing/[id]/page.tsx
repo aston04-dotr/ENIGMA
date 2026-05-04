@@ -24,6 +24,7 @@ import { trackEvent } from "@/lib/analytics";
 import { categoryLabel } from "@/lib/categories";
 import { hideListingInFeed } from "@/lib/feedHiddenListings";
 import { shareListingUrl } from "@/lib/shareListing";
+import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import Image from "next/image";
 import Link from "next/link";
@@ -161,6 +162,8 @@ export default function ListingDetailPage() {
   useEffect(() => {
     setIsFavoritedLocal(isFavoritedFromRow);
   }, [isFavoritedFromRow, rowId]);
+
+  useListingFavoriteRealtime(rowId, setFavoriteCountLocal);
 
   const openChat = useCallback(
     async (sellerUserId: string) => {

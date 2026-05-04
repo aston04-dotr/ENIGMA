@@ -18,6 +18,7 @@ import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
 import { shareListingUrl } from "@/lib/shareListing";
 import { reportListingTrustPenalty } from "@/lib/trust";
+import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
@@ -102,6 +103,8 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
     type: "success" | "error" | "info";
   } | null>(null);
   const priceRub = defaultBoostCtaPriceRub();
+
+  useListingFavoriteRealtime(lid, setFavoriteCountLocal);
 
   const listingSheetActions = useMemo((): ListingSheetAction[] => {
     const id = String(lid ?? "").trim();

@@ -242,6 +242,7 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
           view_count: number | null
+          favorite_count?: number | null
           vip_until: string | null
         }
         Insert: {
@@ -268,6 +269,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           view_count?: number | null
+          favorite_count?: number | null
           vip_until?: string | null
         }
         Update: {
@@ -294,6 +296,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           view_count?: number | null
+          favorite_count?: number | null
           vip_until?: string | null
         }
         Relationships: []

@@ -1,27 +1,45 @@
 "use client";
 
-import { Suspense, type ComponentType, type ReactNode } from "react";
-import { IconChat, IconHome, IconPlus, IconSearch, IconUser } from "@/components/NavIcons";
+import { Suspense, useEffect, useReducer, type ComponentType, type ReactNode } from "react";
+import {
+  IconChat,
+  IconHome,
+  IconPlus,
+  IconRotateCw,
+  IconSearch,
+  IconUser,
+} from "@/components/NavIcons";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { useTheme } from "@/context/theme-context";
+import { trackEvent } from "@/lib/analytics";
+import {
+  bumpSyncBadgeExtraAfterStaleAway,
+  getSyncBadgeStoredExtra,
+  runDeepApplicationSync,
+  SYNC_BADGE_CHANGED_EVENT,
+} from "@/lib/deepSyncReset";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 type UiTheme = "light" | "dark";
 
-type TabDef = {
+type RouteTab = {
+  kind: "route";
   key: string;
   href: string;
   label: ReactNode;
   Icon: ComponentType<{ className?: string }>;
   isActive: (pathname: string, intent: string | null) => boolean;
-  /** Двухстрочная подпись «Поиск / жилья·авто». */
-  stackedLabel?: boolean;
 };
 
-const tabs: TabDef[] = [
+type SyncTab = { kind: "sync"; key: "sync" };
+
+type NavEntry = RouteTab | SyncTab;
+
+const navEntries: NavEntry[] = [
   {
+    kind: "route",
     key: "feed",
     href: "/",
     label: "Лента",
@@ -29,14 +47,16 @@ const tabs: TabDef[] = [
     isActive: (p) => p === "/",
   },
   {
+    kind: "route",
     key: "wanted",
     href: "/wanted",
     label: "Поиск",
-    stackedLabel: true,
     Icon: IconSearch,
     isActive: (p) => p === "/wanted",
   },
+  { kind: "sync", key: "sync" },
   {
+    kind: "route",
     key: "create",
     href: "/create",
     label: "Создать",
@@ -44,6 +64,7 @@ const tabs: TabDef[] = [
     isActive: (p) => p === "/create" || p.startsWith("/create/"),
   },
   {
+    kind: "route",
     key: "chat",
     href: "/chat",
     label: "Чаты",
@@ -51,6 +72,7 @@ const tabs: TabDef[] = [
     isActive: (p) => p === "/chat" || p.startsWith("/chat/"),
   },
   {
+    kind: "route",
     key: "profile",
     href: "/profile",
     label: "Профиль",
@@ -67,7 +89,8 @@ function formatUnreadBadge(count: number): string {
 function navChrome(theme: UiTheme): { navClass: string; bg: string; badgeRing: string } {
   if (theme === "light") {
     return {
-      navClass: "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
+      navClass:
+        "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
       bg: "#FFFFFF",
       badgeRing: "#FFFFFF",
     };
@@ -94,6 +117,10 @@ function tabColors(theme: UiTheme, active: boolean): { icon: string; label: stri
     : { icon: "text-[#72f3ff]/92", label: "text-[#72f3ff]/92" };
 }
 
+function syncTabAccent(theme: UiTheme): string {
+  return theme === "light" ? "text-[#0eaefe]" : "text-[#c8fbff]";
+}
+
 function BottomNavInner() {
   const { loading } = useAuth();
   const { theme } = useTheme();
@@ -101,8 +128,37 @@ function BottomNavInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const intent = searchParams.get("intent");
+  const [, bumpBadgeRender] = useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => {
+    const onEvt = () => bumpBadgeRender();
+    window.addEventListener(SYNC_BADGE_CHANGED_EVENT, onEvt);
+    return () => window.removeEventListener(SYNC_BADGE_CHANGED_EVENT, onEvt);
+  }, []);
+
+  useEffect(() => {
+    let lastHiddenAt = 0;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") {
+        lastHiddenAt = Date.now();
+      } else if (lastHiddenAt > 0) {
+        bumpSyncBadgeExtraAfterStaleAway(Date.now() - lastHiddenAt);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   const chrome = navChrome(theme);
+
+  const syncBadgeTotal = Math.min(99, totalUnread + getSyncBadgeStoredExtra());
+
+  const handleDeepSync = () => {
+    trackEvent("deep_sync_click", { path: pathname });
+    runDeepApplicationSync();
+  };
+
+  const syncAccent = syncTabAccent(theme);
 
   return (
     <nav
@@ -113,7 +169,34 @@ function BottomNavInner() {
       }}
       aria-busy={loading}
     >
-      {tabs.map((t) => {
+      {navEntries.map((entry) => {
+        if (entry.kind === "sync") {
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={handleDeepSync}
+              className="pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-semibold tracking-wide sm:text-[10px]"
+              aria-label="Обновить: очистить кеш и перезагрузить приложение"
+            >
+              <span className={`relative inline-flex ${syncAccent}`}>
+                <IconRotateCw className="h-6 w-6 shrink-0" />
+                {syncBadgeTotal > 0 ? (
+                  <span
+                    className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white"
+                    style={{ boxShadow: `0 0 0 2px ${chrome.badgeRing}` }}
+                    aria-label={`К обновлению: ${syncBadgeTotal}`}
+                  >
+                    {formatUnreadBadge(syncBadgeTotal)}
+                  </span>
+                ) : null}
+              </span>
+              <span className={`leading-tight ${syncAccent}`}>Обновить</span>
+            </button>
+          );
+        }
+
+        const t = entry;
         const active = t.isActive(pathname, intent);
         const isChatTab = t.key === "chat";
         const unread = isChatTab ? totalUnread : 0;
@@ -141,26 +224,7 @@ function BottomNavInner() {
                 </span>
               ) : null}
             </span>
-            {t.stackedLabel ? (
-              <span className={`flex flex-col items-center justify-center gap-0 leading-tight ${c.label}`}>
-                <span>Поиск</span>
-                <span
-                  className={
-                    theme === "light"
-                      ? active
-                        ? "text-[8px] font-medium leading-none text-[#0eaefe]/92"
-                        : "text-[8px] font-medium leading-none text-neutral-400"
-                      : active
-                        ? "text-[8px] font-medium leading-none text-[#c8fbff]/92"
-                        : "text-[8px] font-medium leading-none text-[#72f3ff]/72"
-                  }
-                >
-                  жилья·авто
-                </span>
-              </span>
-            ) : (
-              <span className={`leading-tight ${c.label}`}>{t.label}</span>
-            )}
+            <span className={`leading-tight ${c.label}`}>{t.label}</span>
           </Link>
         );
       })}

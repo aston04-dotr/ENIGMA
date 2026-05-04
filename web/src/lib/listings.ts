@@ -151,6 +151,11 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   if (lkFeed != null && String(lkFeed).trim() !== "") {
     row.listing_kind = String(lkFeed).trim();
   }
+  const fcFeed = data.favorite_count;
+  if (fcFeed != null && fcFeed !== "") {
+    const n = Number(fcFeed);
+    if (Number.isFinite(n)) row.favorite_count = n;
+  }
   return row;
 }
 
@@ -611,6 +616,14 @@ function clearFavoritesBatchCache() {
   favoritesCountsLastFetch = 0;
 }
 
+/** Сброс in-memory кешей объявлений/избранного (кнопка «Обновить» в таббаре). */
+export function resetListingClientCaches(): void {
+  clearFavoritesBatchCache();
+  favoriteSingleCache.clear();
+  favoriteSingleRpcUnavailableUntil = 0;
+  favoritesCountsRpcUnavailableUntil = 0;
+}
+
 function syncFavoriteCaches(listingId: string, favoriteCount: number) {
   const value = Math.max(0, Number(favoriteCount ?? 0));
   setFavoriteSingleCache(listingId, value);
@@ -622,6 +635,13 @@ function syncFavoriteCaches(listingId: string, favoriteCount: number) {
   favoritesCountsCache = new Map(favoritesCountsCache);
   favoritesCountsCache.set(listingId, value);
   favoritesCountsLastFetch = Date.now();
+}
+
+/** Актуальный счётчик с сервера (Realtime); синхронизирует локальные кеши ленты. */
+export function applyFavoriteCountFromServer(listingId: string, favoriteCount: number): void {
+  const id = String(listingId ?? "").trim();
+  if (!id) return;
+  syncFavoriteCaches(id, favoriteCount);
 }
 
 function normalizeFavoriteState(state: FavoriteOptimisticState): FavoriteOptimisticState {
@@ -800,10 +820,17 @@ export async function fetchListingFavoriteCounts(listingIds: string[]): Promise<
 async function mergeFavoriteCounts(listings: ListingRow[]): Promise<ListingRow[]> {
   if (listings.length === 0) return listings;
   const countMap = await fetchListingFavoriteCounts(listings.map((listing) => listing.id));
-  return listings.map((listing) => ({
-    ...listing,
-    favorite_count: countMap.get(listing.id) ?? 0,
-  }));
+  return listings.map((listing) => {
+    const fromRow =
+      listing.favorite_count != null && Number.isFinite(Number(listing.favorite_count))
+        ? Number(listing.favorite_count)
+        : null;
+    const fromRpc = countMap.get(listing.id);
+    return {
+      ...listing,
+      favorite_count: fromRow ?? fromRpc ?? 0,
+    };
+  });
 }
 
 /** true, если RPC выполнился без ошибки (можно локально +1 к счётчику). */
