@@ -286,7 +286,7 @@ export function FeedPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<FeedSort>("newest");
   const [feedDealSegment, setFeedDealSegment] = useState<"sale" | "rent">(() => {
-    if (feedVariant === "seeking") return "rent";
+    if (feedVariant === "seeking") return "sale";
     return feedStateSeed?.dealSegment === "rent" ? "rent" : "sale";
   });
   const [priceFrom, setPriceFrom] = useState("");
@@ -863,6 +863,7 @@ export function FeedPage({
     });
     setCity(ALLOWED_LISTING_CITIES[0]);
     setSelectedCategory(ALL_CATEGORY);
+    setFeedDealSegment("sale");
     setSortMode("newest");
     setSearchInput("");
     setSearchQuery("");

@@ -117,7 +117,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     id: String(data.id),
     user_id: String(data.user_id ?? ""),
     title: String(data.title ?? ""),
-    description: "",
+    description: String(data.description ?? ""),
     price: Number(data.price ?? 0),
     category: String(data.category ?? ""),
     city: normalizedCity,
@@ -291,7 +291,7 @@ function applySafeFilters(
         .replace(/[()]/g, "")
         .slice(0, 80);
       if (safe.length >= 3) {
-        q = q.ilike("title", `${safe}%`);
+        q = loose().or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
       }
     }
     if (filters.minPrice != null && Number.isFinite(Number(filters.minPrice))) {
