@@ -1,17 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import {
-  clearStoredUpdateBadge,
-  getStoredUpdateBadge,
-} from "@/components/AppVersionCheck";
-import { dispatchSyncBadgeChanged, reloadAppSafely } from "@/lib/deepSyncReset";
-
-function isMobileRuntime(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = String(navigator.userAgent || "").toLowerCase();
-  return /android|iphone|ipad|ipod|mobile/.test(ua);
-}
 
 export function ServiceWorkerRegister() {
   useEffect(() => {
@@ -26,29 +15,14 @@ export function ServiceWorkerRegister() {
     const onControllerChange = () => {
       if (hasControllerRefresh) return;
       hasControllerRefresh = true;
-      clearStoredUpdateBadge();
-      reloadAppSafely("sw_controller_change");
-    };
-
-    const markDesktopUpdate = () => {
-      if (isMobileRuntime()) return;
-      try {
-        window.localStorage.setItem("enigma:update-available", "1");
-      } catch {
-        // ignore
-      }
-      dispatchSyncBadgeChanged();
+      window.location.reload();
     };
 
     const activateWaitingWorker = (reg: ServiceWorkerRegistration | null) => {
       const waiting = reg?.waiting;
       if (!waiting) return;
-      if (isMobileRuntime()) {
-        navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
-        waiting.postMessage({ type: "SKIP_WAITING" });
-      } else {
-        markDesktopUpdate();
-      }
+      navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+      waiting.postMessage({ type: "SKIP_WAITING" });
     };
 
     void (async () => {
@@ -78,11 +52,6 @@ export function ServiceWorkerRegister() {
         updateInterval = window.setInterval(() => {
           void registration.update().catch(() => undefined);
         }, 120_000);
-
-        // Чистим десктопный бейдж, если пользователь уже на новой версии.
-        if (getStoredUpdateBadge() > 0 && isMobileRuntime()) {
-          clearStoredUpdateBadge();
-        }
       } catch (e) {
         console.warn("[sw] register failed", e);
       }
