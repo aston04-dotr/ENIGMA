@@ -315,6 +315,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
     setReady(true);
 
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+        document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
+      } catch (storageErr) {
+        console.warn("[auth-context] storage clear failed", storageErr);
+      }
+    }
+
     try {
       await supabase.auth.signOut({ scope: "global" });
     } catch (e) {
@@ -327,7 +337,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (typeof window !== "undefined") {
-      window.location.replace("/login?signed_out=1");
+      window.location.href = "/login?signed_out=1";
     }
   }, []);
 

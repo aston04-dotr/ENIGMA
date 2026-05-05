@@ -4,6 +4,16 @@ import type { NextRequest } from 'next/server'
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
 
 async function updateSession(req: NextRequest) {
+  const pathname = req.nextUrl.pathname.toLowerCase();
+  if (
+    pathname.includes("logout") ||
+    pathname === "/login" ||
+    req.nextUrl.searchParams.has("signed_out") ||
+    req.cookies.get("enigma_signed_out")?.value === "1"
+  ) {
+    return NextResponse.next();
+  }
+
   const { url, anonKey, configured } = getSupabasePublicConfig();
   if (!configured || !url || !anonKey) {
     return NextResponse.next();

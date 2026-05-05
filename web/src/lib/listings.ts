@@ -258,6 +258,43 @@ type LooseFeedQuery = ListingsFeedQuery & {
 
 type SearchMode = "fts" | "ilike";
 
+function normalizeSearchText(raw: string): string {
+  return raw
+    .replace(/%/g, "")
+    .replace(/_/g, "")
+    .replace(/,/g, "")
+    .replace(/[()]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function searchTokens(raw: string): string[] {
+  return Array.from(
+    new Set(
+      normalizeSearchText(raw)
+        .toLowerCase()
+        .split(/\s+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 1),
+    ),
+  );
+}
+
+function scoreListingSearchMatch(row: ListingRow, rawSearch: string): number {
+  const tokens = searchTokens(rawSearch);
+  if (tokens.length === 0) return 0;
+  const title = String(row.title ?? "").toLowerCase();
+  const description = String(row.description ?? "").toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (title.includes(token)) score += 10;
+    else if (description.includes(token)) score += 1;
+  }
+  return score;
+}
+
 function applySafeFilters(
   query: ListingsFeedQuery,
   filters: ListingFilters,
@@ -292,22 +329,13 @@ function applySafeFilters(
     }
 
     if (searchActive) {
-      const safe = searchTrim
-        .replace(/%/g, "")
-        .replace(/_/g, "")
-        .replace(/,/g, "")
-        .replace(/[()]/g, "")
-        .slice(0, 80);
+      const safe = normalizeSearchText(searchTrim);
       if (safe.length >= 3) {
         if (searchMode === "fts") {
-          const tsQuery = safe
-            .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-          if (tsQuery.length >= 3) {
-            q = loose().textSearch("fts", tsQuery, {
+          if (safe.length >= 3) {
+            q = loose().textSearch("fts", safe, {
               config: "russian",
-              type: "websearch",
+              type: "plain",
             });
           }
         } else {
@@ -437,12 +465,6 @@ export async function fetchListings(filters: {
         error = second.error;
       }
 
-      if (!isRealError(error) && searchActive && Array.isArray(data) && data.length === 0) {
-        const fallbackSearch = await mkQuery(false, true, "ilike");
-        data = fallbackSearch.data;
-        error = fallbackSearch.error;
-      }
-
       if (isRealError(error) && !data && hasFilters) {
         console.warn("LISTINGS filtered query failed without data; falling back to base:", error);
         let fallback = await mkQuery(false, false, "fts");
@@ -500,7 +522,15 @@ export async function fetchListings(filters: {
     };
 
     try {
-      const merged = await mergeFavoriteCounts(listings);
+      const mergedRaw = await mergeFavoriteCounts(listings);
+      const merged = searchActive
+        ? [...mergedRaw].sort((a, b) => {
+            const sb = scoreListingSearchMatch(b, searchTrim);
+            const sa = scoreListingSearchMatch(a, searchTrim);
+            if (sb !== sa) return sb - sa;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          })
+        : mergedRaw;
       console.log("FETCH LISTINGS RESULT", {
         count: merged.length,
         pageSize: LISTINGS_PAGE_SIZE,
@@ -566,15 +596,6 @@ export async function fetchListingsCount(filters: {
   };
 
   const first = await mkCountQuery("fts");
-  if (!isRealError(first.error) && typeof first.count === "number" && first.count > 0) {
-    return first.count;
-  }
-  if (searchActive) {
-    const second = await mkCountQuery("ilike");
-    if (!isRealError(second.error) && typeof second.count === "number") {
-      return second.count;
-    }
-  }
   if (!isRealError(first.error) && typeof first.count === "number") return first.count;
   return 0;
 }
