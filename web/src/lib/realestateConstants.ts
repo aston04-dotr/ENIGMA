@@ -4,16 +4,24 @@ export const COMMERCIAL_PROPERTY_LABEL = "Коммерческая";
 
 /** Отдельное здание целиком — без поля «Этаж». */
 export const COMMERCIAL_SHOPPING_CENTER_LABEL = "Торговый центр";
+export const COMMERCIAL_FREE_USE_LABEL = "Свободного назначения";
 
 export const COMMERCIAL_PREMISES_OPTIONS = [
   "Офис",
   "Склад",
-  "ПСН",
+  COMMERCIAL_FREE_USE_LABEL,
   "Торговый центр",
   "Производство",
   "Общепит",
   "Гостиница",
 ] as const;
+
+export function normalizeCommercialPremisesLabel(raw: unknown): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  if (value === "ПСН") return COMMERCIAL_FREE_USE_LABEL;
+  return value;
+}
 
 export const HOUSE_LABEL = "Дом";
 export const LAND_PLOT_LABEL = "Участок";

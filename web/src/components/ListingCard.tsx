@@ -340,7 +340,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
             {itemTitle}
           </p>
           {reFacts ? (
-            <p className="line-clamp-2 break-words text-[12px] leading-snug text-muted">{reFacts}</p>
+            <p className="line-clamp-3 break-words text-[12px] leading-snug text-muted">{reFacts}</p>
           ) : null}
           <p
             className={`flex items-baseline gap-1.5 text-[24px] font-extrabold leading-none tracking-[0.01em] ${

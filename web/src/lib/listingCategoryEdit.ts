@@ -6,6 +6,7 @@ import {
   LAND_PLOT_LABEL,
   LAND_OWNERSHIP_OPTIONS,
   LAND_PURPOSE_OPTIONS,
+  normalizeCommercialPremisesLabel,
 } from "@/lib/realestateConstants";
 import {
   formatPlotAreaForListingFromSotkiString,
@@ -241,7 +242,7 @@ export function hydrateRealEstateEditParams(row: ListingRow): RealEstateEditPara
 
   return {
     propertyType,
-    commercialPremisesType: row.commercial_type?.trim() ?? "",
+    commercialPremisesType: normalizeCommercialPremisesLabel(row.commercial_type),
     area,
     floor: p.floor != null ? String(p.floor) : "",
     floorsTotal: p.floors_total != null ? String(p.floors_total) : "",

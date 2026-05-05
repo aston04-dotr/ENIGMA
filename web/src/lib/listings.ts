@@ -10,6 +10,7 @@ import {
   isAllowedListingCity,
   normalizeAllowedListingCity,
 } from "./russianCities";
+import { normalizeCommercialPremisesLabel } from "./realestateConstants";
 import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
 
 const LISTING_DETAIL_FETCH_MS = 5000;
@@ -145,7 +146,7 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
   }
   const ctFeed = data.commercial_type;
   if (ctFeed != null && String(ctFeed).trim() !== "") {
-    row.commercial_type = String(ctFeed).trim();
+    row.commercial_type = normalizeCommercialPremisesLabel(ctFeed);
   }
   const lkFeed = data.listing_kind;
   if (lkFeed != null && String(lkFeed).trim() !== "") {
@@ -1084,7 +1085,7 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
   }
   const ctDetail = data.commercial_type;
   if (ctDetail != null && String(ctDetail).trim() !== "") {
-    row.commercial_type = String(ctDetail).trim();
+    row.commercial_type = normalizeCommercialPremisesLabel(ctDetail);
   }
   const lkDetail = data.listing_kind;
   if (lkDetail != null && String(lkDetail).trim() !== "") {
