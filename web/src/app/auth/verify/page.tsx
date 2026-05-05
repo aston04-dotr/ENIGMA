@@ -71,34 +71,8 @@ export default function VerifyPage() {
       return;
     }
 
-    let tries = 0;
-    let ok = false;
-    while (tries < 12) {
-      const { data: sessData } = await supabase.auth.getSession();
-      if (sessData.session?.access_token && sessData.session?.user) {
-        ok = true;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      tries++;
-    }
-
-    setLoading(false);
-    if (!ok) {
-      setError("Сессия не успела сохраниться. Обновите страницу или войдите снова.");
-      return;
-    }
-
     localStorage.removeItem("auth_email");
-
-    const { error: refreshErr } = await supabase.auth.refreshSession();
-    if (refreshErr && process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
-      console.warn("[verify] refreshSession", refreshErr);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    window.location.assign("/");
+    window.location.href = "/profile";
   };
 
   const onResend = async () => {

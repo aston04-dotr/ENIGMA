@@ -10,11 +10,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
-import {
-  clearAuthSyncGracePending,
-  isAuthSyncGracePending,
-} from "@/lib/deepSyncReset";
 import { supabase } from "@/lib/supabase";
 
 type UserRow = {
@@ -56,11 +51,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(true);
   const [bootstrapKey, setBootstrapKey] = useState(0);
   const profileRequestIdRef = useRef(0);
+  const loadingRef = useRef(loading);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
   const [needsName] = useState(false);
   const [needsProfileSetup] = useState(false);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!loading) return;
+    const timeout = window.setTimeout(() => {
+      if (loadingRef.current) {
+        console.warn("Session sync slow, forcing UI");
+        setLoading(false);
+        setAuthResolved(true);
+        setReady(true);
+      }
+    }, 3000);
+    return () => window.clearTimeout(timeout);
+  }, [loading]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    console.log("COOKIE SESSION CHECK", document.cookie);
+  }, []);
 
   const ensureProfileExists = useCallback(
     async (userId: string, email?: string | null) => {
@@ -161,75 +180,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+    const settledRef = { current: false };
+    let initialSessionResolved = false;
 
-    let bootstrapPromise: Promise<void> | null = null;
-
-    const ensureBootstrap = (): Promise<void> => {
-      if (!bootstrapPromise) {
-        bootstrapPromise = (async () => {
-          try {
-            const syncGrace = isAuthSyncGracePending();
-            const t0 = Date.now();
-            let { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-            if (sessionErr) {
-              console.warn("[auth] getSession", sessionErr);
-            }
-
-            if (syncGrace) {
-              const elapsed = Date.now() - t0;
-              const waitMs = Math.max(0, 2000 - elapsed);
-              if (waitMs > 0) {
-                await new Promise((r) => setTimeout(r, waitMs));
-              }
-              const second = await supabase.auth.getSession();
-              sessionData = second.data;
-              if (second.error) {
-                console.warn("[auth] getSession (after sync grace)", second.error);
-              }
-              clearAuthSyncGracePending();
-            }
-
-            if (!mounted) return;
-
-            setSession(sessionData.session);
-            setUser(sessionData.session?.user ?? null);
-            setAuthResolved(true);
-            setLoading(false);
-            setReady(true);
-
-            if (sessionData.session) {
-              void (async () => {
-                try {
-                  const { data: userData, error: userErr } = await supabase.auth.getUser();
-                  if (!mounted) return;
-                  if (userErr) {
-                    console.warn("[auth] getUser (refresh in background)", userErr);
-                  } else if (userData.user) {
-                    setUser(userData.user);
-                  }
-                } catch (e) {
-                  console.error("[auth] getUser unexpected", e);
-                }
-              })();
-            }
-          } catch (err) {
-            console.error("[auth-context] bootstrap", err);
-            if (!mounted) return;
-            clearAuthSyncGracePending();
-            setSession(null);
-            setUser(null);
-            setAuthResolved(true);
-            setLoading(false);
-            setReady(true);
-          }
-        })();
-      }
-      return bootstrapPromise;
+    const applySession = (next: Session | null) => {
+      setSession(next);
+      setUser(next?.user ?? null);
+      setAuthResolved(true);
+      setLoading(false);
+      setReady(true);
     };
 
-    void ensureBootstrap().catch((err) => {
-      console.error("[auth-context] ensureBootstrap", err);
-    });
+    const signedOutGuardMs = 1800;
 
     const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
@@ -239,41 +201,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "INITIAL_SESSION") {
-        void ensureBootstrap().catch((err) => {
-          console.error("[auth-context] ensureBootstrap (INITIAL_SESSION)", err);
-        });
+        initialSessionResolved = true;
+        settledRef.current = true;
+        applySession(nextSession ?? null);
         return;
       }
 
-      if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_IN") {
+        initialSessionResolved = true;
         void (async () => {
-          const { data } = await supabase.auth.getSession();
-          if (!mounted) return;
-          if (data.session?.user) {
-            setSession(data.session);
-            setUser(data.session.user);
-            setLoading(false);
-            setAuthResolved(true);
-            return;
+          try {
+            const { data } = await supabase.auth.getSession();
+            if (!mounted) return;
+            settledRef.current = true;
+            applySession(data.session ?? nextSession ?? null);
+          } catch (err) {
+            console.warn("[auth] SIGNED_IN getSession failed", err);
+            if (!mounted) return;
+            settledRef.current = true;
+            applySession(nextSession ?? null);
           }
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setProfileLoading(false);
-          setLoading(false);
-          setAuthResolved(true);
         })();
         return;
       }
 
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setLoading(false);
-      setAuthResolved(true);
+      if (event === "SIGNED_OUT") {
+        if (!initialSessionResolved) {
+          return;
+        }
+        void (async () => {
+          try {
+            await new Promise((r) => setTimeout(r, signedOutGuardMs));
+            const { data } = await supabase.auth.getSession();
+            if (!mounted) return;
+            if (typeof document !== "undefined") {
+              console.log("COOKIE SESSION CHECK", document.cookie);
+            }
+            if (data.session?.user) {
+              applySession(data.session);
+              return;
+            }
+            settledRef.current = true;
+            applySession(null);
+            setProfile(null);
+            setProfileLoading(false);
+          } catch (err) {
+            console.warn("[auth] SIGNED_OUT getSession failed", err);
+            if (!mounted) return;
+            settledRef.current = true;
+            applySession(null);
+            setProfile(null);
+            setProfileLoading(false);
+          }
+        })();
+        return;
+      }
+      settledRef.current = true;
+      applySession(nextSession ?? null);
     });
+
+    // Фолбэк: если INITIAL_SESSION задержался, делаем мягкий check один раз.
+    const bootstrapTimer = window.setTimeout(() => {
+      if (!mounted || settledRef.current) return;
+      void supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (!mounted || settledRef.current) return;
+          applySession(data.session ?? null);
+        })
+        .catch((err) => {
+          console.warn("[auth] getSession bootstrap fallback", err);
+          if (!mounted || settledRef.current) return;
+          applySession(null);
+        });
+    }, 900);
 
     return () => {
       mounted = false;
+      window.clearTimeout(bootstrapTimer);
       subData.subscription.unsubscribe();
     };
   }, [bootstrapKey]);
@@ -307,19 +312,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (localErr) {
         console.warn("[auth-context] signOut local failed", localErr);
       }
-    }
-
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const keys = Object.keys(window.localStorage);
-        for (const key of keys) {
-          if (key.startsWith("sb-")) {
-            window.localStorage.removeItem(key);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[auth-context] localStorage clear failed", e);
     }
 
     if (typeof window !== "undefined") {
@@ -368,10 +360,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile,
     ],
   );
-
-  if (loading) {
-    return <AuthLoadingScreen />;
-  }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -5,13 +5,12 @@ import { ThemeProvider } from "@/context/theme-context";
 import { ViewModeProvider } from "@/context/view-mode-context";
 import { ChatUnreadProvider } from "@/context/chat-unread-context";
 import { ViewModeLayout } from "@/components/ViewModeLayout";
+import { LandingScreen } from "@/components/LandingScreen";
 import { AuthDebugTracker } from "@/components/AuthDebugTracker";
 import { UnregisterServiceWorkers } from "@/components/UnregisterServiceWorkers";
 import { DevCacheClear } from "@/components/DevCacheClear";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
-import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
-import { AppVersionCheck } from "@/components/AppVersionCheck";
 import { GlobalErrorHandlers } from "@/components/GlobalErrorHandlers";
 import { PushNotificationsBootstrap } from "@/components/PushNotificationsBootstrap";
 import { useHasMounted } from "@/hooks/useHasMounted";
@@ -23,32 +22,34 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const hasMounted = useHasMounted();
 
   useEffect(() => {
+    const t = window.setTimeout(() => {
+      console.log("FORCE SAFE RENDER");
+    }, 2000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
     if (!hasMounted) return;
     try {
       const needsRecovery =
         window.localStorage.getItem(HYDRATION_RECOVERY_FLAG) === "1";
       if (!needsRecovery) return;
-      const keys = Object.keys(window.localStorage);
-      for (const key of keys) {
-        if (key.startsWith("sb-") || key.includes("supabase.auth")) {
-          window.localStorage.removeItem(key);
-        }
-      }
+      // Не трогаем auth-хранилище Supabase: иначе mobile/PWA теряет сессию после reload/update.
       window.localStorage.removeItem(HYDRATION_RECOVERY_FLAG);
     } catch {
       // noop
     }
   }, [hasMounted]);
 
-  if (!hasMounted) return null;
+  if (!hasMounted) {
+    return <LandingScreen minimal />;
+  }
 
   return (
     <>
       <UnregisterServiceWorkers />
       <DevCacheClear />
       <AuthDebugTracker />
-      <ServiceWorkerRegister />
-      <AppVersionCheck />
       <GlobalErrorHandlers />
       <ThemeProvider>
         <AuthProvider>
