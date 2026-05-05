@@ -42,11 +42,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }, [hasMounted]);
 
   if (!hasMounted) {
-    return <LandingScreen minimal />;
+    return (
+      <div className="min-h-screen bg-main">
+        <LandingScreen minimal />
+      </div>
+    );
   }
 
   return (
-    <>
+    <div className="min-h-screen bg-main">
       <UnregisterServiceWorkers />
       <DevCacheClear />
       <AuthDebugTracker />
@@ -64,6 +68,6 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           </ViewModeProvider>
         </AuthProvider>
       </ThemeProvider>
-    </>
+    </div>
   );
 }

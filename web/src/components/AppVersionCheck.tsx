@@ -37,7 +37,6 @@ export function AppVersionCheck() {
           } catch {
             /* quota */
           }
-          window.location.reload();
           return;
         }
         try {

@@ -418,10 +418,26 @@ export function FeedPage({
   const lastPrefetchAtRef = useRef(0);
   const lastLoadMoreAtRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debugLogFeedFetch = useCallback(
+    (source: "replace" | "append", fetchedCount: number) => {
+      console.log("[feed] server payload", {
+        source,
+        fetchedCount,
+        filters: {
+          city,
+          category: selectedCategory,
+          listingType: feedDealSegment,
+          searchText: searchQuery.trim(),
+          feedVariant,
+        },
+      });
+    },
+    [city, selectedCategory, feedDealSegment, searchQuery, feedVariant],
+  );
   const feedFilters = useMemo(() => {
     const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
     const q = searchQuery.trim();
-    if (q.length >= 2) {
+    if (q.length > 2) {
       f.search = q;
     }
     if (feedVariant === "seeking") {
@@ -622,6 +638,7 @@ export function FeedPage({
       prefetchedRef.current = null;
       prefetchKeyRef.current = null;
       setFeedError(null);
+      debugLogFeedFetch(mode, raw.length);
       const mix = mixFeed(raw, session?.user?.id);
       const serverNext = res.nextCursor ?? null;
       if (mode === "replace") {
@@ -639,7 +656,7 @@ export function FeedPage({
         setNextCursor(serverNext);
       }
     },
-    [session?.user?.id, cacheStorageKey],
+    [session?.user?.id, cacheStorageKey, debugLogFeedFetch],
   );
 
   useEffect(() => {
@@ -680,6 +697,7 @@ export function FeedPage({
           prefetchedRef.current = null;
           prefetchKeyRef.current = null;
           setFeedError(null);
+          debugLogFeedFetch("replace", raw.length);
           const mix = mixFeed(raw, session?.user?.id);
           const serverNext = res.nextCursor ?? null;
           setItems(mix);
@@ -706,7 +724,7 @@ export function FeedPage({
         setIsFeedRefreshing(false);
       }
     };
-  }, [feedFilters, session?.user?.id, feedNonce]);
+  }, [feedFilters, session?.user?.id, feedNonce, debugLogFeedFetch]);
 
   useEffect(() => {
     return subscribeListingPromotionApplied(() => {

@@ -21,10 +21,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [followSystem, setFollowSystem] = useState(false);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     let t: UiTheme = "dark";
     let hasStoredTheme = false;
     try {
-      const s = localStorage.getItem(STORAGE_KEY) as UiTheme | null;
+      const s = window.localStorage.getItem(STORAGE_KEY) as UiTheme | null;
       if (s === "light" || s === "dark") {
         t = s;
         hasStoredTheme = true;
@@ -60,23 +61,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [mounted, followSystem]);
 
   const setTheme = useCallback((next: UiTheme) => {
+    if (typeof window === "undefined") return;
     setFollowSystem(false);
     setThemeState(next);
     document.documentElement.dataset.theme = next;
     try {
-      localStorage.setItem(STORAGE_KEY, next);
+      window.localStorage.setItem(STORAGE_KEY, next);
     } catch {
       /* ignore */
     }
   }, []);
 
   const toggleTheme = useCallback(() => {
+    if (typeof window === "undefined") return;
     setFollowSystem(false);
     setThemeState((prev) => {
       const next: UiTheme = prev === "dark" ? "light" : "dark";
       document.documentElement.dataset.theme = next;
       try {
-        localStorage.setItem(STORAGE_KEY, next);
+        window.localStorage.setItem(STORAGE_KEY, next);
       } catch {
         /* ignore */
       }

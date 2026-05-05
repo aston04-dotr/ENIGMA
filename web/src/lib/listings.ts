@@ -249,6 +249,11 @@ type ListingsFeedQuery = ReturnType<typeof listingsFeedSelectBase>;
 type LooseFeedQuery = ListingsFeedQuery & {
   eq: (column: string, value: string) => ListingsFeedQuery;
   or: (filters: string) => ListingsFeedQuery;
+  textSearch: (
+    column: string,
+    query: string,
+    options?: { config?: string; type?: "plain" | "phrase" | "websearch" },
+  ) => ListingsFeedQuery;
 };
 
 function applySafeFilters(
@@ -291,7 +296,16 @@ function applySafeFilters(
         .replace(/[()]/g, "")
         .slice(0, 80);
       if (safe.length >= 3) {
-        q = loose().or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
+        const tsQuery = safe
+          .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (tsQuery.length >= 3) {
+          q = loose().textSearch("fts", tsQuery, {
+            config: "russian",
+            type: "websearch",
+          });
+        }
       }
     }
     if (filters.minPrice != null && Number.isFinite(Number(filters.minPrice))) {

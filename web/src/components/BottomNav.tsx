@@ -176,7 +176,7 @@ function BottomNavInner() {
               key={entry.key}
               type="button"
               onClick={handleDeepSync}
-              className="pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-semibold tracking-wide sm:text-[10px]"
+              className="pressable relative hidden min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-semibold tracking-wide sm:text-[10px] md:flex"
               aria-label="Обновить: очистить кеш и перезагрузить приложение"
             >
               <span className={`relative inline-flex ${syncAccent}`}>

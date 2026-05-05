@@ -1,6 +1,6 @@
 "use client";
 
-import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
+import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
@@ -446,7 +446,7 @@ export default function ProfilePage() {
   }
 
   if (!session) {
-    return <AuthLoadingScreen />;
+    return <LandingScreen />;
   }
 
   return (

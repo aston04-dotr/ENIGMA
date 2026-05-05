@@ -8,39 +8,7 @@ import { resetListingClientCaches } from "@/lib/listings";
 export const SYNC_BADGE_EXTRA_KEY = "enigma:sync-badge-extra";
 export const SYNC_LAST_DEEP_SYNC_AT_KEY = "enigma:last-deep-sync-at";
 export const SYNC_BADGE_CHANGED_EVENT = "enigma-sync-badge-changed";
-
-/** После «Обновить» AuthProvider даёт сессии до 2 с на восстановление (mobile). JSON: `{ "is_syncing": true }`. */
-export const AUTH_SYNC_STATE_LS_KEY = "enigma_auth_sync_state";
-
-export function markAuthSyncGracePending(): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(AUTH_SYNC_STATE_LS_KEY, JSON.stringify({ is_syncing: true }));
-  } catch {
-    /* ignore */
-  }
-}
-
-export function clearAuthSyncGracePending(): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem(AUTH_SYNC_STATE_LS_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
-export function isAuthSyncGracePending(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const raw = localStorage.getItem(AUTH_SYNC_STATE_LS_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as { is_syncing?: unknown };
-    return parsed?.is_syncing === true;
-  } catch {
-    return false;
-  }
-}
+const RELOAD_GUARD_KEY = "enigma:reload-in-flight";
 
 const FEED_LOCALSTORAGE_KEYS = ["cached_listings", "cached_listings_wanted", "feed_category"] as const;
 
@@ -79,28 +47,34 @@ export function dispatchSyncBadgeChanged(): void {
   window.dispatchEvent(new CustomEvent(SYNC_BADGE_CHANGED_EVENT));
 }
 
-export function runDeepApplicationSync(): void {
+/**
+ * Единая безопасная перезагрузка для mobile/PWA:
+ * - ставит auth-grace флаг, чтобы AuthProvider дождался восстановления сессии;
+ * - блокирует повторный reload-шторм в коротком окне.
+ */
+export function reloadAppSafely(reason: string): void {
+  void reason;
   if (typeof window === "undefined") return;
-
-  markAuthSyncGracePending();
-
   try {
-    for (const k of FEED_LOCALSTORAGE_KEYS) {
-      localStorage.removeItem(k);
-    }
-    sessionStorage.removeItem("feed_state");
+    sessionStorage.setItem(RELOAD_GUARD_KEY, JSON.stringify({ at: Date.now(), reason }));
   } catch {
     /* ignore */
   }
+  // Stability mode: без принудительного reload на mobile/PWA.
+}
+
+export function runDeepApplicationSync(): void {
+  if (typeof window === "undefined") return;
 
   resetListingClientCaches();
 
   try {
-    localStorage.setItem(SYNC_LAST_DEEP_SYNC_AT_KEY, String(Date.now()));
-    setSyncBadgeExtra(0);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SYNC_LAST_DEEP_SYNC_AT_KEY, String(Date.now()));
+    }
   } catch {
     /* ignore */
   }
 
-  window.location.reload();
+  reloadAppSafely("deep_sync");
 }
