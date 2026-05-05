@@ -465,6 +465,12 @@ export async function fetchListings(filters: {
         error = second.error;
       }
 
+      if (!isRealError(error) && searchActive && Array.isArray(data) && data.length === 0) {
+        const fallbackSearch = await mkQuery(false, true, "ilike");
+        data = fallbackSearch.data;
+        error = fallbackSearch.error;
+      }
+
       if (isRealError(error) && !data && hasFilters) {
         console.warn("LISTINGS filtered query failed without data; falling back to base:", error);
         let fallback = await mkQuery(false, false, "fts");
@@ -596,6 +602,17 @@ export async function fetchListingsCount(filters: {
   };
 
   const first = await mkCountQuery("fts");
+  if (
+    searchActive &&
+    !isRealError(first.error) &&
+    typeof first.count === "number" &&
+    first.count === 0
+  ) {
+    const second = await mkCountQuery("ilike");
+    if (!isRealError(second.error) && typeof second.count === "number") {
+      return second.count;
+    }
+  }
   if (!isRealError(first.error) && typeof first.count === "number") return first.count;
   return 0;
 }

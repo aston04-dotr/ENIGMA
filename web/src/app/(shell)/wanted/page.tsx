@@ -17,7 +17,7 @@ export default function WantedFeedPage() {
 
   return (
     <div className="min-h-screen bg-main">
-      <FeedPage session={session} feedVariant="seeking" />
+      <FeedPage session={session} />
     </div>
   );
 }
