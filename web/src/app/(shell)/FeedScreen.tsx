@@ -34,6 +34,45 @@ const FEED_CATEGORY_KEY = "feed_category";
 const FEED_STATE_KEY = "feed_state";
 const ALL_CATEGORY = "all";
 const FILTERS_DEBOUNCE_MS = 350;
+const TEXT_SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_STOP_WORDS = new Set([
+  "и",
+  "или",
+  "а",
+  "но",
+  "в",
+  "во",
+  "на",
+  "по",
+  "за",
+  "для",
+  "до",
+  "от",
+  "из",
+  "к",
+  "ко",
+  "у",
+  "о",
+  "об",
+  "с",
+  "со",
+  "под",
+  "при",
+  "между",
+  "без",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "for",
+  "to",
+  "of",
+  "in",
+  "on",
+  "with",
+  "by",
+]);
 
 type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
 type StoredFeedState = {
@@ -69,6 +108,18 @@ function parseIntOrNull(raw: string): number | null {
   if (!/^\d+$/.test(normalized)) return null;
   const value = Number.parseInt(normalized, 10);
   return Number.isFinite(value) ? value : null;
+}
+
+function tokenizeSearchQuery(raw: string): string[] {
+  const normalized = String(raw ?? "")
+    .toLowerCase()
+    .replace(/[^0-9a-zA-Zа-яА-ЯёЁ]+/g, " ");
+  const tokens = normalized
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2)
+    .filter((part) => !SEARCH_STOP_WORDS.has(part));
+  return Array.from(new Set(tokens));
 }
 
 function getParamsObject(row: ListingRow): Record<string, unknown> {
@@ -231,6 +282,8 @@ export function FeedPage({
   });
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
   const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<FeedSort>("newest");
   const [feedDealSegment, setFeedDealSegment] = useState<"sale" | "rent">(() => {
     if (feedVariant === "seeking") return "rent";
@@ -345,6 +398,13 @@ export function FeedPage({
   const [feedHiddenTick, setFeedHiddenTick] = useState(0);
 
   useEffect(() => {
+    const t = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, TEXT_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const onHiddenChanged = () => setFeedHiddenTick((n) => n + 1);
     window.addEventListener(FEED_HIDDEN_CHANGED_EVENT, onHiddenChanged);
@@ -360,6 +420,10 @@ export function FeedPage({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedFilters = useMemo(() => {
     const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
+    const q = searchQuery.trim();
+    if (q.length >= 2) {
+      f.search = q;
+    }
     if (feedVariant === "seeking") {
       f.listingKind = "seeking";
       f.dealType = feedDealSegment;
@@ -376,7 +440,7 @@ export function FeedPage({
       f.category = selectedCategory;
     }
     return f;
-  }, [city, selectedCategory, feedDealSegment, feedVariant]);
+  }, [city, selectedCategory, feedDealSegment, feedVariant, searchQuery]);
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
@@ -408,6 +472,16 @@ export function FeedPage({
       if (selectedCategory === ALL_CATEGORY) return true;
       return (x.category ?? "").trim() === selectedCategory;
     });
+    const searchTokens = tokenizeSearchQuery(searchQuery);
+    const withSearch =
+      searchTokens.length === 0
+        ? base
+        : base.filter((row) => {
+            const title = String(row.title ?? "").toLowerCase();
+            const description = String(row.description ?? "").toLowerCase();
+            const haystack = `${title} ${description}`;
+            return searchTokens.every((token) => haystack.includes(token));
+          });
     const minPrice = parseIntOrNull(priceFrom);
     const maxPrice = parseIntOrNull(priceTo);
     const yearFrom = parseIntOrNull(autoYearFrom);
@@ -421,7 +495,7 @@ export function FeedPage({
     const roomsEq = parseIntOrNull(realRooms);
     const plotBounds = plotFilterBoundsToSotki(realPlotFrom, realPlotTo, realPlotUseHa);
 
-    const afterFilters = base.filter((row) => {
+    const afterFilters = withSearch.filter((row) => {
       const listingPrice = getListingPriceForSort(row);
       if (minPrice != null && listingPrice < minPrice) return false;
       if (maxPrice != null && listingPrice > maxPrice) return false;
@@ -516,6 +590,7 @@ export function FeedPage({
     autoTransmission,
     autoClearedOnly,
     autoDamagedOnly,
+    searchQuery,
         realFloor,
         realFloorsTotal,
         realRooms,
@@ -760,6 +835,7 @@ export function FeedPage({
     selectedCategory !== ALL_CATEGORY ||
     sortMode !== "newest" ||
     Boolean(
+      searchInput.trim() ||
       priceFrom ||
         priceTo ||
         autoYearFrom ||
@@ -788,6 +864,8 @@ export function FeedPage({
     setCity(ALLOWED_LISTING_CITIES[0]);
     setSelectedCategory(ALL_CATEGORY);
     setSortMode("newest");
+    setSearchInput("");
+    setSearchQuery("");
     setPriceFrom("");
     setPriceTo("");
     setAutoYearFrom("");
@@ -846,7 +924,7 @@ export function FeedPage({
   ]);
 
   return (
-    <main className="safe-pt min-h-screen bg-main">
+    <main className="safe-pt min-h-[100svh] bg-main">
       <header className="border-b border-line bg-main">
         <div className="mx-auto w-full max-w-none px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4">
@@ -858,7 +936,44 @@ export function FeedPage({
               </div>
             ) : null}
           </div>
-          <div className="mt-6 space-y-2.5">
+          <div
+            className={`mt-4 ${
+              theme === "light"
+                ? "relative rounded-2xl border border-neutral-200 bg-[#FFFFFF] px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                : "relative rounded-2xl border border-white/12 bg-transparent px-4 py-3.5"
+            }`}
+          >
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Поиск объявлений..."
+              enterKeyHint="search"
+              className={
+                theme === "light"
+                  ? "w-full bg-transparent pr-8 text-[15px] text-[#111827] placeholder:text-neutral-400 outline-none"
+                  : "w-full bg-transparent pr-8 text-[15px] text-white placeholder:text-white/45 outline-none"
+              }
+            />
+            {searchInput.trim() ? (
+              <button
+                type="button"
+                aria-label="Очистить поиск"
+                onClick={() => {
+                  setSearchInput("");
+                  setSearchQuery("");
+                }}
+                className={
+                  theme === "light"
+                    ? "absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-neutral-400 hover:text-neutral-600"
+                    : "absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-white/50 hover:text-white/80"
+                }
+              >
+                X
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-3 space-y-2.5">
             <div
               className={
                 theme === "light"
