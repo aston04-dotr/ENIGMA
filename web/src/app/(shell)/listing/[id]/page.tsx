@@ -408,10 +408,19 @@ export default function ListingDetailPage() {
     viewerId && rowId
       ? `/payment?${webBoostPaymentQuery(String(rowId), viewerId)}`
       : "/login";
-  const ownerPhone =
+  const ownerName =
+    typeof safeItem.seller?.name === "string" && safeItem.seller.name.trim()
+      ? safeItem.seller.name.trim()
+      : null;
+  const ownerPhoneFromProfile =
+    typeof safeItem.seller?.phone === "string" && safeItem.seller.phone.trim()
+      ? safeItem.seller.phone.trim()
+      : null;
+  const ownerPhoneFromListing =
     typeof safeItem.contact_phone === "string" && safeItem.contact_phone.trim()
       ? safeItem.contact_phone.trim()
       : null;
+  const ownerPhone = ownerPhoneFromProfile || ownerPhoneFromListing;
 
   async function copyPhone() {
     if (!ownerPhone) {
@@ -631,6 +640,11 @@ export default function ListingDetailPage() {
               >
                 {ownerPhone ? "📋 Copy Phone" : "Телефон не указан"}
               </button>
+              {ownerName ? (
+                <p className="text-center text-sm text-muted">
+                  Продавец: {ownerName}
+                </p>
+              ) : null}
               <p className="text-center text-sm text-muted">
                 {ownerPhone ? ownerPhone : "Телефон не указан"}
               </p>

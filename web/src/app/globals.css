@@ -45,9 +45,14 @@ html {
 }
 
 * {
-  -webkit-tap-highlight-color: transparent;
-  -webkit-overflow-scrolling: touch;
   touch-action: manipulation;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 .safe-pb {
@@ -277,6 +282,7 @@ html {
 /* View mode frame */
 .view-mode-root {
   width: 100%;
+  min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
   padding-left: 0;
@@ -303,6 +309,7 @@ html {
   margin-left: auto;
   margin-right: auto;
   background: var(--color-main);
+  min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
 }
@@ -396,4 +403,11 @@ html {
 
 .enigma-final-cta {
   animation: enigmaGlow 3s ease-in-out infinite;
+}
+
+/* Fallback для старых Android Chromium без поддержки blur-фильтров. */
+@supports not (backdrop-filter: blur(2px)) {
+  [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+  }
 }

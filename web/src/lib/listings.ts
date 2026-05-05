@@ -1131,7 +1131,7 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
     if (row.user_id) {
       const { data: sellerRow, error: sellerError } = await supabase
         .from("profiles")
-        .select("id, phone, phone_updated_at, device_id, email, trust_score")
+        .select("id, name, phone, phone_updated_at, device_id, email, avatar, public_id, created_at, trust_score")
         .eq("id", row.user_id)
         .maybeSingle();
 
@@ -1144,11 +1144,14 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
           phone: p.phone != null ? String(p.phone) : null,
           phone_updated_at: p.phone_updated_at != null ? String(p.phone_updated_at) : null,
           device_id: p.device_id != null ? String(p.device_id) : null,
-          name: null,
+          name: p.name != null ? String(p.name) : null,
           email: p.email != null ? String(p.email) : null,
-          avatar: null,
-          public_id: "—",
-          created_at: "",
+          avatar: p.avatar != null ? String(p.avatar) : null,
+          public_id:
+            p.public_id != null && String(p.public_id).trim()
+              ? String(p.public_id)
+              : "—",
+          created_at: p.created_at != null ? String(p.created_at) : "",
           trust_score: typeof p.trust_score === "number" ? p.trust_score : null,
         };
       }

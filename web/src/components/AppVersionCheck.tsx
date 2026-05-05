@@ -1,9 +1,36 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { dispatchSyncBadgeChanged, reloadAppSafely } from "@/lib/deepSyncReset";
 
 const STORAGE_KEY = "enigma_app_build_v";
+const UPDATE_BADGE_KEY = "enigma:update-available";
 const CHECK_MS = 120_000;
+
+function isMobileRuntime(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = String(navigator.userAgent || "").toLowerCase();
+  return /android|iphone|ipad|ipod|mobile/.test(ua);
+}
+
+export function getStoredUpdateBadge(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    return window.localStorage.getItem(UPDATE_BADGE_KEY) === "1" ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function clearStoredUpdateBadge(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(UPDATE_BADGE_KEY);
+  } catch {
+    // ignore
+  }
+  dispatchSyncBadgeChanged();
+}
 
 /**
  * После выката новой версии на сервере — один из открытых табов сделает reload.
@@ -32,6 +59,17 @@ export function AppVersionCheck() {
 
         const prev = sessionStorage.getItem(STORAGE_KEY);
         if (prev != null && prev !== "" && prev !== next) {
+          if (isMobileRuntime()) {
+            clearStoredUpdateBadge();
+            reloadAppSafely("app_version_mobile_auto");
+            return;
+          }
+          try {
+            localStorage.setItem(UPDATE_BADGE_KEY, "1");
+          } catch {
+            /* quota */
+          }
+          dispatchSyncBadgeChanged();
           try {
             sessionStorage.setItem(STORAGE_KEY, next);
           } catch {

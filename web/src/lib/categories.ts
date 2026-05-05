@@ -8,6 +8,7 @@ export const CATEGORIES = [
   { id: "services", label: "Услуги" },
   { id: "kids", label: "Детям" },
   { id: "sport", label: "Спорт" },
+  { id: "furniture", label: "Мебель" },
   { id: "other", label: "Другое" },
 ] as const;
 

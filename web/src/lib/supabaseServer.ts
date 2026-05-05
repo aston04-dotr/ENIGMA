@@ -5,6 +5,24 @@ import { getSupabasePublicConfig } from "./runtimeConfig";
 
 const { url, anonKey } = getSupabasePublicConfig();
 
+function normalizeServerCookieOptions(
+  options?: Parameters<Awaited<ReturnType<typeof cookies>>["set"]>[2],
+): Parameters<Awaited<ReturnType<typeof cookies>>["set"]>[2] {
+  const secure =
+    process.env.NODE_ENV === "production" &&
+    !String(process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "")
+      .trim()
+      .toLowerCase()
+      .startsWith("http://");
+
+  return {
+    ...(options ?? {}),
+    path: "/",
+    sameSite: "lax",
+    secure,
+  };
+}
+
 export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   const cookieAdapter = {
@@ -12,10 +30,13 @@ export async function createServerSupabase(): Promise<SupabaseClient> {
       return cookieStore.getAll();
     },
     set(name: string, value: string, options?: Parameters<typeof cookieStore.set>[2]) {
-      cookieStore.set(name, value, options);
+      cookieStore.set(name, value, normalizeServerCookieOptions(options));
     },
     remove(name: string, options?: Parameters<typeof cookieStore.set>[2]) {
-      cookieStore.set(name, "", { ...options, maxAge: 0 });
+      cookieStore.set(name, "", {
+        ...normalizeServerCookieOptions(options),
+        maxAge: 0,
+      });
     },
   } as unknown as {
     getAll: () => ReturnType<typeof cookieStore.getAll>;

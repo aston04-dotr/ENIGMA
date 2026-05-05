@@ -92,7 +92,7 @@ export type ListingRow = {
   is_boosted?: boolean | null;
   /** Число строк в `listing_favorites` (RPC `listing_favorites_counts`), для ленты. */
   favorite_count?: number;
-  /** Контактный телефон продавца (копируется из profiles.phone при создании). */
+  /** Legacy fallback: основной источник контакта теперь `seller.phone` из `profiles`. */
   contact_phone?: string | null;
   commercial_type?: string | null;
   deal_type?: string | null;

@@ -223,15 +223,6 @@ const MAX_MESSAGE_ENTER_ANIM = 0;
 /** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
-const SUPPORT_WELCOME_MESSAGE_ID = "support-welcome-local";
-const SUPPORT_WELCOME_SENDER_ID = "support";
-const SUPPORT_WELCOME_TEXT = `Вас приветствует поддержка Enigma 👋
-
-Мы всегда рядом и готовы помочь вам по любым вопросам — объявления, чат или работа платформы.
-
-Напишите нам здесь, и мы быстро ответим.
-
-Желаем вам удачных сделок! 🚀`;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -300,30 +291,6 @@ function PaperclipIcon({ className }: { className?: string }) {
   );
 }
 
-function SupportAvatarIcon({ className }: { className?: string }) {
-  return (
-    <div
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-line/70 bg-elevated text-accent ${className ?? ""}`}
-      aria-hidden
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-[17px] w-[17px]"
-      >
-        <path d="M4.5 12a7.5 7.5 0 1 1 15 0" />
-        <path d="M5 13.5h2a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 7 17.5H6A2 2 0 0 1 4 15.5v-1A1 1 0 0 1 5 13.5Z" />
-        <path d="M17 13.5h2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2h-1a1.5 1.5 0 0 1-1.5-1.5v-1a1.5 1.5 0 0 1 1.5-1.5Z" />
-        <path d="M10 17.5h4" />
-      </svg>
-    </div>
-  );
-}
-
 function MessageReadStatus({
   mine,
   showRead,
@@ -348,7 +315,6 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   mine,
   latestReadMessageId,
   isAppearing,
-  animateSupportWelcome,
   imageRetryingId,
   onOpenLightbox,
   onRetryImage,
@@ -358,7 +324,6 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   mine: boolean;
   latestReadMessageId: string | null;
   isAppearing: boolean;
-  animateSupportWelcome: boolean;
   imageRetryingId: string | null;
   onOpenLightbox: (url: string) => void;
   onRetryImage: (id: string) => void;
@@ -369,11 +334,9 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 }) {
   const isImage = m.type === "image" && Boolean(m.image_url);
   const isOptimistic = m.id.startsWith("temp-");
-  const isSupportWelcomeMessage = m.id === SUPPORT_WELCOME_MESSAGE_ID;
-  const [welcomeVisible, setWelcomeVisible] = useState(!animateSupportWelcome);
   const messageTime = formatMessageTime(m.created_at);
   const longPressTimerRef = useRef<number | null>(null);
-  const canOpenMenu = !m.id.startsWith("temp-") && !isSupportWelcomeMessage;
+  const canOpenMenu = !m.id.startsWith("temp-");
   const showReadStatus = mine && latestReadMessageId === m.id;
 
   const clearLongPress = () => {
@@ -384,15 +347,6 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   };
 
   useEffect(() => clearLongPress, []);
-  useEffect(() => {
-    if (!isSupportWelcomeMessage || !animateSupportWelcome) return;
-    if (typeof window === "undefined") return;
-    setWelcomeVisible(false);
-    const raf = window.requestAnimationFrame(() => {
-      setWelcomeVisible(true);
-    });
-    return () => window.cancelAnimationFrame(raf);
-  }, [isSupportWelcomeMessage, animateSupportWelcome]);
 
   const openMenuAt = (x: number, y: number) => {
     if (!canOpenMenu) return;
@@ -421,32 +375,10 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
       className={`flex min-w-0 w-full ${
         isAppearing ? "animate-messageAppear" : ""
       } ${mine ? "justify-end" : "justify-start"}`}
-      style={
-        isSupportWelcomeMessage && animateSupportWelcome
-          ? {
-              opacity: welcomeVisible ? 1 : 0,
-              transform: welcomeVisible ? "translateY(0)" : "translateY(8px)",
-              transition: "opacity 250ms ease-out, transform 250ms ease-out",
-            }
-          : undefined
-      }
     >
-      {!mine && isSupportWelcomeMessage ? (
-        <div className="mr-2 mt-0.5 shrink-0">
-          <SupportAvatarIcon />
-        </div>
-      ) : null}
       <div
         className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col ${mine ? "items-end" : "items-start"}`}
       >
-        {!mine && isSupportWelcomeMessage ? (
-          <div className="mb-1 px-1">
-            <span className="block text-[11px] font-semibold tracking-wide text-muted">
-              Поддержка
-            </span>
-            <span className="block text-xs text-green-500">онлайн</span>
-          </div>
-        ) : null}
         <div
           className={`w-full min-w-0 max-w-full text-[15px] leading-[1.38] transition-colors duration-ui ${
             isImage
@@ -517,7 +449,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, loading, authResolved } = useAuth();
   const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats } =
     useChatUnread();
 
@@ -594,7 +526,6 @@ export default function ChatRoomPage() {
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
-  const supportWelcomeAnimatedForChatIdRef = useRef<string | null>(null);
 
   messagesRef.current = messages;
 
@@ -605,32 +536,7 @@ export default function ChatRoomPage() {
     );
   }, [messages, me]);
 
-  const supportWelcomeMessage = useMemo<MessageRow>(() => {
-    return {
-      id: SUPPORT_WELCOME_MESSAGE_ID,
-      chat_id: chatId,
-      sender_id: SUPPORT_WELCOME_SENDER_ID,
-      text: SUPPORT_WELCOME_TEXT,
-      created_at: new Date().toISOString(),
-      type: "text",
-      image_url: null,
-      voice_url: null,
-      reply_to: null,
-      edited_at: null,
-      deleted: false,
-      deleted_at: null,
-      hidden_for_user_ids: [],
-      status: null,
-      delivered_at: null,
-      read_at: null,
-    };
-  }, [chatId]);
-
-  const displayMessages = useMemo(() => {
-    if (!messagesLoaded || loadErr) return visibleMessages;
-    if (visibleMessages.length > 0) return visibleMessages;
-    return [supportWelcomeMessage];
-  }, [messagesLoaded, loadErr, visibleMessages, supportWelcomeMessage]);
+  const displayMessages = useMemo(() => visibleMessages, [visibleMessages]);
   const latestReadOutgoingMessageId = useMemo(() => {
     if (!me) return null;
     let candidateId: string | null = null;
@@ -647,16 +553,6 @@ export default function ChatRoomPage() {
     }
     return candidateId;
   }, [displayMessages, me]);
-  const showSupportWelcomeOnly =
-    messagesLoaded &&
-    !loadErr &&
-    visibleMessages.length === 0 &&
-    displayMessages.length === 1 &&
-    displayMessages[0]?.id === SUPPORT_WELCOME_MESSAGE_ID;
-  const shouldAnimateSupportWelcome =
-    showSupportWelcomeOnly &&
-    supportWelcomeAnimatedForChatIdRef.current !== chatId;
-
   const setPeerTypingStable = useCallback((newState: boolean) => {
     if (newState === lastPeerTypingStateRef.current) {
       return;
@@ -1549,16 +1445,6 @@ export default function ChatRoomPage() {
   }, [chatId, loadMessages]);
 
   useEffect(() => {
-    if (!showSupportWelcomeOnly) return;
-    supportWelcomeAnimatedForChatIdRef.current = chatId;
-    isAtBottomRef.current = true;
-    stickBottomRef.current = true;
-    setShowScrollToNew(false);
-    setShowScrollToStart(false);
-    alignListToBottomAfterPaint();
-  }, [showSupportWelcomeOnly, chatId, alignListToBottomAfterPaint]);
-
-  useEffect(() => {
     if (!messages.length) return;
     if (isAtBottomRef.current) {
       alignListToBottomAfterPaint();
@@ -2096,6 +1982,14 @@ export default function ChatRoomPage() {
     }
   }
 
+  if (loading || !authResolved) {
+    return (
+      <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5 text-sm text-muted">
+        Подключение...
+      </main>
+    );
+  }
+
   if (!session) {
     return (
       <main className="p-5">
@@ -2224,7 +2118,6 @@ export default function ChatRoomPage() {
             mine={m.sender_id === me}
             latestReadMessageId={latestReadOutgoingMessageId}
             isAppearing={appearingMessageIds.has(m.id)}
-            animateSupportWelcome={shouldAnimateSupportWelcome}
             imageRetryingId={imageRetryingId}
             onOpenLightbox={setLightboxUrl}
             onRetryImage={retryImageUpload}

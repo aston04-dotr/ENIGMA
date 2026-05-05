@@ -1,4 +1,4 @@
-import { createPayment as createYooKassaPayment } from "@/lib/providers/yookassa";
+import { createPayment as createYooKassaPayment, fetchPayment as fetchYooKassaPayment } from "@/lib/providers/yookassa";
 
 export type PaymentMode = "mock" | "yookassa";
 export type ProviderPaymentStatus = "pending" | "confirmed" | "failed";
@@ -10,6 +10,7 @@ export type ProviderPayment = {
   metadata: Record<string, string>;
   status: ProviderPaymentStatus;
   provider: PaymentMode;
+  confirmationUrl?: string | null;
 };
 
 export type PaymentProvider = {
@@ -33,7 +34,13 @@ function randomInt(min: number, max: number): number {
 }
 
 export function getPaymentMode(): PaymentMode {
-  const raw = process.env.NEXT_PUBLIC_PAYMENT_MODE ?? process.env.PAYMENT_MODE ?? "mock";
+  const raw =
+    process.env.NEXT_PUBLIC_PAYMENT_MODE ??
+    process.env.PAYMENT_MODE ??
+    (process.env.NODE_ENV === "production" ? "yookassa" : "mock");
+  if (process.env.NODE_ENV === "production") {
+    return "yookassa";
+  }
   return raw === "yookassa" ? "yookassa" : "mock";
 }
 
@@ -48,6 +55,7 @@ const mockProvider: PaymentProvider = {
       metadata,
       status: "pending",
       provider: "mock",
+      confirmationUrl: null,
     };
     mockStore.set(paymentId, payment);
     return payment;
@@ -64,6 +72,7 @@ const mockProvider: PaymentProvider = {
         metadata: {},
         status: "failed",
         provider: "mock",
+        confirmationUrl: null,
       };
     }
     const next: ProviderPayment = { ...current, status: "confirmed" };
@@ -82,6 +91,7 @@ const mockProvider: PaymentProvider = {
         metadata: {},
         status: "failed",
         provider: "mock",
+        confirmationUrl: null,
       };
     }
     return current;
@@ -98,28 +108,33 @@ const yookassaProvider: PaymentProvider = {
       metadata,
       status: created.status,
       provider: "yookassa",
+      confirmationUrl: created.confirmationUrl ?? null,
     };
   },
 
   async confirmPayment(paymentId) {
+    const checked = await fetchYooKassaPayment(paymentId);
     return {
-      paymentId,
+      paymentId: checked.paymentId,
       amount: 0,
       currency: "RUB",
       metadata: {},
-      status: "failed",
+      status: checked.status,
       provider: "yookassa",
+      confirmationUrl: null,
     };
   },
 
   async verifyPayment(paymentId) {
+    const checked = await fetchYooKassaPayment(paymentId);
     return {
-      paymentId,
+      paymentId: checked.paymentId,
       amount: 0,
       currency: "RUB",
       metadata: {},
-      status: "failed",
+      status: checked.status,
       provider: "yookassa",
+      confirmationUrl: null,
     };
   },
 };

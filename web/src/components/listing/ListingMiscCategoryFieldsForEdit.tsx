@@ -43,10 +43,13 @@ type KidsKind = "clothing" | "shoes" | "toy" | "transport_other";
 
 function getKidsItemKind(raw: string): KidsKind | null {
   const t = raw.trim().toLowerCase();
-  if (t === "одежда") return "clothing";
-  if (t === "обувь") return "shoes";
-  if (t === "игрушка") return "toy";
-  if (t === "транспорт" || t === "другое") return "transport_other";
+  if (!t) return null;
+  if (t.includes("одеж")) return "clothing";
+  if (t.includes("обув") || t.includes("ботин") || t.includes("кроссов")) return "shoes";
+  if (t.includes("игруш")) return "toy";
+  if (t.includes("транспорт") || t.includes("коляск") || t.includes("другое")) {
+    return "transport_other";
+  }
   return null;
 }
 
@@ -341,6 +344,33 @@ export function ListingMiscCategoryFieldsForEdit({
         <select
           value={categoryParams.home.condition}
           onChange={(e) => updateCategoryParam("home", "condition", e.target.value)}
+          className={inputClass}
+          disabled={disabled}
+        >
+          <option value="">Состояние *</option>
+          <option value="Новое">Новое</option>
+          <option value="Б/у">Б/у</option>
+        </select>
+      </div>
+    );
+  }
+
+  if (category === "furniture") {
+    return (
+      <div className="space-y-3">
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Параметры категории Мебель
+        </label>
+        <input
+          value={categoryParams.furniture.itemType}
+          onChange={(e) => updateCategoryParam("furniture", "itemType", e.target.value)}
+          placeholder="Тип товара *"
+          className={inputClass}
+          disabled={disabled}
+        />
+        <select
+          value={categoryParams.furniture.condition}
+          onChange={(e) => updateCategoryParam("furniture", "condition", e.target.value)}
           className={inputClass}
           disabled={disabled}
         >

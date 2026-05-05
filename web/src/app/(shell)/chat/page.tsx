@@ -69,10 +69,12 @@ function ChatListingThumb({
   listingImage,
   displayName,
   otherAvatar,
+  unread,
 }: {
   listingImage?: string | null;
   displayName: string;
   otherAvatar?: string | null;
+  unread?: number;
 }) {
   const trimmedImage = String(listingImage ?? "").trim();
   const trimmedAvatar = String(otherAvatar ?? "").trim();
@@ -95,6 +97,9 @@ function ChatListingThumb({
           initial
         )}
       </span>
+      {Number(unread ?? 0) > 0 ? (
+        <span className="absolute -top-0.5 -right-0.5 inline-flex h-3 w-3 rounded-full border border-white bg-[#ff4d67] dark:border-[#0b0e14]" />
+      ) : null}
     </span>
   );
 }
@@ -241,6 +246,7 @@ export default function ChatsPage() {
                   listingImage={row.listing_image}
                   displayName={displayName}
                   otherAvatar={row.other_avatar}
+                  unread={unread}
                 />
 
                 <span className="min-w-0 flex-1">

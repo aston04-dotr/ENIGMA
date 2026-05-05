@@ -896,7 +896,10 @@ export function FeedPage({
         realPlotTo ||
         realPlotUseHa,
     );
-  const quickCategories = useMemo(() => CATEGORIES.slice(0, 8), []);
+  const quickCategories = useMemo(
+    () => CATEGORIES.filter((cat) => cat.id !== "other"),
+    [],
+  );
 
   const resetFilters = useCallback(() => {
     trackEvent("filters_reset", {

@@ -28,6 +28,7 @@ npm run dev
 
 ## Env (production)
 
+- `NEXT_PUBLIC_APP_URL=https://enigma-app.online`
 - `NEXT_PUBLIC_SITE_URL=https://enigma-app.online`
 - `NEXT_PUBLIC_API_BASE_URL=https://api.enigma-app.online`
 - `NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co`
@@ -35,6 +36,13 @@ npm run dev
 - `NEXT_PUBLIC_LISTINGS_PAGE_SIZE=40` (для Pro/Large можно 40..80, предел в коде 10..200)
 - `NEXT_PUBLIC_MAX_LISTING_PHOTOS=12` (для Pro/Large можно 12..20, предел в коде 1..30)
 - `SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY` (только сервер)
+- `PAYMENT_MODE=yookassa`
+- `NEXT_PUBLIC_PAYMENT_MODE=yookassa`
+- `YOOKASSA_SHOP_ID=1346899`
+- `YOOKASSA_SECRET_KEY=live_...` (боевой ключ)
+- `RESEND_API_KEY=re_...`
+- `RESEND_FROM=no-reply@enigma-app.online`
+- `LISTING_EXPIRY_CRON_SECRET=<long_random_secret>`
 
 ## Pro / Large notes
 

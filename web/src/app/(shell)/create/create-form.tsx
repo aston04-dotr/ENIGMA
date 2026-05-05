@@ -119,6 +119,7 @@ type ServicesParams = { serviceType: string; priceType: string };
 type KidsParams = { itemType: string; age: string; size: string; sizeOther: string };
 type SportParams = { itemType: string; condition: string };
 type HomeParams = { itemType: string; condition: string };
+type FurnitureParams = { itemType: string; condition: string };
 
 type CategoryFormParams = {
   auto: AutoParams;
@@ -130,6 +131,7 @@ type CategoryFormParams = {
   kids: KidsParams;
   sport: SportParams;
   home: HomeParams;
+  furniture: FurnitureParams;
 };
 
 const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
@@ -182,6 +184,7 @@ const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
   kids: { itemType: "", age: "", size: "", sizeOther: "" },
   sport: { itemType: "", condition: "" },
   home: { itemType: "", condition: "" },
+  furniture: { itemType: "", condition: "" },
 };
 
 const KIDS_SIZE_OPTIONS = [
@@ -264,10 +267,13 @@ type KidsItemKind = "clothing" | "shoes" | "toy" | "transport_other";
 /** Нормализация по нижнему регистру — допускает «игрушка», «Одежда» и т.д. */
 function getKidsItemKind(raw: string): KidsItemKind | null {
   const t = raw.trim().toLowerCase();
-  if (t === "одежда") return "clothing";
-  if (t === "обувь") return "shoes";
-  if (t === "игрушка") return "toy";
-  if (t === "транспорт" || t === "другое") return "transport_other";
+  if (!t) return null;
+  if (t.includes("одеж")) return "clothing";
+  if (t.includes("обув") || t.includes("ботин") || t.includes("кроссов")) return "shoes";
+  if (t.includes("игруш")) return "toy";
+  if (t.includes("транспорт") || t.includes("коляск") || t.includes("другое")) {
+    return "transport_other";
+  }
   return null;
 }
 
@@ -715,9 +721,6 @@ export function CreateListingForm() {
         return "Укажите тип товара для категории Детям";
       }
       const kind = getKidsItemKind(p.itemType);
-      if (!kind) {
-        return "Тип товара: Одежда, Обувь, Игрушка, Транспорт или Другое";
-      }
       if (kind === "toy" && !p.age.trim()) {
         return "Для игрушки укажите возраст";
       }
@@ -741,6 +744,12 @@ export function CreateListingForm() {
       const p = categoryParams.home;
       if (!p.itemType.trim() || !p.condition.trim()) {
         return "Заполните обязательные параметры категории Дом и сад: тип товара и состояние";
+      }
+    }
+    if (category === "furniture") {
+      const p = categoryParams.furniture;
+      if (!p.itemType.trim() || !p.condition.trim()) {
+        return "Заполните обязательные параметры категории Мебель: тип товара и состояние";
       }
     }
     return null;
@@ -830,6 +839,10 @@ export function CreateListingForm() {
     }
     if (category === "home") {
       const p = categoryParams.home;
+      specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
+    }
+    if (category === "furniture") {
+      const p = categoryParams.furniture;
       specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
     }
     const filled = specs
@@ -954,6 +967,14 @@ export function CreateListingForm() {
     }
     if (category === "home") {
       const p = categoryParams.home;
+      return {
+        item_type: p.itemType.trim() || null,
+        price: normalizedPrice,
+        condition: p.condition.trim() || null,
+      };
+    }
+    if (category === "furniture") {
+      const p = categoryParams.furniture;
       return {
         item_type: p.itemType.trim() || null,
         price: normalizedPrice,
@@ -1123,7 +1144,6 @@ export function CreateListingForm() {
         params,
         user_id: uid,
         owner_id: uid,
-        contact_phone: profile?.phone || null,
         deal_type: listingIntent,
         listing_kind: listingRoleResolved === "seeking" ? "seeking" : "offer",
         ...(autoExtras ?? {}),
@@ -2073,6 +2093,17 @@ export function CreateListingForm() {
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Дом и сад</label>
           <input value={categoryParams.home.itemType} onChange={(e) => updateCategoryParam("home", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
           <select value={categoryParams.home.condition} onChange={(e) => updateCategoryParam("home", "condition", e.target.value)} className={inputClass}>
+            <option value="">Состояние *</option>
+            <option value="Новое">Новое</option>
+            <option value="Б/у">Б/у</option>
+          </select>
+        </div>
+      ) : null}
+      {category === "furniture" ? (
+        <div className="space-y-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры категории Мебель</label>
+          <input value={categoryParams.furniture.itemType} onChange={(e) => updateCategoryParam("furniture", "itemType", e.target.value)} placeholder="Тип товара *" className={inputClass} />
+          <select value={categoryParams.furniture.condition} onChange={(e) => updateCategoryParam("furniture", "condition", e.target.value)} className={inputClass}>
             <option value="">Состояние *</option>
             <option value="Новое">Новое</option>
             <option value="Б/у">Б/у</option>

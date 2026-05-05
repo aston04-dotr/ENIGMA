@@ -19,6 +19,7 @@ import {
   runDeepApplicationSync,
   SYNC_BADGE_CHANGED_EVENT,
 } from "@/lib/deepSyncReset";
+import { clearStoredUpdateBadge, getStoredUpdateBadge } from "@/components/AppVersionCheck";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -151,11 +152,15 @@ function BottomNavInner() {
 
   const chrome = navChrome(theme);
 
-  const syncBadgeTotal = Math.min(99, totalUnread + getSyncBadgeStoredExtra());
+  const syncBadgeTotal = Math.min(
+    99,
+    totalUnread + getSyncBadgeStoredExtra() + getStoredUpdateBadge(),
+  );
 
   const handleDeepSync = () => {
     trackEvent("deep_sync_click", { path: pathname });
-    runDeepApplicationSync();
+    clearStoredUpdateBadge();
+    runDeepApplicationSync(syncBadgeTotal > 0);
   };
 
   const syncAccent = syncTabAccent(theme);
@@ -199,7 +204,9 @@ function BottomNavInner() {
         const t = entry;
         const active = t.isActive(pathname, intent);
         const isChatTab = t.key === "chat";
+        const isProfileTab = t.key === "profile";
         const unread = isChatTab ? totalUnread : 0;
+        const profileUnreadDot = isProfileTab && totalUnread > 0;
         const { Icon } = t;
         const c = tabColors(theme, active);
 
@@ -222,6 +229,13 @@ function BottomNavInner() {
                 >
                   {formatUnreadBadge(unread)}
                 </span>
+              ) : null}
+              {profileUnreadDot ? (
+                <span
+                  className="absolute -right-1 -top-0.5 inline-flex h-[10px] w-[10px] rounded-full bg-[#FF3B30]"
+                  style={{ boxShadow: `0 0 0 2px ${chrome.badgeRing}` }}
+                  aria-label="Есть непрочитанные сообщения"
+                />
               ) : null}
             </span>
             <span className={`leading-tight ${c.label}`}>{t.label}</span>

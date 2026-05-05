@@ -1,5 +1,6 @@
 /**
- * Клиентский слой оплаты (веб): имитация до подключения провайдера.
+ * Клиентский слой оплаты (web): основной провайдер YooKassa.
+ * Mock-режим используется только в dev при явной конфигурации.
  */
 
 import {
@@ -25,6 +26,7 @@ export type PaymentIntent = {
   status: "pending" | "confirmed" | "failed";
   currency: "RUB";
   metadata?: Record<string, string>;
+  confirmationUrl?: string | null;
 };
 
 const RAIL_LABELS: Record<PaymentRail, string> = {
@@ -60,6 +62,7 @@ export async function createPaymentIntent(
     status: created.status,
     currency: "RUB",
     metadata: created.metadata,
+    confirmationUrl: created.confirmationUrl ?? null,
   };
 }
 

@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileRequestIdRef = useRef(0);
   const loadingRef = useRef(loading);
   const isSessionFetchInFlightRef = useRef(false);
+  const bootstrapRetryInFlightRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -69,12 +70,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const timeout = window.setTimeout(() => {
       if (loadingRef.current) {
         if (isSessionFetchInFlightRef.current) return;
-        console.warn("Session sync slow, forcing UI");
-        setAuthResolved(true);
-        setLoading(false);
-        setReady(true);
+        if (bootstrapRetryInFlightRef.current) return;
+
+        bootstrapRetryInFlightRef.current = true;
+        isSessionFetchInFlightRef.current = true;
+        void supabase.auth
+          .getSession()
+          .then(({ data }) => {
+            if (data.session?.user) {
+              setSession(data.session);
+              setUser(data.session.user);
+              setAuthResolved(true);
+              setLoading(false);
+              setReady(true);
+              return;
+            }
+
+            const cookie = typeof document !== "undefined" ? document.cookie : "";
+            const hasSupabaseCookie =
+              cookie.includes("sb-") || cookie.includes("supabase-auth-token");
+            if (hasSupabaseCookie) {
+              setBootstrapKey((k) => k + 1);
+              return;
+            }
+
+            console.warn("Session sync timeout; no active session found");
+            setAuthResolved(true);
+            setLoading(false);
+            setReady(true);
+          })
+          .catch((err) => {
+            console.warn("Session sync timeout check failed", err);
+            setAuthResolved(true);
+            setLoading(false);
+            setReady(true);
+          })
+          .finally(() => {
+            isSessionFetchInFlightRef.current = false;
+            bootstrapRetryInFlightRef.current = false;
+          });
       }
-    }, 4000);
+    }, 6500);
     return () => window.clearTimeout(timeout);
   }, [loading]);
 
@@ -193,7 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
     };
 
-    const signedOutGuardMs = 1800;
+    const signedOutGuardMs = 3000;
 
     const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
@@ -246,6 +282,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (data.session?.user) {
               applySession(data.session);
               return;
+            }
+            const hasSupabaseCookie =
+              typeof document !== "undefined" &&
+              (document.cookie.includes("sb-") ||
+                document.cookie.includes("supabase-auth-token"));
+            if (hasSupabaseCookie) {
+              await new Promise((r) => setTimeout(r, 1200));
+              const retry = await supabase.auth.getSession();
+              if (!mounted) return;
+              if (retry.data.session?.user) {
+                applySession(retry.data.session);
+                return;
+              }
             }
             settledRef.current = true;
             applySession(null);

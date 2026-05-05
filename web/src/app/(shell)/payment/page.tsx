@@ -7,12 +7,6 @@ import { parsePromotionTariffKind } from "@/lib/monetization";
 import { logPaymentEvent } from "@/lib/paymentLogs";
 import { validatePromotionPaymentAmount } from "@/lib/paymentValidation";
 import { createPaymentIntent, type PaymentRail } from "@/lib/payments";
-import {
-  createPendingPayment,
-  createSupportTicket,
-  notifyAdmin,
-  type ManualPaymentType,
-} from "@/lib/support";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, Suspense } from "react";
@@ -128,53 +122,12 @@ function PaymentInner() {
         status: "pending",
       });
 
-      const paymentType: ManualPaymentType = (() => {
-        const kind = String(promoKindRaw ?? "").toLowerCase();
-        if (kind.includes("vip")) return "vip";
-        if (kind.includes("top")) return "top";
-        if (kind.includes("boost")) return "boost";
-        return "package";
-      })();
+      if (intent.confirmationUrl) {
+        window.location.assign(intent.confirmationUrl);
+        return;
+      }
 
-      await createPendingPayment({
-        user_id: uid,
-        type: paymentType,
-        target_id: lid,
-        status: "pending",
-      });
-
-      const ticketMessage = [
-        "Тема: Проблема с оплатой",
-        `Платёж на ручной проверке`,
-        `payment_id: ${intent.id}`,
-        `amount: ${secureAmount}`,
-        `rail: ${rail}`,
-        `listing_id: ${lid ?? ""}`,
-        `promoKind: ${promoKindRaw ?? ""}`,
-      ].join("\n");
-
-      await createSupportTicket({
-        user_id: uid,
-        message: ticketMessage,
-        type: "payment",
-        status: "open",
-        notifyByEmail: false,
-      });
-
-      notifyAdmin({
-        type: "payment_pending",
-        user_id: uid,
-        message: ticketMessage,
-        payment_id: intent.id,
-        listing_id: lid,
-        promoKind: promoKindRaw,
-        amount: secureAmount,
-      });
-
-      setSuccessHeadline(
-        "Платёж создан и ожидает подтверждения оператора (обычно 5-10 минут).",
-      );
-      return;
+      setSuccessHeadline("Платёж создан. Подтверждение ожидается автоматически через webhook.");
     } catch {
       setPaymentState("failed");
       setSuccessHeadline("Платёж завершился с ошибкой. Попробуйте снова.");

@@ -915,6 +915,43 @@ export function ChatUnreadProvider({
             scheduleRefresh(220, { silent: true });
           }
         },
+      ).on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const msg = payload.new as Record<string, unknown>;
+          const messageChatId = String(msg.chat_id ?? "").trim();
+          if (!messageChatId) return;
+          scheduleRefresh(70, { silent: true });
+        },
+      ).on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const oldMsg = payload.old as Record<string, unknown>;
+          const messageChatId = String(oldMsg.chat_id ?? "").trim();
+          if (!messageChatId) return;
+          scheduleRefresh(70, { silent: true });
+        },
+      ).on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_members",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          scheduleRefresh(70, { silent: true });
+        },
       );
 
       statusRef.current.listChannel = channel;

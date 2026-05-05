@@ -28,7 +28,9 @@ export function isProductionRuntime(): boolean {
 }
 
 export function getSiteOrigin(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const fromEnv =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (fromEnv) return stripTrailingSlash(fromEnv);
   return isProductionRuntime() ? PROD_WEB_ORIGIN : DEV_WEB_ORIGIN;
 }

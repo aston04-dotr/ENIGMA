@@ -9,11 +9,13 @@ export default function ShellLayout({
 }) {
   return (
     <ShellGate>
-      <div className="pb-[calc(104px+env(safe-area-inset-bottom))]">
-        {children}
+      <div className="min-h-[100svh] bg-main">
+        <div className="pb-[calc(104px+env(safe-area-inset-bottom))]">
+          {children}
+        </div>
+        <SiteLegalFooter />
+        <BottomNav />
       </div>
-      <SiteLegalFooter />
-      <BottomNav />
     </ShellGate>
   );
 }

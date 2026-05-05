@@ -159,6 +159,7 @@ function miscSliceForDirty(cat: string, cp: CategoryEditParams): string {
   if (cat === "kids") return JSON.stringify(cp.kids);
   if (cat === "sport") return JSON.stringify(cp.sport);
   if (cat === "home") return JSON.stringify(cp.home);
+  if (cat === "furniture") return JSON.stringify(cp.furniture);
   return "";
 }
 
@@ -195,7 +196,6 @@ export default function EditListingPage() {
     structuredClone(EMPTY_CATEGORY_EDIT_PARAMS),
   );
   const [editCity, setEditCity] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
   const [listingIntent, setListingIntent] = useState<"sale" | "rent">("sale");
   const [autoParams, setAutoParams] = useState<AutoParamsShape | null>(null);
   const [motoParams, setMotoParams] = useState<MotoParamsShape | null>(null);
@@ -203,7 +203,6 @@ export default function EditListingPage() {
   const originalMotoJsonRef = useRef("");
   const originalExtrasRef = useRef({
     city: "",
-    phone: "",
     intent: "sale" as "sale" | "rent",
     miscJson: "",
   });
@@ -263,12 +262,10 @@ export default function EditListingPage() {
         const nc =
           normalizeAllowedListingCity(res.row.city) ?? ALLOWED_LISTING_CITIES[0] ?? "";
         setEditCity(nc);
-        setContactPhone(String(res.row.contact_phone ?? "").trim());
         const intent = listingIntentFromRow(res.row);
         setListingIntent(intent);
         originalExtrasRef.current = {
           city: nc,
-          phone: String(res.row.contact_phone ?? "").trim(),
           intent,
           miscJson: miscSliceForDirty(cat, cp),
         };
@@ -532,7 +529,6 @@ export default function EditListingPage() {
         price: priceNum,
         updated_at: new Date().toISOString(),
         city: normalizedCitySave,
-        contact_phone: contactPhone.trim() || null,
         deal_type: listingIntent,
       };
 
@@ -647,7 +643,6 @@ export default function EditListingPage() {
       }
       originalExtrasRef.current = {
         city: normalizedCitySave,
-        phone: contactPhone.trim(),
         intent: listingIntent,
         miscJson: miscSliceForDirty(listingCategory, categoryParams),
       };
@@ -732,7 +727,6 @@ export default function EditListingPage() {
     if (!originalData) return false;
     if (
       editCity.trim() !== originalExtrasRef.current.city ||
-      contactPhone.trim() !== originalExtrasRef.current.phone ||
       listingIntent !== originalExtrasRef.current.intent
     ) {
       return true;
@@ -741,7 +735,7 @@ export default function EditListingPage() {
     return (
       miscSliceForDirty(listingCategory, categoryParams) !== originalExtrasRef.current.miscJson
     );
-  }, [originalData, editCity, contactPhone, listingIntent, listingCategory, categoryParams]);
+  }, [originalData, editCity, listingIntent, listingCategory, categoryParams]);
 
   const hasChanges = Boolean(
     originalData &&
@@ -932,18 +926,6 @@ export default function EditListingPage() {
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-muted">Телефон для связи</label>
-          <input
-            value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
-            className={inputClass}
-            placeholder="+7…"
-            inputMode="tel"
-            disabled={saving}
-          />
         </div>
 
         <div className="space-y-2">

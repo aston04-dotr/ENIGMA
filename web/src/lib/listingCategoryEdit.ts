@@ -62,6 +62,7 @@ export type ServicesEditParams = { serviceType: string; priceType: string };
 export type KidsEditParams = { itemType: string; age: string; size: string; sizeOther: string };
 export type SportEditParams = { itemType: string; condition: string };
 export type HomeEditParams = { itemType: string; condition: string };
+export type FurnitureEditParams = { itemType: string; condition: string };
 
 export type CategoryEditParams = {
   auto: AutoParamsShape;
@@ -73,6 +74,7 @@ export type CategoryEditParams = {
   kids: KidsEditParams;
   sport: SportEditParams;
   home: HomeEditParams;
+  furniture: FurnitureEditParams;
 };
 
 export const EMPTY_CATEGORY_EDIT_PARAMS: CategoryEditParams = {
@@ -125,6 +127,7 @@ export const EMPTY_CATEGORY_EDIT_PARAMS: CategoryEditParams = {
   kids: { itemType: "", age: "", size: "", sizeOther: "" },
   sport: { itemType: "", condition: "" },
   home: { itemType: "", condition: "" },
+  furniture: { itemType: "", condition: "" },
 };
 
 function parsePositiveKw(raw: string): number | null {
@@ -186,10 +189,13 @@ type KidsKind = "clothing" | "shoes" | "toy" | "transport_other";
 
 function getKidsItemKind(raw: string): KidsKind | null {
   const t = raw.trim().toLowerCase();
-  if (t === "одежда") return "clothing";
-  if (t === "обувь") return "shoes";
-  if (t === "игрушка") return "toy";
-  if (t === "транспорт" || t === "другое") return "transport_other";
+  if (!t) return null;
+  if (t.includes("одеж")) return "clothing";
+  if (t.includes("обув") || t.includes("ботин") || t.includes("кроссов")) return "shoes";
+  if (t.includes("игруш")) return "toy";
+  if (t.includes("транспорт") || t.includes("коляск") || t.includes("другое")) {
+    return "transport_other";
+  }
   return null;
 }
 
@@ -322,6 +328,11 @@ export function hydrateCategoryEditParams(row: ListingRow): CategoryEditParams {
       itemType: String(p.item_type ?? ""),
       condition: String(p.condition ?? ""),
     };
+  } else if (cat === "furniture") {
+    base.furniture = {
+      itemType: String(p.item_type ?? ""),
+      condition: String(p.condition ?? ""),
+    };
   }
 
   return base;
@@ -406,6 +417,10 @@ export function buildSpecsSectionForCategoryEdit(
   }
   if (category === "home") {
     const p = categoryParams.home;
+    specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
+  }
+  if (category === "furniture") {
+    const p = categoryParams.furniture;
     specs.push(["Тип товара", p.itemType], ["Состояние", p.condition]);
   }
 
@@ -558,7 +573,6 @@ export function validateCategoryEditForm(
     const p = categoryParams.kids;
     if (!p.itemType.trim()) return "Укажите тип товара";
     const kind = getKidsItemKind(p.itemType);
-    if (!kind) return "Тип товара: Одежда, Обувь, Игрушка, Транспорт или Другое";
     if (kind === "toy" && !p.age.trim()) return "Для игрушки укажите возраст";
     if (kidsShowsSize(kind)) {
       const resolved =
@@ -577,6 +591,11 @@ export function validateCategoryEditForm(
   }
   if (category === "home") {
     const p = categoryParams.home;
+    if (!p.itemType.trim() || !p.condition.trim()) return "Заполните тип товара и состояние";
+    return null;
+  }
+  if (category === "furniture") {
+    const p = categoryParams.furniture;
     if (!p.itemType.trim() || !p.condition.trim()) return "Заполните тип товара и состояние";
     return null;
   }
@@ -691,6 +710,14 @@ export function buildParamsRecordForCategoryEdit(
   }
   if (category === "home") {
     const p = categoryParams.home;
+    return {
+      item_type: p.itemType.trim() || null,
+      price: normalizedPrice,
+      condition: p.condition.trim() || null,
+    };
+  }
+  if (category === "furniture") {
+    const p = categoryParams.furniture;
     return {
       item_type: p.itemType.trim() || null,
       price: normalizedPrice,

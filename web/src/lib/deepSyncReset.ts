@@ -10,7 +10,13 @@ export const SYNC_LAST_DEEP_SYNC_AT_KEY = "enigma:last-deep-sync-at";
 export const SYNC_BADGE_CHANGED_EVENT = "enigma-sync-badge-changed";
 const RELOAD_GUARD_KEY = "enigma:reload-in-flight";
 
-const FEED_LOCALSTORAGE_KEYS = ["cached_listings", "cached_listings_wanted", "feed_category"] as const;
+const FEED_LOCALSTORAGE_KEYS = [
+  "cached_listings",
+  "cached_listings_wanted",
+  "feed_category",
+  "enigma:chat-sync",
+] as const;
+const FEED_SESSIONSTORAGE_KEYS = ["feed_state"] as const;
 
 export function getSyncBadgeStoredExtra(): number {
   if (typeof window === "undefined") return 0;
@@ -53,20 +59,57 @@ export function dispatchSyncBadgeChanged(): void {
  * - блокирует повторный reload-шторм в коротком окне.
  */
 export function reloadAppSafely(reason: string): void {
-  void reason;
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(RELOAD_GUARD_KEY, JSON.stringify({ at: Date.now(), reason }));
   } catch {
     /* ignore */
   }
-  // Stability mode: без принудительного reload на mobile/PWA.
+  const bustUrl = new URL(window.location.href);
+  bustUrl.searchParams.set("r", String(Date.now()));
+  window.location.replace(bustUrl.toString());
 }
 
-export function runDeepApplicationSync(): void {
+async function clearBrowserHttpCachesAndWorkers(): Promise<void> {
+  if (typeof window === "undefined") return;
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((reg) => reg.unregister().catch(() => undefined)));
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key).catch(() => false)));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function runDeepApplicationSync(forceHardReload = false): void {
   if (typeof window === "undefined") return;
 
   resetListingClientCaches();
+  for (const key of FEED_LOCALSTORAGE_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const key of FEED_SESSIONSTORAGE_KEYS) {
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
 
   try {
     if (typeof window !== "undefined") {
@@ -74,6 +117,13 @@ export function runDeepApplicationSync(): void {
     }
   } catch {
     /* ignore */
+  }
+
+  if (forceHardReload) {
+    void clearBrowserHttpCachesAndWorkers().finally(() => {
+      reloadAppSafely("deep_sync_force");
+    });
+    return;
   }
 
   reloadAppSafely("deep_sync");

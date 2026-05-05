@@ -7,42 +7,73 @@ import { getSupabasePublicConfig } from "./runtimeConfig";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
 
-function readCookie(name: string): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const key = `${encodeURIComponent(name)}=`;
-  const chunks = document.cookie ? document.cookie.split("; ") : [];
-  for (const row of chunks) {
-    if (!row.startsWith(key)) continue;
-    return decodeURIComponent(row.slice(key.length));
+type CookieItem = { name: string; value: string };
+type BrowserCookieOptions = {
+  domain?: string;
+  path?: string;
+  maxAge?: number;
+  expires?: string | Date;
+  sameSite?: "lax" | "strict" | "none" | string;
+  secure?: boolean;
+};
+
+function getAllCookies(): CookieItem[] {
+  if (typeof document === "undefined") return [];
+  const raw = document.cookie ? document.cookie.split("; ") : [];
+  const out: CookieItem[] = [];
+  for (const row of raw) {
+    const idx = row.indexOf("=");
+    if (idx <= 0) continue;
+    const n = row.slice(0, idx);
+    const v = row.slice(idx + 1);
+    try {
+      out.push({
+        name: decodeURIComponent(n),
+        value: decodeURIComponent(v),
+      });
+    } catch {
+      out.push({ name: n, value: v });
+    }
   }
-  return undefined;
+  return out;
 }
 
-function cookieDomainForHost(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  const host = window.location.hostname.trim().toLowerCase();
-  if (!host || host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    return undefined;
-  }
-  if (host === "enigma-app.online" || host.endsWith(".enigma-app.online")) {
-    return "enigma-app.online";
-  }
-  return host;
-}
-
-function writeCookie(name: string, value: string, maxAge: number) {
+function writeCookie(
+  name: string,
+  value: string,
+  options: BrowserCookieOptions = {},
+) {
   if (typeof document === "undefined") return;
   const encodedName = encodeURIComponent(name);
   const encodedValue = encodeURIComponent(value);
-  const domain = cookieDomainForHost();
-  const parts = [
+  const parts: string[] = [
     `${encodedName}=${encodedValue}`,
-    "path=/",
-    `max-age=${maxAge}`,
-    "SameSite=Lax",
+    `path=${options.path ?? "/"}`,
   ];
-  if (domain) parts.push(`domain=${domain}`);
-  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+
+  if (typeof options.maxAge === "number" && Number.isFinite(options.maxAge)) {
+    parts.push(`max-age=${Math.max(0, Math.floor(options.maxAge))}`);
+  }
+
+  if (options.expires) {
+    const exp =
+      options.expires instanceof Date
+        ? options.expires.toUTCString()
+        : String(options.expires);
+    parts.push(`expires=${exp}`);
+  }
+
+  if (options.domain) {
+    parts.push(`domain=${options.domain}`);
+  }
+
+  const sameSite = String(options.sameSite ?? "Lax");
+  parts.push(`SameSite=${sameSite}`);
+
+  const shouldUseSecure =
+    options.secure ??
+    (typeof window !== "undefined" && window.location.protocol === "https:");
+  if (shouldUseSecure) {
     parts.push("Secure");
   }
   document.cookie = parts.join("; ");
@@ -59,16 +90,33 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
     detectSessionInUrl: true,
   },
   cookies: {
-    get(name) {
-      return readCookie(name);
+    getAll() {
+      return getAllCookies();
     },
-    set(name, value, options) {
-      void options;
-      writeCookie(name, value, 31536000);
-    },
-    remove(name, options) {
-      void options;
-      writeCookie(name, "", 0);
+    setAll(
+      cookiesToSet: Array<{
+        name: string;
+        value: string;
+        options?: BrowserCookieOptions & Record<string, unknown>;
+      }>,
+    ) {
+      cookiesToSet.forEach(({ name, value, options }) => {
+        writeCookie(name, value, {
+          path: (options?.path as string | undefined) ?? "/",
+          domain: options?.domain as string | undefined,
+          maxAge:
+            typeof options?.maxAge === "number"
+              ? options.maxAge
+              : undefined,
+          expires: options?.expires as string | Date | undefined,
+          sameSite:
+            (options?.sameSite as string | undefined) ?? "lax",
+          secure:
+            typeof options?.secure === "boolean"
+              ? options.secure
+              : undefined,
+        });
+      });
     },
   },
 });

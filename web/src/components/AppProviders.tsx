@@ -7,7 +7,8 @@ import { ChatUnreadProvider } from "@/context/chat-unread-context";
 import { ViewModeLayout } from "@/components/ViewModeLayout";
 import { LandingScreen } from "@/components/LandingScreen";
 import { AuthDebugTracker } from "@/components/AuthDebugTracker";
-import { UnregisterServiceWorkers } from "@/components/UnregisterServiceWorkers";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { AppVersionCheck } from "@/components/AppVersionCheck";
 import { DevCacheClear } from "@/components/DevCacheClear";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
@@ -51,7 +52,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-main">
-      <UnregisterServiceWorkers />
+      <ServiceWorkerRegister />
+      <AppVersionCheck />
       <DevCacheClear />
       <AuthDebugTracker />
       <GlobalErrorHandlers />
