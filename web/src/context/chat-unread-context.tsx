@@ -802,7 +802,7 @@ export function ChatUnreadProvider({
   }, [loading, refreshChats, userId]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!user || !userId) return;
 
     let cancelled = false;
 
@@ -826,6 +826,11 @@ export function ChatUnreadProvider({
         "system" as any,
         { event: "error" } as any,
         (payload: unknown) => {
+          const status =
+            payload && typeof payload === "object"
+              ? String((payload as { status?: unknown }).status ?? "")
+              : "";
+          if (status.toLowerCase() === "ok") return;
           console.error("chat-list realtime system error", payload);
         },
       ).on(
@@ -954,7 +959,7 @@ export function ChatUnreadProvider({
         statusRef.current.listChannel = null;
       }
     };
-  }, [userId, refreshChats]);
+  }, [user, userId, refreshChats]);
 
   useEffect(() => {
     if (

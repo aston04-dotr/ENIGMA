@@ -36,12 +36,37 @@ async function updateSession(req: NextRequest) {
     },
   });
 
-  await supabase.auth.getSession();
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user) {
+      // Never redirect here: authenticated requests must keep streaming without blink.
+      return res;
+    }
+  } catch {
+    return res;
+  }
+
   return res
 }
 
 export default async function middleware(req: NextRequest) {
-  return updateSession(req);
+  const res = await updateSession(req);
+  const location = res.headers.get("location");
+  if (location) {
+    try {
+      const target = new URL(location, req.url);
+      if (target.pathname === req.nextUrl.pathname) {
+        return NextResponse.next({
+          request: {
+            headers: req.headers,
+          },
+        });
+      }
+    } catch {
+      return res;
+    }
+  }
+  return res;
 }
 
 export const config = {

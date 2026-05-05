@@ -52,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapKey, setBootstrapKey] = useState(0);
   const profileRequestIdRef = useRef(0);
   const loadingRef = useRef(loading);
+  const isSessionFetchInFlightRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -67,12 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!loading) return;
     const timeout = window.setTimeout(() => {
       if (loadingRef.current) {
+        if (isSessionFetchInFlightRef.current) return;
         console.warn("Session sync slow, forcing UI");
-        setLoading(false);
         setAuthResolved(true);
+        setLoading(false);
         setReady(true);
       }
-    }, 3000);
+    }, 4000);
     return () => window.clearTimeout(timeout);
   }, [loading]);
 
@@ -210,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_IN") {
         initialSessionResolved = true;
         void (async () => {
+          isSessionFetchInFlightRef.current = true;
           try {
             const { data } = await supabase.auth.getSession();
             if (!mounted) return;
@@ -220,6 +223,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!mounted) return;
             settledRef.current = true;
             applySession(nextSession ?? null);
+          } finally {
+            isSessionFetchInFlightRef.current = false;
           }
         })();
         return;
@@ -230,6 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         void (async () => {
+          isSessionFetchInFlightRef.current = true;
           try {
             await new Promise((r) => setTimeout(r, signedOutGuardMs));
             const { data } = await supabase.auth.getSession();
@@ -252,6 +258,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             applySession(null);
             setProfile(null);
             setProfileLoading(false);
+          } finally {
+            isSessionFetchInFlightRef.current = false;
           }
         })();
         return;
@@ -263,6 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Фолбэк: если INITIAL_SESSION задержался, делаем мягкий check один раз.
     const bootstrapTimer = window.setTimeout(() => {
       if (!mounted || settledRef.current) return;
+      isSessionFetchInFlightRef.current = true;
       void supabase.auth
         .getSession()
         .then(({ data }) => {
@@ -273,6 +282,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn("[auth] getSession bootstrap fallback", err);
           if (!mounted || settledRef.current) return;
           applySession(null);
+        })
+        .finally(() => {
+          isSessionFetchInFlightRef.current = false;
         });
     }, 900);
 
