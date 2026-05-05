@@ -249,14 +249,8 @@ type ListingsFeedQuery = ReturnType<typeof listingsFeedSelectBase>;
 type LooseFeedQuery = ListingsFeedQuery & {
   eq: (column: string, value: string) => ListingsFeedQuery;
   or: (filters: string) => ListingsFeedQuery;
-  textSearch: (
-    column: string,
-    query: string,
-    options?: { config?: string; type?: "plain" | "phrase" | "websearch" },
-  ) => ListingsFeedQuery;
+  filter: (column: string, operator: string, value: string) => ListingsFeedQuery;
 };
-
-type SearchMode = "fts" | "ilike";
 
 function normalizeSearchText(raw: string): string {
   return raw
@@ -282,6 +276,22 @@ function searchTokens(raw: string): string[] {
   );
 }
 
+function buildStrictPrefixTsQuery(raw: string): string {
+  const tokens = searchTokens(raw).map((token) =>
+    token.replace(/[&|!:'()<>]/g, "").trim(),
+  );
+  const safeTokens = tokens.filter((token) => token.length > 1);
+  if (safeTokens.length === 0) return "";
+  return safeTokens.map((token) => `${token}:*`).join(" & ");
+}
+
+function titleTokenHits(row: ListingRow, rawSearch: string): number {
+  const tokens = searchTokens(rawSearch);
+  if (tokens.length === 0) return 0;
+  const title = String(row.title ?? "").toLowerCase();
+  return tokens.reduce((sum, token) => (title.includes(token) ? sum + 1 : sum), 0);
+}
+
 function scoreListingSearchMatch(row: ListingRow, rawSearch: string): number {
   const tokens = searchTokens(rawSearch);
   if (tokens.length === 0) return 0;
@@ -289,7 +299,7 @@ function scoreListingSearchMatch(row: ListingRow, rawSearch: string): number {
   const description = String(row.description ?? "").toLowerCase();
   let score = 0;
   for (const token of tokens) {
-    if (title.includes(token)) score += 10;
+    if (title.includes(token)) score += 100;
     else if (description.includes(token)) score += 1;
   }
   return score;
@@ -300,7 +310,6 @@ function applySafeFilters(
   filters: ListingFilters,
   searchActive: boolean,
   searchTrim: string,
-  searchMode: SearchMode = "fts",
 ): ListingsFeedQuery {
   try {
     let q = query;
@@ -329,18 +338,9 @@ function applySafeFilters(
     }
 
     if (searchActive) {
-      const safe = normalizeSearchText(searchTrim);
-      if (safe.length >= 3) {
-        if (searchMode === "fts") {
-          if (safe.length >= 3) {
-            q = loose().textSearch("fts", safe, {
-              config: "russian",
-              type: "plain",
-            });
-          }
-        } else {
-          q = loose().or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
-        }
+      const tsQuery = buildStrictPrefixTsQuery(searchTrim);
+      if (tsQuery.length > 0) {
+        q = loose().filter("fts", "fts(russian)", tsQuery);
       }
     }
     if (filters.minPrice != null && Number.isFinite(Number(filters.minPrice))) {
@@ -441,41 +441,31 @@ export async function fetchListings(filters: {
 
   try {
     const runOnce = async () => {
-      const mkQuery = (
-        useLtCreatedAt: boolean,
-        withFilters: boolean,
-        searchMode: SearchMode,
-      ) => {
+      const mkQuery = (useLtCreatedAt: boolean, withFilters: boolean) => {
         let q = listingsFeedSelectBase();
         if (cursor) {
           q = useLtCreatedAt ? q.lt("created_at", cursor.created_at) : q.or(compositeCursorOrClause(cursor));
         }
         if (withFilters) {
-          q = applySafeFilters(q, filterPayload, searchActive, searchTrim, searchMode);
+          q = applySafeFilters(q, filterPayload, searchActive, searchTrim);
         }
         return q;
       };
 
-      let { data, error } = await mkQuery(false, true, "fts");
+      let { data, error } = await mkQuery(false, true);
 
       if (isRealError(error) && !data && cursor) {
         console.warn("LISTINGS composite cursor query failed, fallback lt(created_at):", error);
-        const second = await mkQuery(true, true, "fts");
+        const second = await mkQuery(true, true);
         data = second.data;
         error = second.error;
       }
 
-      if (!isRealError(error) && searchActive && Array.isArray(data) && data.length === 0) {
-        const fallbackSearch = await mkQuery(false, true, "ilike");
-        data = fallbackSearch.data;
-        error = fallbackSearch.error;
-      }
-
       if (isRealError(error) && !data && hasFilters) {
         console.warn("LISTINGS filtered query failed without data; falling back to base:", error);
-        let fallback = await mkQuery(false, false, "fts");
+        let fallback = await mkQuery(false, false);
         if (isRealError(fallback.error) && !fallback.data && cursor) {
-          fallback = await mkQuery(true, false, "fts");
+          fallback = await mkQuery(true, false);
         }
         data = fallback.data;
         error = fallback.error;
@@ -530,7 +520,24 @@ export async function fetchListings(filters: {
     try {
       const mergedRaw = await mergeFavoriteCounts(listings);
       const merged = searchActive
-        ? [...mergedRaw].sort((a, b) => {
+        ? [...mergedRaw]
+            .filter((row) => {
+              const tokens = searchTokens(searchTrim);
+              if (tokens.length === 0) return true;
+              const title = String(row.title ?? "").toLowerCase();
+              const description = String(row.description ?? "").toLowerCase();
+              const haystack = `${title} ${description}`;
+              const allTokensPresent = tokens.every((token) => haystack.includes(token));
+              if (!allTokensPresent) return false;
+              if (tokens.length >= 2) {
+                return tokens.some((token) => title.includes(token));
+              }
+              return true;
+            })
+            .sort((a, b) => {
+              const titleHitsB = titleTokenHits(b, searchTrim);
+              const titleHitsA = titleTokenHits(a, searchTrim);
+              if (titleHitsB !== titleHitsA) return titleHitsB - titleHitsA;
             const sb = scoreListingSearchMatch(b, searchTrim);
             const sa = scoreListingSearchMatch(a, searchTrim);
             if (sb !== sa) return sb - sa;
@@ -585,7 +592,7 @@ export async function fetchListingsCount(filters: {
     listingKind: filters.listingKind,
   };
 
-  const mkCountQuery = (searchMode: SearchMode) => {
+  const mkCountQuery = () => {
     const base = supabase
       .from("listings")
       .select("id", { count: "exact", head: true })
@@ -596,23 +603,11 @@ export async function fetchListingsCount(filters: {
       filterPayload,
       searchActive,
       searchTrim,
-      searchMode,
     );
     return q as unknown as PromiseLike<{ count: number | null; error: unknown }>;
   };
 
-  const first = await mkCountQuery("fts");
-  if (
-    searchActive &&
-    !isRealError(first.error) &&
-    typeof first.count === "number" &&
-    first.count === 0
-  ) {
-    const second = await mkCountQuery("ilike");
-    if (!isRealError(second.error) && typeof second.count === "number") {
-      return second.count;
-    }
-  }
+  const first = await mkCountQuery();
   if (!isRealError(first.error) && typeof first.count === "number") return first.count;
   return 0;
 }
