@@ -256,11 +256,14 @@ type LooseFeedQuery = ListingsFeedQuery & {
   ) => ListingsFeedQuery;
 };
 
+type SearchMode = "fts" | "ilike";
+
 function applySafeFilters(
   query: ListingsFeedQuery,
   filters: ListingFilters,
   searchActive: boolean,
-  searchTrim: string
+  searchTrim: string,
+  searchMode: SearchMode = "fts",
 ): ListingsFeedQuery {
   try {
     let q = query;
@@ -296,15 +299,19 @@ function applySafeFilters(
         .replace(/[()]/g, "")
         .slice(0, 80);
       if (safe.length >= 3) {
-        const tsQuery = safe
-          .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-        if (tsQuery.length >= 3) {
-          q = loose().textSearch("fts", tsQuery, {
-            config: "russian",
-            type: "websearch",
-          });
+        if (searchMode === "fts") {
+          const tsQuery = safe
+            .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (tsQuery.length >= 3) {
+            q = loose().textSearch("fts", tsQuery, {
+              config: "russian",
+              type: "websearch",
+            });
+          }
+        } else {
+          q = loose().or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
         }
       }
     }
@@ -406,31 +413,41 @@ export async function fetchListings(filters: {
 
   try {
     const runOnce = async () => {
-      const mkQuery = (useLtCreatedAt: boolean, withFilters: boolean) => {
+      const mkQuery = (
+        useLtCreatedAt: boolean,
+        withFilters: boolean,
+        searchMode: SearchMode,
+      ) => {
         let q = listingsFeedSelectBase();
         if (cursor) {
           q = useLtCreatedAt ? q.lt("created_at", cursor.created_at) : q.or(compositeCursorOrClause(cursor));
         }
         if (withFilters) {
-          q = applySafeFilters(q, filterPayload, searchActive, searchTrim);
+          q = applySafeFilters(q, filterPayload, searchActive, searchTrim, searchMode);
         }
         return q;
       };
 
-      let { data, error } = await mkQuery(false, true);
+      let { data, error } = await mkQuery(false, true, "fts");
 
       if (isRealError(error) && !data && cursor) {
         console.warn("LISTINGS composite cursor query failed, fallback lt(created_at):", error);
-        const second = await mkQuery(true, true);
+        const second = await mkQuery(true, true, "fts");
         data = second.data;
         error = second.error;
       }
 
+      if (!isRealError(error) && searchActive && Array.isArray(data) && data.length === 0) {
+        const fallbackSearch = await mkQuery(false, true, "ilike");
+        data = fallbackSearch.data;
+        error = fallbackSearch.error;
+      }
+
       if (isRealError(error) && !data && hasFilters) {
         console.warn("LISTINGS filtered query failed without data; falling back to base:", error);
-        let fallback = await mkQuery(false, false);
+        let fallback = await mkQuery(false, false, "fts");
         if (isRealError(fallback.error) && !fallback.data && cursor) {
-          fallback = await mkQuery(true, false);
+          fallback = await mkQuery(true, false, "fts");
         }
         data = fallback.data;
         error = fallback.error;
@@ -502,6 +519,64 @@ export async function fetchListings(filters: {
       ? emptySeeking("Ошибка загрузки. Попробуй обновить страницу.")
       : demo("Ошибка загрузки. Показаны примеры — попробуй обновить страницу.");
   }
+}
+
+export async function fetchListingsCount(filters: {
+  category?: string;
+  categoriesIn?: string[];
+  minPrice?: number;
+  maxPrice?: number;
+  search?: string;
+  city?: string;
+  dealType?: "sale" | "rent";
+  listingKind?: "offer" | "seeking";
+}): Promise<number> {
+  if (!isSupabaseConfigured) return 0;
+
+  const searchTrim = filters.search?.trim() ?? "";
+  const searchActive = searchTrim.length > 2;
+  const filterPayload: ListingFilters = {
+    city: filters.city,
+    category: filters.category,
+    categoriesIn:
+      Array.isArray(filters.categoriesIn) && filters.categoriesIn.length > 0
+        ? filters.categoriesIn
+        : undefined,
+    minPrice: filters.minPrice,
+    maxPrice: filters.maxPrice,
+    search: filters.search,
+    dealType: filters.dealType,
+    listingKind: filters.listingKind,
+  };
+
+  const mkCountQuery = (searchMode: SearchMode) => {
+    const base = supabase
+      .from("listings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .in("city", [...ALLOWED_LISTING_CITIES]);
+    const q = applySafeFilters(
+      base as unknown as ListingsFeedQuery,
+      filterPayload,
+      searchActive,
+      searchTrim,
+      searchMode,
+    );
+    return q as unknown as PromiseLike<{ count: number | null; error: unknown }>;
+  };
+
+  const first = await mkCountQuery("fts");
+  if (!isRealError(first.error) && typeof first.count === "number" && first.count > 0) {
+    return first.count;
+  }
+  if (searchActive) {
+    const second = await mkCountQuery("ilike");
+    if (!isRealError(second.error) && typeof second.count === "number") {
+      return second.count;
+    }
+  }
+  if (!isRealError(first.error) && typeof first.count === "number") return first.count;
+  return 0;
 }
 
 /**

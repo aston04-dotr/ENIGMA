@@ -14,6 +14,7 @@ import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCitie
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import {
   fetchListings,
+  fetchListingsCount,
   getCitiesFromDb,
   type FeedListingsCursor,
 } from "@/lib/listings";
@@ -270,6 +271,7 @@ export function FeedPage({
   );
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
+  const [serverFoundCount, setServerFoundCount] = useState<number | null>(null);
   const [city, setCity] = useState<string>(
     isAllowedListingCity(seededCity) ? seededCity : ALLOWED_LISTING_CITIES[0],
   );
@@ -457,6 +459,26 @@ export function FeedPage({
     }
     return f;
   }, [city, selectedCategory, feedDealSegment, feedVariant, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const count = await fetchListingsCount(feedFilters);
+          if (cancelled) return;
+          setServerFoundCount(Number.isFinite(count) ? count : 0);
+        } catch {
+          if (cancelled) return;
+          setServerFoundCount(null);
+        }
+      })();
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [feedFilters]);
 
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
@@ -821,7 +843,9 @@ export function FeedPage({
 
   const categoryTitle =
     selectedCategory === ALL_CATEGORY ? "Все" : categoryLabel(selectedCategory);
-  const foundCountLabel = new Intl.NumberFormat("ru-RU").format(filtered.length);
+  const foundCountLabel = new Intl.NumberFormat("ru-RU").format(
+    serverFoundCount ?? filtered.length,
+  );
 
   const filterRowClass =
     theme === "light"
