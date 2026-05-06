@@ -41,6 +41,27 @@ type AuthCtx = {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
+function getErrorStatus(error: unknown): number {
+  const status = Number(
+    (error as { status?: unknown; code?: unknown } | null)?.status ??
+      (error as { status?: unknown; code?: unknown } | null)?.code ??
+      0,
+  );
+  return Number.isFinite(status) ? status : 0;
+}
+
+function isRefreshAuthFailure(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status !== 400 && status !== 401) return false;
+  const text = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  return (
+    text.includes("refresh") ||
+    text.includes("jwt") ||
+    text.includes("token") ||
+    text.includes("session")
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -64,6 +85,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadingRef.current = loading;
   }, [loading]);
 
+  const hardSignOut = useCallback(async (reason: string) => {
+    console.warn("[auth] hard sign-out:", reason);
+    setSession(null);
+    setUser(null);
+    setProfile(null);
+    setProfileLoading(false);
+    setAuthResolved(true);
+    setLoading(false);
+    setReady(true);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+        document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
+      } catch (storageErr) {
+        console.warn("[auth] storage clear failed", storageErr);
+      }
+    }
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+    } catch {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // noop
+      }
+    }
+    if (typeof window !== "undefined") {
+      window.location.href = "/login?signed_out=1&reason=refresh_failed";
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!loading) return;
@@ -76,7 +129,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSessionFetchInFlightRef.current = true;
         void supabase.auth
           .getSession()
-          .then(({ data }) => {
+          .then(({ data, error }) => {
+            if (error && isRefreshAuthFailure(error)) {
+              void hardSignOut("bootstrap-timeout getSession 400/401");
+              return;
+            }
             if (data.session?.user) {
               setSession(data.session);
               setUser(data.session.user);
@@ -100,6 +157,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setReady(true);
           })
           .catch((err) => {
+            if (isRefreshAuthFailure(err)) {
+              void hardSignOut("bootstrap-timeout getSession catch 400/401");
+              return;
+            }
             console.warn("Session sync timeout check failed", err);
             setAuthResolved(true);
             setLoading(false);
@@ -202,6 +263,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (!authResolved || loading) {
+      return;
+    }
     const uid = user?.id ?? null;
     if (!uid) {
       setProfile(null);
@@ -213,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await ensureProfileExists(uid, email);
       await loadProfile(uid);
     })();
-  }, [user?.id, user?.email, ensureProfileExists, loadProfile]);
+  }, [authResolved, loading, user?.id, user?.email, ensureProfileExists, loadProfile]);
 
   useEffect(() => {
     let mounted = true;
@@ -250,11 +314,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void (async () => {
           isSessionFetchInFlightRef.current = true;
           try {
-            const { data } = await supabase.auth.getSession();
+            const { data, error } = await supabase.auth.getSession();
+            if (error && isRefreshAuthFailure(error)) {
+              void hardSignOut("SIGNED_IN getSession 400/401");
+              return;
+            }
             if (!mounted) return;
             settledRef.current = true;
             applySession(data.session ?? nextSession ?? null);
           } catch (err) {
+            if (isRefreshAuthFailure(err)) {
+              void hardSignOut("SIGNED_IN getSession catch 400/401");
+              return;
+            }
             console.warn("[auth] SIGNED_IN getSession failed", err);
             if (!mounted) return;
             settledRef.current = true;
@@ -274,7 +346,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isSessionFetchInFlightRef.current = true;
           try {
             await new Promise((r) => setTimeout(r, signedOutGuardMs));
-            const { data } = await supabase.auth.getSession();
+            const { data, error } = await supabase.auth.getSession();
+            if (error && isRefreshAuthFailure(error)) {
+              void hardSignOut("SIGNED_OUT guard getSession 400/401");
+              return;
+            }
             if (!mounted) return;
             if (typeof document !== "undefined") {
               console.log("COOKIE SESSION CHECK", document.cookie);
@@ -290,6 +366,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (hasSupabaseCookie) {
               await new Promise((r) => setTimeout(r, 1200));
               const retry = await supabase.auth.getSession();
+              if (retry.error && isRefreshAuthFailure(retry.error)) {
+                void hardSignOut("SIGNED_OUT guard getSession retry 400/401");
+                return;
+              }
               if (!mounted) return;
               if (retry.data.session?.user) {
                 applySession(retry.data.session);
@@ -301,6 +381,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null);
             setProfileLoading(false);
           } catch (err) {
+            if (isRefreshAuthFailure(err)) {
+              void hardSignOut("SIGNED_OUT guard getSession catch 400/401");
+              return;
+            }
             console.warn("[auth] SIGNED_OUT getSession failed", err);
             if (!mounted) return;
             settledRef.current = true;
@@ -323,11 +407,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isSessionFetchInFlightRef.current = true;
       void supabase.auth
         .getSession()
-        .then(({ data }) => {
+        .then(({ data, error }) => {
+          if (error && isRefreshAuthFailure(error)) {
+            void hardSignOut("bootstrap fallback getSession 400/401");
+            return;
+          }
           if (!mounted || settledRef.current) return;
           applySession(data.session ?? null);
         })
         .catch((err) => {
+          if (isRefreshAuthFailure(err)) {
+            void hardSignOut("bootstrap fallback getSession catch 400/401");
+            return;
+          }
           console.warn("[auth] getSession bootstrap fallback", err);
           if (!mounted || settledRef.current) return;
           applySession(null);
@@ -342,7 +434,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.clearTimeout(bootstrapTimer);
       subData.subscription.unsubscribe();
     };
-  }, [bootstrapKey]);
+  }, [bootstrapKey, hardSignOut]);
 
   const retryBootstrap = useCallback(
     (opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
@@ -356,39 +448,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    setSession(null);
-    setUser(null);
-    setProfile(null);
-    setProfileLoading(false);
-    setAuthResolved(true);
-    setLoading(false);
-    setReady(true);
-
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.clear();
-        window.sessionStorage.clear();
-        document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
-      } catch (storageErr) {
-        console.warn("[auth-context] storage clear failed", storageErr);
-      }
-    }
-
-    try {
-      await supabase.auth.signOut({ scope: "global" });
-    } catch (e) {
-      console.warn("[auth-context] signOut global failed, fallback to local", e);
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch (localErr) {
-        console.warn("[auth-context] signOut local failed", localErr);
-      }
-    }
-
-    if (typeof window !== "undefined") {
-      window.location.href = "/login?signed_out=1";
-    }
-  }, []);
+    await hardSignOut("manual signOut");
+  }, [hardSignOut]);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {

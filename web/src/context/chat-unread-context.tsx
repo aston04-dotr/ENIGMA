@@ -43,6 +43,20 @@ const PRESENCE_HEARTBEAT_MS = 25_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
 
+function getErrorStatus(error: unknown): number {
+  const status = Number(
+    (error as { status?: unknown; code?: unknown } | null)?.status ??
+      (error as { status?: unknown; code?: unknown } | null)?.code ??
+      0,
+  );
+  return Number.isFinite(status) ? status : 0;
+}
+
+function isAuthFailure(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return status === 400 || status === 401;
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
@@ -347,7 +361,7 @@ export function ChatUnreadProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const userId = user?.id ?? null;
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
@@ -408,10 +422,18 @@ export function ChatUnreadProvider({
         let accessToken = sessionData?.session?.access_token ?? null;
         if (!accessToken) {
           try {
-            await supabase.auth.refreshSession();
+            const { error: refreshError } = await supabase.auth.refreshSession();
+            if (refreshError && isAuthFailure(refreshError)) {
+              await signOut();
+              return;
+            }
             const { data: refreshedSession } = await supabase.auth.getSession();
             accessToken = refreshedSession?.session?.access_token ?? null;
-          } catch {
+          } catch (refreshCrash) {
+            if (isAuthFailure(refreshCrash)) {
+              await signOut();
+              return;
+            }
             // noop: fallback retry below
           }
         }
@@ -594,7 +616,7 @@ export function ChatUnreadProvider({
         if (!opts?.silent) setLoadingState(false);
       }
     },
-    [userId],
+    [signOut, userId],
   );
 
   const scheduleRefresh = useCallback(
