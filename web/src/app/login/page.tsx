@@ -5,6 +5,7 @@ import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
 import { trackEvent } from "@/lib/analytics";
+import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,66 @@ export default function LoginPage() {
   const [banner, setBanner] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const loginSuccessTrackedRef = useRef(false);
+
+  function clearBrokenAuthStorage() {
+    if (typeof window === "undefined") return;
+    try {
+      for (const storage of [window.localStorage, window.sessionStorage]) {
+        const keys: string[] = [];
+        for (let i = 0; i < storage.length; i += 1) {
+          const key = storage.key(i);
+          if (!key) continue;
+          const normalized = key.toLowerCase();
+          if (
+            normalized.startsWith("sb-") ||
+            normalized.includes("supabase") ||
+            normalized.includes("auth-token")
+          ) {
+            keys.push(key);
+          }
+        }
+        keys.forEach((key) => storage.removeItem(key));
+      }
+    } catch {
+      // noop
+    }
+    try {
+      const cookieNames = document.cookie
+        .split(";")
+        .map((x) => x.trim().split("=")[0] ?? "")
+        .filter((name) => {
+          const normalized = name.toLowerCase();
+          return normalized.startsWith("sb-") || normalized.includes("supabase");
+        });
+      cookieNames.forEach((name) => {
+        document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
+      });
+    } catch {
+      // noop
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const search = new URLSearchParams(window.location.search);
+        const forceCleanup = search.get("reason") === "refresh_failed";
+        const { data, error } = await supabase.auth.getSession();
+        if (cancelled) return;
+        if (data.session?.user && !forceCleanup) return;
+        if (forceCleanup || error) {
+          await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+          clearBrokenAuthStorage();
+        }
+      } catch {
+        clearBrokenAuthStorage();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (consumeAccessDeniedMessage()) {
