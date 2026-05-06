@@ -99,7 +99,7 @@ function tabColors(theme: UiTheme, active: boolean): { icon: string; label: stri
 }
 
 function BottomNavInner() {
-  const { loading } = useAuth();
+  const { loading, session } = useAuth();
   const { theme } = useTheme();
   const { totalUnread } = useChatUnread();
   const pathname = usePathname();
@@ -119,6 +119,13 @@ function BottomNavInner() {
     >
       {navEntries.map((entry) => {
         const t = entry;
+        const isGuest = !session?.user;
+        const href =
+          isGuest && t.key === "create"
+            ? "/login?reason=save_enigma&source=create_tab"
+            : isGuest && t.key === "profile"
+              ? "/login?reason=save_enigma&source=profile_tab"
+              : t.href;
         const active = t.isActive(pathname, intent);
         const isChatTab = t.key === "chat";
         const isProfileTab = t.key === "profile";
@@ -130,7 +137,7 @@ function BottomNavInner() {
         return (
           <Link
             key={t.key}
-            href={t.href}
+            href={href}
             prefetch
             className={`pressable relative flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pt-1 text-[9px] font-medium tracking-wide sm:text-[10px] ${
               active ? "font-semibold" : "font-normal"

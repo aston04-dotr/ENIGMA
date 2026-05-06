@@ -2,6 +2,7 @@
 
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorUi } from "@/components/ErrorUi";
+import { GuestChatList } from "@/components/guest/GuestChatList";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { normalizeChatParticipantName } from "@/lib/guestIdentity";
@@ -147,19 +148,7 @@ export default function ChatsPage() {
     void loadNotices();
   }, [refreshChats, session?.user]);
 
-  if (!session?.user) {
-    return (
-      <main className="safe-pt px-5 pb-8 pt-10">
-        <p className="text-sm text-muted">Войдите, чтобы видеть чаты.</p>
-        <Link
-          href="/login"
-          className="mt-6 inline-block text-sm font-semibold text-accent transition-colors duration-ui hover:text-accent-hover"
-        >
-          Войти
-        </Link>
-      </main>
-    );
-  }
+  if (!session?.user) return <GuestChatList />;
 
   return (
     <main className="safe-pt min-h-screen bg-main px-5 pb-6 pt-8">

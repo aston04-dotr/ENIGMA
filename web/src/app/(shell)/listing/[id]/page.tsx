@@ -10,6 +10,7 @@ import { useTheme } from "@/context/theme-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
+import { getOrCreateGuestChat } from "@/lib/guestChats";
 import {
   fetchListingFavoriteCounts,
   fetchListingById,
@@ -29,6 +30,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { recordMeaningfulAction, rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 
 const FEED_STATE_KEY = "feed_state";
 
@@ -52,6 +54,7 @@ export default function ListingDetailPage() {
   const [renewingPublication, setRenewingPublication] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const listingActionsAnchorRef = useRef<HTMLButtonElement>(null);
+  const meaningfulViewTrackedRef = useRef<string>("");
 
   useEffect(() => {
     if (!id) {
@@ -70,6 +73,10 @@ export default function ListingDetailPage() {
             console.log("LISTING DATA:", loadedRow);
           }
           setRow(loadedRow);
+          if (meaningfulViewTrackedRef.current !== loadedRow.id) {
+            meaningfulViewTrackedRef.current = loadedRow.id;
+            recordMeaningfulAction("listing_open", 1);
+          }
           void incrementViews(loadedRow.id).then((ok) => {
             if (!ok || cancelled) return;
             setRow((prev) =>
@@ -177,7 +184,21 @@ export default function ListingDetailPage() {
 
       const uid = session?.user?.id;
       if (!uid) {
-        router.push("/login");
+        recordMeaningfulAction("chat_intent", 2);
+        const guestChatRes = await getOrCreateGuestChat(
+          sellerUserId,
+          rowId || null,
+        );
+        if (guestChatRes.ok) {
+          const query = new URLSearchParams({
+            guest: "1",
+            peer: sellerUserId,
+          });
+          if (rowId) query.set("listing", rowId);
+          router.push(`/chat/${guestChatRes.chatId}?${query.toString()}`);
+          return;
+        }
+        setChatError("Не удалось открыть диалог. Попробуйте снова.");
         return;
       }
 
@@ -232,7 +253,9 @@ export default function ListingDetailPage() {
   const handleToggleFavorite = useCallback(() => {
     if (favoriteBusy || !rowId) return;
     if (!viewerId) {
-      router.push("/login");
+      recordMeaningfulAction("favorite_intent", 2);
+      rememberSaveEnigmaContinuationRoute();
+      router.push("/login?reason=save_enigma&source=favorite");
       return;
     }
     setFavoriteBusy(true);
@@ -290,7 +313,9 @@ export default function ListingDetailPage() {
           label: "Пожаловаться",
           onSelect: () => {
             if (!viewerId) {
-              router.push("/login");
+              recordMeaningfulAction("report_intent", 1);
+              rememberSaveEnigmaContinuationRoute();
+              router.push("/login?reason=save_enigma&source=report");
               return;
             }
             if (!window.confirm("Отправить жалобу на это объявление?")) return;

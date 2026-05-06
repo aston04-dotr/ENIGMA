@@ -1276,12 +1276,14 @@ export function CreateListingForm() {
   if (!session) {
     return (
       <main className="safe-pt px-5 pb-8 pt-10">
-        <p className="text-sm text-muted">Войдите, чтобы разместить объявление.</p>
+        <p className="text-sm text-muted">
+          Сохрани Enigma, чтобы публиковать объявления и не терять черновики.
+        </p>
         <Link
-          href="/login"
+          href="/login?reason=save_enigma&source=create_listing"
           className="mt-6 inline-block min-h-[48px] rounded-card bg-accent px-6 py-3 text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
         >
-          Войти
+          Сохранить мой Enigma
         </Link>
       </main>
     );

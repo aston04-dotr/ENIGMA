@@ -17,10 +17,6 @@ export default function HomePageClient() {
     return <LandingScreen />;
   }
 
-  if (!session?.user) {
-    return <LandingScreen />;
-  }
-
   return (
     <div className="min-h-[100svh] bg-main">
       <FeedPage session={session} />

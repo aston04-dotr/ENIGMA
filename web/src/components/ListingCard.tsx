@@ -16,6 +16,10 @@ import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import type { ListingRow } from "@/lib/types";
 import { shareListingUrl } from "@/lib/shareListing";
+import {
+  recordMeaningfulAction,
+  rememberSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 import { reportListingTrustPenalty } from "@/lib/trust";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
@@ -213,7 +217,9 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   function handleToggleFavorite() {
     if (favoriteBusy || !lid) return;
     if (!viewerId) {
-      router.push("/login");
+      recordMeaningfulAction("favorite_intent", 2);
+      rememberSaveEnigmaContinuationRoute();
+      router.push("/login?reason=save_enigma&source=favorite");
       return;
     }
     setFavoriteBusy(true);

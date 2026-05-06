@@ -11,6 +11,7 @@ import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { AppVersionCheck } from "@/components/AppVersionCheck";
 import { DevCacheClear } from "@/components/DevCacheClear";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { SaveEnigmaPrompt } from "@/components/SaveEnigmaPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
 import { GlobalErrorHandlers } from "@/components/GlobalErrorHandlers";
 import { PushNotificationsBootstrap } from "@/components/PushNotificationsBootstrap";
@@ -67,6 +68,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <OfflineGate>
                 <ViewModeLayout>{children}</ViewModeLayout>
                 <InstallPrompt />
+                <SaveEnigmaPrompt />
               </OfflineGate>
             </ChatUnreadProvider>
           </ViewModeProvider>

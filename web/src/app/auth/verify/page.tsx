@@ -139,7 +139,7 @@ export default function VerifyPage() {
         disabled={loading || resendLoading || code.length !== 8}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "Входим…" : "Войти"}
+        {loading ? "Сохраняем…" : "Продолжить"}
       </button>
 
       <button

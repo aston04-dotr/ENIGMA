@@ -7,11 +7,7 @@ import { useAuth } from "@/context/auth-context";
 export default function WantedFeedPage() {
   const { session, loading } = useAuth();
 
-  if (loading && !session?.user) {
-    return <LandingScreen />;
-  }
-
-  if (!session?.user) {
+  if (loading) {
     return <LandingScreen />;
   }
 

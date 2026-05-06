@@ -2,6 +2,7 @@
 
 import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
+import { GuestChatRoom } from "@/components/guest/GuestChatRoom";
 import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
@@ -2097,13 +2098,7 @@ export default function ChatRoomPage() {
   }
 
   if (!session) {
-    return (
-      <main className="p-5">
-        <Link href="/login" className="text-sm font-semibold text-accent">
-          Войти
-        </Link>
-      </main>
-    );
+    return <GuestChatRoom chatId={chatId} />;
   }
 
   return (

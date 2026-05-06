@@ -10,6 +10,7 @@ import {
 import { ListingCard } from "@/components/ListingCard";
 import { CATEGORIES, categoryLabel } from "@/lib/categories";
 import { trackEvent } from "@/lib/analytics";
+import { recordMeaningfulAction } from "@/lib/saveEnigmaFlow";
 import { normalizeAllowedListingCity } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import {
@@ -261,7 +262,7 @@ export function FeedPage({
   session,
   feedVariant = "offers",
 }: {
-  session: Session;
+  session: Session | null;
   feedVariant?: "offers" | "seeking";
 }) {
   const { theme } = useTheme();
@@ -457,6 +458,18 @@ export function FeedPage({
     }, TEXT_SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [searchInput]);
+
+  const searchActionRef = useRef<{ q: string; at: number }>({ q: "", at: 0 });
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return;
+    const now = Date.now();
+    if (searchActionRef.current.q === q && now - searchActionRef.current.at < 20_000) {
+      return;
+    }
+    searchActionRef.current = { q, at: now };
+    recordMeaningfulAction("search_used", 1);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

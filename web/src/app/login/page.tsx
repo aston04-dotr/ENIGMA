@@ -4,6 +4,7 @@ import { signInWithMagicLink } from "@/lib/auth";
 import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
+import { consumeSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { trackEvent } from "@/lib/analytics";
 import {
   getSessionGuarded,
@@ -37,6 +38,7 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [sent, setSent] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [saveMode, setSaveMode] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const loginSuccessTrackedRef = useRef(false);
 
@@ -86,6 +88,11 @@ export default function LoginPage() {
     }
     if (search.get("reason") === "stale_refresh_token") {
       setBanner("Сессия устарела. Войдите снова.");
+      return;
+    }
+    if (search.get("reason") === "save_enigma") {
+      setSaveMode(true);
+      setBanner("Сохрани Enigma, чтобы чаты, избранное и активность остались с тобой.");
     }
   }, []);
 
@@ -95,6 +102,19 @@ export default function LoginPage() {
       if (!loginSuccessTrackedRef.current) {
         loginSuccessTrackedRef.current = true;
         trackEvent("login_success", { user_id: session.user.id });
+      }
+      if (typeof window !== "undefined") {
+        const search = new URLSearchParams(window.location.search);
+        const returnTo = String(search.get("returnTo") ?? "").trim();
+        if (returnTo.startsWith("/")) {
+          router.replace(returnTo);
+          return;
+        }
+      }
+      const continuationRoute = consumeSaveEnigmaContinuationRoute();
+      if (continuationRoute) {
+        router.replace(continuationRoute);
+        return;
       }
       router.replace("/");
     }
@@ -138,9 +158,13 @@ export default function LoginPage() {
       {banner ? (
         <p className="mb-6 rounded-card border border-line bg-elevated px-4 py-3 text-sm text-fg">{banner}</p>
       ) : null}
-      <h1 className="text-[28px] font-bold tracking-tight text-fg">Вход</h1>
+      <h1 className="text-[28px] font-bold tracking-tight text-fg">
+        {saveMode ? "Сохранить мой Enigma" : "Вход"}
+      </h1>
       <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
-        Отправим 8-значный код на почту. Введите его на следующем шаге.
+        {saveMode
+          ? "Подтверди почту, и мы закрепим твои диалоги, избранное и черновики за аккаунтом."
+          : "Отправим 8-значный код на почту. Введите его на следующем шаге."}
       </p>
       <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
         <input
@@ -194,7 +218,7 @@ export default function LoginPage() {
         disabled={loading || !acceptedTerms}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "Отправка…" : "Получить код"}
+        {loading ? "Отправка…" : saveMode ? "Сохранить и получить код" : "Получить код"}
       </button>
       {(sent || err) && !loading ? (
         <p className="mt-3 text-center text-xs text-muted">Можно запросить код ещё раз.</p>
