@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import { getSessionGuarded, getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import {
   isBackoffSkipped,
   isSupabaseReachable,
@@ -76,8 +76,10 @@ function safeJson<T>(value: T): T {
 }
 
 async function hasValidAccessToken(): Promise<boolean> {
-  const { data } = await supabase.auth.getSession();
-  return Boolean(data?.session?.access_token?.trim());
+  const { session } = await getSessionGuarded("push-has-token", {
+    allowRefresh: false,
+  });
+  return Boolean(session?.access_token?.trim());
 }
 
 async function upsertWebPushSubscription(
@@ -86,11 +88,10 @@ async function upsertWebPushSubscription(
 ): Promise<boolean> {
   const normalizedUserId = String(userId ?? "").trim();
   if (!normalizedUserId || !isUuid(normalizedUserId)) return false;
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (
-    !sessionData?.session?.user?.id ||
-    sessionData.session.user.id !== normalizedUserId
-  ) {
+  const { session } = await getSessionGuarded("push-upsert-subscription", {
+    allowRefresh: false,
+  });
+  if (!session?.user?.id || session.user.id !== normalizedUserId) {
     return false;
   }
 
@@ -145,11 +146,13 @@ async function removeWebPushSubscription(
   const trimmed = endpoint?.trim() ?? "";
   if (!trimmed) return;
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session?.user?.id) {
+  const { session } = await getSessionGuarded("push-remove-subscription", {
+    allowRefresh: false,
+  });
+  if (!session?.user?.id) {
     return;
   }
-  if (sessionData.session.user.id !== normalizedUserId) {
+  if (session.user.id !== normalizedUserId) {
     return;
   }
 

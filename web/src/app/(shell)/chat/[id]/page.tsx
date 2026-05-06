@@ -6,7 +6,7 @@ import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
-import { supabase } from "@/lib/supabase";
+import { getSessionGuarded, supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
@@ -1667,10 +1667,11 @@ export default function ChatRoomPage() {
       return false;
     }
 
-    await supabase.auth.refreshSession();
-    const { data: sessionData } = await supabase.auth.getSession();
-    console.log("SESSION:", sessionData);
-    if (!sessionData?.session) {
+    const { session } = await getSessionGuarded("chat-upload-ensure-session", {
+      allowRefresh: true,
+    });
+    console.log("SESSION:", { hasSession: Boolean(session) });
+    if (!session) {
       if (typeof window !== "undefined") {
         window.alert("Нет сессии. Перезайди.");
       }

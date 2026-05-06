@@ -5,7 +5,7 @@ import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
 import { trackEvent } from "@/lib/analytics";
-import { supabase } from "@/lib/supabase";
+import { getSessionGuarded, supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -80,9 +80,11 @@ export default function LoginPage() {
       try {
         const search = new URLSearchParams(window.location.search);
         const forceCleanup = search.get("reason") === "refresh_failed";
-        const { data, error } = await supabase.auth.getSession();
+        const { session, error } = await getSessionGuarded("login-initial-cleanup", {
+          allowRefresh: false,
+        });
         if (cancelled) return;
-        if (data.session?.user && !forceCleanup) return;
+        if (session?.user && !forceCleanup) return;
         if (forceCleanup || error) {
           await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
           clearBrokenAuthStorage();

@@ -4,7 +4,7 @@ import { getListingsPageSize } from "./runtimeConfig";
 import { FAVORITES_CHANGED_EVENT } from "./favoriteEvents";
 import { trackEvent } from "./analytics";
 import { decreaseTrust } from "./trust";
-import { supabase, isSupabaseConfigured } from "./supabase";
+import { getSessionGuarded, supabase, isSupabaseConfigured } from "./supabase";
 import { normalizeAllowedListingCity } from "./russianCities";
 import { normalizeCommercialPremisesLabel } from "./realestateConstants";
 import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
@@ -1251,10 +1251,10 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     // 1. GUARANTEE USER AUTHENTICATION (anti-race после свежего входа)
     let { data: userData, error: authErr } = await supabase.auth.getUser();
     if (authErr || !userData?.user) {
-      await supabase.auth.refreshSession();
-      const retry = await supabase.auth.getUser();
-      userData = retry.data;
-      authErr = retry.error;
+      await getSessionGuarded("listings-insert-row", { allowRefresh: true });
+      const retryUser = await supabase.auth.getUser();
+      userData = retryUser.data;
+      authErr = retryUser.error;
     }
 
     if (authErr || !userData?.user) {

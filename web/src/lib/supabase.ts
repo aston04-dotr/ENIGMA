@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "./supabase.types";
 import { getSupabasePublicConfig } from "./runtimeConfig";
+import type { Session } from "@supabase/supabase-js";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
 
@@ -124,6 +125,128 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
 export const isSupabaseConfigured = configured;
 
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
+let refreshInFlight: Promise<void> | null = null;
+let refreshCooldownUntilMs = 0;
+
+const AUTH_VERBOSE =
+  process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
+  process.env.NEXT_PUBLIC_AUTH_VERBOSE === "true" ||
+  process.env.NODE_ENV === "development";
+
+function authLog(
+  level: "debug" | "warn" | "error",
+  message: string,
+  payload?: Record<string, unknown>,
+) {
+  if (!AUTH_VERBOSE && level === "debug") return;
+  const data = payload ?? {};
+  if (level === "warn") {
+    console.warn(`[auth-guard] ${message}`, data);
+    return;
+  }
+  if (level === "error") {
+    console.error(`[auth-guard] ${message}`, data);
+    return;
+  }
+  console.debug(`[auth-guard] ${message}`, data);
+}
+
+function getErrorStatus(error: unknown): number {
+  const status = Number(
+    (error as { status?: unknown; code?: unknown } | null)?.status ??
+      (error as { status?: unknown; code?: unknown } | null)?.code ??
+      0,
+  );
+  return Number.isFinite(status) ? status : 0;
+}
+
+function extractStack(): string | null {
+  try {
+    const stack = new Error().stack ?? "";
+    const lines = stack.split("\n").slice(2, 7).map((x) => x.trim());
+    return lines.length ? lines.join(" | ") : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runGuardedRefresh(reason: string): Promise<void> {
+  const now = Date.now();
+  if (now < refreshCooldownUntilMs) {
+    authLog("warn", "refresh skipped by cooldown", {
+      reason,
+      cooldownLeftMs: refreshCooldownUntilMs - now,
+    });
+    return;
+  }
+  if (refreshInFlight) {
+    authLog("debug", "joining existing refresh", { reason });
+    await refreshInFlight;
+    return;
+  }
+
+  authLog("debug", "refresh start", { reason, stack: extractStack() });
+  refreshInFlight = (async () => {
+    const startedAt = Date.now();
+    try {
+      const { error } = await supabase.auth.refreshSession();
+      if (error) {
+        const status = getErrorStatus(error);
+        if (status === 429) {
+          refreshCooldownUntilMs = Date.now() + 60_000;
+        } else if (status === 400 || status === 401) {
+          refreshCooldownUntilMs = Date.now() + 15_000;
+        }
+        authLog("warn", "refresh failed", {
+          reason,
+          status,
+          message: String((error as { message?: unknown }).message ?? ""),
+          cooldownUntilMs: refreshCooldownUntilMs,
+        });
+        return;
+      }
+      refreshCooldownUntilMs = 0;
+      authLog("debug", "refresh success", {
+        reason,
+        elapsedMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      const status = getErrorStatus(error);
+      if (status === 429) {
+        refreshCooldownUntilMs = Date.now() + 60_000;
+      } else if (status === 400 || status === 401) {
+        refreshCooldownUntilMs = Date.now() + 15_000;
+      }
+      authLog("error", "refresh crashed", {
+        reason,
+        status,
+        message:
+          error instanceof Error ? error.message : String(error ?? "unknown"),
+        cooldownUntilMs: refreshCooldownUntilMs,
+      });
+    }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  await refreshInFlight;
+}
+
+export async function getSessionGuarded(
+  reason = "unknown",
+  opts?: { allowRefresh?: boolean },
+): Promise<{ session: Session | null; error: unknown | null }> {
+  const allowRefresh = opts?.allowRefresh !== false;
+  const first = await supabase.auth.getSession();
+  const firstSession = first.data.session ?? null;
+  if (firstSession) return { session: firstSession, error: first.error ?? null };
+  if (!allowRefresh) return { session: null, error: first.error ?? null };
+
+  await runGuardedRefresh(reason);
+
+  const second = await supabase.auth.getSession();
+  return { session: second.data.session ?? null, error: second.error ?? null };
+}
 
 /**
  * Один `createClient` **без** отдельного GoTrue: опция `accessToken` взята из
@@ -137,8 +260,10 @@ export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
     supabaseRestSingleton = createClient<Database>(url, anonKey, {
       /** Один shared GoTrue — `supabase`; здесь только чтение токена для PostgREST. */
       accessToken: async () => {
-        const { data } = await supabase.auth.getSession();
-        return data.session?.access_token ?? null;
+        const { session } = await getSessionGuarded("rest-access-token", {
+          allowRefresh: true,
+        });
+        return session?.access_token ?? null;
       },
     });
   }

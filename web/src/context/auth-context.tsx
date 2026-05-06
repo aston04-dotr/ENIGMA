@@ -10,7 +10,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSessionGuarded, supabase } from "@/lib/supabase";
 
 type UserRow = {
   id: string;
@@ -40,6 +40,7 @@ type AuthCtx = {
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
+let authListenerRegistrations = 0;
 
 function getErrorStatus(error: unknown): number {
   const status = Number(
@@ -133,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSessionFetchInFlightRef.current = true;
         void supabase.auth
           .getSession()
-          .then(({ data, error }) => {
+          .then(async ({ data, error }) => {
             if (error && isRefreshAuthFailure(error)) {
               void hardSignOut({
                 reason: "bootstrap-timeout getSession 400/401",
@@ -142,9 +143,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               });
               return;
             }
-            if (data.session?.user) {
-              setSession(data.session);
-              setUser(data.session.user);
+            let effectiveSession = data.session ?? null;
+            if (!effectiveSession) {
+              const guarded = await getSessionGuarded("auth-bootstrap-timeout", {
+                allowRefresh: true,
+              });
+              if (guarded.error && isRefreshAuthFailure(guarded.error)) {
+                void hardSignOut({
+                  reason: "bootstrap-timeout guarded getSession 400/401",
+                  redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                  markRefreshRejected: true,
+                });
+                return;
+              }
+              effectiveSession = guarded.session;
+            }
+            if (effectiveSession?.user) {
+              setSession(effectiveSession);
+              setUser(effectiveSession.user);
               setAuthResolved(true);
               setLoading(false);
               setReady(true);
@@ -348,8 +364,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void (async () => {
           isSessionFetchInFlightRef.current = true;
           try {
-            const { data, error } = await supabase.auth.getSession();
-            if (error && isRefreshAuthFailure(error)) {
+            const guarded = await getSessionGuarded("auth-signed-in", {
+              allowRefresh: true,
+            });
+            if (guarded.error && isRefreshAuthFailure(guarded.error)) {
               void hardSignOut({
                 reason: "SIGNED_IN getSession 400/401",
                 redirectTo: "/login?signed_out=1&reason=refresh_failed",
@@ -359,7 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             if (!mounted) return;
             settledRef.current = true;
-            applySession(data.session ?? nextSession ?? null);
+            applySession(guarded.session ?? nextSession ?? null);
           } catch (err) {
             if (isRefreshAuthFailure(err)) {
               void hardSignOut({
@@ -389,8 +407,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isSessionFetchInFlightRef.current = true;
           try {
             await new Promise((r) => setTimeout(r, signedOutGuardMs));
-            const { data, error } = await supabase.auth.getSession();
-            if (error && isRefreshAuthFailure(error)) {
+            const guarded = await getSessionGuarded("auth-signed-out", {
+              allowRefresh: true,
+            });
+            if (guarded.error && isRefreshAuthFailure(guarded.error)) {
               void hardSignOut({
                 reason: "SIGNED_OUT guard getSession 400/401",
                 redirectTo: "/login?signed_out=1&reason=refresh_failed",
@@ -402,8 +422,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (typeof document !== "undefined") {
               console.log("COOKIE SESSION CHECK", document.cookie);
             }
-            if (data.session?.user) {
-              applySession(data.session);
+            if (guarded.session?.user) {
+              applySession(guarded.session);
               return;
             }
             const hasSupabaseCookie =
@@ -412,7 +432,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 document.cookie.includes("supabase-auth-token"));
             if (hasSupabaseCookie) {
               await new Promise((r) => setTimeout(r, 1200));
-              const retry = await supabase.auth.getSession();
+              const retry = await getSessionGuarded("auth-signed-out-retry", {
+                allowRefresh: true,
+              });
               if (retry.error && isRefreshAuthFailure(retry.error)) {
                 void hardSignOut({
                   reason: "SIGNED_OUT guard getSession retry 400/401",
@@ -422,8 +444,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return;
               }
               if (!mounted) return;
-              if (retry.data.session?.user) {
-                applySession(retry.data.session);
+              if (retry.session?.user) {
+                applySession(retry.session);
                 return;
               }
             }
@@ -455,14 +477,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       settledRef.current = true;
       applySession(nextSession ?? null);
     });
+    authListenerRegistrations += 1;
+    console.log("[auth] listener registered", {
+      count: authListenerRegistrations,
+      bootstrapKey,
+    });
 
     // Фолбэк: если INITIAL_SESSION задержался, делаем мягкий check один раз.
     const bootstrapTimer = window.setTimeout(() => {
       if (!mounted || settledRef.current) return;
       isSessionFetchInFlightRef.current = true;
-      void supabase.auth
-        .getSession()
-        .then(({ data, error }) => {
+      void getSessionGuarded("auth-bootstrap-fallback", {
+        allowRefresh: true,
+      })
+        .then(({ session, error }) => {
           if (error && isRefreshAuthFailure(error)) {
             void hardSignOut({
               reason: "bootstrap fallback getSession 400/401",
@@ -472,7 +500,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           if (!mounted || settledRef.current) return;
-          applySession(data.session ?? null);
+          applySession(session ?? null);
         })
         .catch((err) => {
           if (isRefreshAuthFailure(err)) {
@@ -496,6 +524,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       window.clearTimeout(bootstrapTimer);
       subData.subscription.unsubscribe();
+      authListenerRegistrations = Math.max(0, authListenerRegistrations - 1);
+      console.log("[auth] listener unregistered", {
+        count: authListenerRegistrations,
+        bootstrapKey,
+      });
     };
   }, [bootstrapKey, hardSignOut]);
 

@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import { getSessionGuarded, getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
 import { useAuth } from "@/context/auth-context";
 import type { ChatListRow } from "@/lib/types";
@@ -64,8 +64,10 @@ function isUuid(value: string): boolean {
 }
 
 async function sessionHasAccessToken(): Promise<boolean> {
-  const { data } = await supabase.auth.getSession();
-  return Boolean(data?.session?.access_token?.trim());
+  const { session } = await getSessionGuarded("chat-session-has-token", {
+    allowRefresh: true,
+  });
+  return Boolean(session?.access_token?.trim());
 }
 
 function normalizeChatRow(
@@ -418,25 +420,14 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        let accessToken = sessionData?.session?.access_token ?? null;
-        if (!accessToken) {
-          try {
-            const { error: refreshError } = await supabase.auth.refreshSession();
-            if (refreshError && isAuthFailure(refreshError)) {
-              await signOut();
-              return;
-            }
-            const { data: refreshedSession } = await supabase.auth.getSession();
-            accessToken = refreshedSession?.session?.access_token ?? null;
-          } catch (refreshCrash) {
-            if (isAuthFailure(refreshCrash)) {
-              await signOut();
-              return;
-            }
-            // noop: fallback retry below
-          }
+        const { session, error } = await getSessionGuarded("chat-refresh-chats", {
+          allowRefresh: true,
+        });
+        if (error && isAuthFailure(error)) {
+          await signOut();
+          return;
         }
+        const accessToken = session?.access_token ?? null;
         if (!accessToken) {
           if (!logOnceRef.current.listNoToken) {
             logOnceRef.current.listNoToken = true;
@@ -652,8 +643,11 @@ export function ChatUnreadProvider({
 
       const rest = getSupabaseRestWithSession();
       if (!rest) return;
-      const { data: sPresence } = await supabase.auth.getSession();
-      if (!sPresence?.session?.access_token) {
+      const { session: presenceSession } = await getSessionGuarded(
+        "chat-presence-upsert",
+        { allowRefresh: true },
+      );
+      if (!presenceSession?.access_token) {
         if (!logOnceRef.current.presenceNoToken) {
           logOnceRef.current.presenceNoToken = true;
           if (process.env.NODE_ENV === "development") {
@@ -728,8 +722,10 @@ export function ChatUnreadProvider({
       if (!userId || !isUuid(chatId)) return;
 
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData?.session?.access_token) {
+        const { session: markSession } = await getSessionGuarded("chat-mark-read", {
+          allowRefresh: true,
+        });
+        if (!markSession?.access_token) {
           if (!logOnceRef.current.markNoToken) {
             logOnceRef.current.markNoToken = true;
             if (process.env.NODE_ENV === "development") {
