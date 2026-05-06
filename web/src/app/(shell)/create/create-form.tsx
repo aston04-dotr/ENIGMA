@@ -2211,7 +2211,7 @@ export function CreateListingForm() {
                 </button>
               </div>
             ) : null}
-            <div className="relative mt-3 min-h-[260px] overflow-hidden">
+            <div className="relative mt-3 h-[min(58vh,460px)] overflow-hidden">
               <div
                 className={`absolute inset-0 transition-all duration-250 ${
                   locationSheetStep === 1
@@ -2219,28 +2219,30 @@ export function CreateListingForm() {
                     : "-translate-x-4 pointer-events-none opacity-0"
                 }`}
               >
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  Выберите регион
-                </p>
-                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
-                  {regionOptions.map((region) => (
-                    <button
-                      key={region.value}
-                      type="button"
-                      onClick={() => {
-                        setSelectedRegionId(region.value);
-                        setLocationSheetStep(2);
-                      }}
-                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
-                        selectedRegionId === region.value
-                          ? "bg-accent/10 text-accent"
-                          : "text-fg hover:bg-elev-2"
-                      }`}
-                    >
-                      <span>{region.label}</span>
-                      {selectedRegionId === region.value ? <span>✓</span> : null}
-                    </button>
-                  ))}
+                <div className="flex h-full min-h-0 flex-col">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    Выберите регион
+                  </p>
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1 [-webkit-overflow-scrolling:touch]">
+                    {regionOptions.map((region) => (
+                      <button
+                        key={region.value}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRegionId(region.value);
+                          setLocationSheetStep(2);
+                        }}
+                        className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                          selectedRegionId === region.value
+                            ? "bg-accent/10 text-accent"
+                            : "text-fg hover:bg-elev-2"
+                        }`}
+                      >
+                        <span>{region.label}</span>
+                        {selectedRegionId === region.value ? <span>✓</span> : null}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div
@@ -2250,33 +2252,35 @@ export function CreateListingForm() {
                     : "translate-x-4 pointer-events-none opacity-0"
                 }`}
               >
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  Выберите город
-                </p>
-                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
-                  {cityOptions.map((cityOption) => (
-                    <button
-                      key={cityOption.value}
-                      type="button"
-                      onClick={() => {
-                        setCity(cityOption.value);
-                        setLocationSheetOpen(false);
-                      }}
-                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
-                        selectedCity === cityOption.value
-                          ? "bg-accent/10 text-accent"
-                          : "text-fg hover:bg-elev-2"
-                      }`}
-                    >
-                      <span>{cityOption.label}</span>
-                      {selectedCity === cityOption.value ? <span>✓</span> : null}
-                    </button>
-                  ))}
-                  {cityOptions.length === 0 ? (
-                    <p className="px-2 py-3 text-sm text-muted">
-                      В этом регионе пока нет городов
-                    </p>
-                  ) : null}
+                <div className="flex h-full min-h-0 flex-col">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    Выберите город
+                  </p>
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1 [-webkit-overflow-scrolling:touch]">
+                    {cityOptions.map((cityOption) => (
+                      <button
+                        key={cityOption.value}
+                        type="button"
+                        onClick={() => {
+                          setCity(cityOption.value);
+                          setLocationSheetOpen(false);
+                        }}
+                        className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                          selectedCity === cityOption.value
+                            ? "bg-accent/10 text-accent"
+                            : "text-fg hover:bg-elev-2"
+                        }`}
+                      >
+                        <span>{cityOption.label}</span>
+                        {selectedCity === cityOption.value ? <span>✓</span> : null}
+                      </button>
+                    ))}
+                    {cityOptions.length === 0 ? (
+                      <p className="px-2 py-3 text-sm text-muted">
+                        В этом регионе пока нет городов
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
