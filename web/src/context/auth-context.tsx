@@ -16,6 +16,8 @@ import {
   hardResetSupabaseAuthState,
   supabase,
 } from "@/lib/supabase";
+import { getOrCreateGuestIdentity } from "@/lib/guestIdentity";
+import { mergeGuestStateAfterSignIn } from "@/lib/guestUpgrade";
 
 type UserRow = {
   id: string;
@@ -231,9 +233,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!userId) {
         return;
       }
+      const guestIdentity = getOrCreateGuestIdentity();
       const { error } = await supabase
         .from("profiles")
-        .upsert({ id: userId, email: email ?? null }, { onConflict: "id" });
+        .upsert(
+          {
+            id: userId,
+            email: email ?? null,
+            device_id: guestIdentity.fingerprint,
+          },
+          { onConflict: "id" },
+        );
       if (error) {
         console.warn("profiles upsert", error);
       }
@@ -407,6 +417,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!mounted) return;
             settledRef.current = true;
             applySession(guarded.session ?? nextSession ?? null);
+            if (guarded.session?.user?.id) {
+              void mergeGuestStateAfterSignIn(guarded.session.user.id);
+            }
           } catch (err) {
             if (isRefreshAuthFailure(err)) {
               void hardSignOut({
@@ -420,6 +433,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!mounted) return;
             settledRef.current = true;
             applySession(nextSession ?? null);
+            if (nextSession?.user?.id) {
+              void mergeGuestStateAfterSignIn(nextSession.user.id);
+            }
           } finally {
             isSessionFetchInFlightRef.current = false;
           }

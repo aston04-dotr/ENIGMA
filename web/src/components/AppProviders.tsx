@@ -14,6 +14,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
 import { GlobalErrorHandlers } from "@/components/GlobalErrorHandlers";
 import { PushNotificationsBootstrap } from "@/components/PushNotificationsBootstrap";
+import { GuestPersistenceBootstrap } from "@/components/GuestPersistenceBootstrap";
 import { useHasMounted } from "@/hooks/useHasMounted";
 import { useEffect } from "react";
 
@@ -55,6 +56,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <ServiceWorkerRegister />
       <AppVersionCheck />
       <DevCacheClear />
+      <GuestPersistenceBootstrap />
       <AuthDebugTracker />
       <GlobalErrorHandlers />
       <ThemeProvider>

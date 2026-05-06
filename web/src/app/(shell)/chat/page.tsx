@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorUi } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
+import { normalizeChatParticipantName } from "@/lib/guestIdentity";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -56,7 +57,7 @@ function buildDisplayName(row: {
     return row.title?.trim() || "Группа";
   }
   const n = row.other_name?.trim() || row.other_public_id?.trim();
-  if (n) return n;
+  if (n) return normalizeChatParticipantName(n);
   return `Chat №${row.chat_id.slice(0, 6)}`;
 }
 

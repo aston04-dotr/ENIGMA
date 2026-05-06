@@ -6,6 +6,8 @@ import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
+import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity";
+import { canSendGuestMessage } from "@/lib/guestTrust";
 import { getSessionGuarded, supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
@@ -18,7 +20,7 @@ import {
   validateChatImageFileDeep,
   withUploadProgress,
 } from "@/lib/chatImage";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -223,6 +225,7 @@ const MAX_MESSAGE_ENTER_ANIM = 0;
 /** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
+const CHAT_DRAFT_PREFIX = "enigma:chat-draft:";
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -448,6 +451,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 
 export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
+  const pathname = usePathname();
   const router = useRouter();
   const { session, loading, authResolved } = useAuth();
   const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats } =
@@ -455,6 +459,11 @@ export default function ChatRoomPage() {
 
   const me = session?.user?.id ?? null;
   const chatId = typeof id === "string" ? id.trim() : "";
+  const actorScope = useMemo(() => getActorScope(me), [me]);
+  const draftStorageKey = useMemo(
+    () => `${CHAT_DRAFT_PREFIX}${actorScope}:${chatId}`,
+    [actorScope, chatId],
+  );
 
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
@@ -522,6 +531,8 @@ export default function ChatRoomPage() {
   const currentChatIdRef = useRef(chatId);
   const reconnectingTypingResetPendingRef = useRef(false);
   const lastRttLogAtRef = useRef(0);
+  const windowFocusedRef = useRef(true);
+  const pageVisibleRef = useRef(true);
   /** Скролл вниз (auto) один раз при открытии чата, после загрузки сообщений. */
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
@@ -764,10 +775,37 @@ export default function ChatRoomPage() {
     }
     const n =
       currentChat.other_name?.trim() || currentChat.other_public_id?.trim();
-    if (n) return n;
+    if (n) return normalizeChatParticipantName(n);
     if (chatId && isUuid(chatId)) return `Чат #${chatId.slice(0, 6)}`;
     return "Чат";
   }, [currentChat, chatId]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(draftStorageKey);
+      if (!raw) return;
+      setText(raw);
+    } catch {
+      // ignore
+    }
+  }, [chatId, draftStorageKey]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (typeof window === "undefined") return;
+    try {
+      const next = text.trim();
+      if (!next) {
+        window.localStorage.removeItem(draftStorageKey);
+        return;
+      }
+      window.localStorage.setItem(draftStorageKey, text);
+    } catch {
+      // ignore
+    }
+  }, [chatId, draftStorageKey, text]);
 
   const isTyping = peerTyping;
 
@@ -927,6 +965,54 @@ export default function ChatRoomPage() {
     [messages],
   );
 
+  const isChatForeground = useCallback((): boolean => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return false;
+    }
+    if (document.visibilityState !== "visible") return false;
+    if (document.hidden) return false;
+    if (!document.hasFocus()) return false;
+    if (!windowFocusedRef.current) return false;
+    if (!pageVisibleRef.current) return false;
+    if (!chatId || !isUuid(chatId)) return false;
+    const routeMatch = String(pathname ?? "").match(/^\/chat\/([0-9a-f-]{36})$/i)?.[1] ?? null;
+    return routeMatch === chatId;
+  }, [chatId, pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const syncFlags = () => {
+      windowFocusedRef.current = document.hasFocus();
+      pageVisibleRef.current = !document.hidden && document.visibilityState === "visible";
+    };
+    syncFlags();
+    const onFocus = () => {
+      windowFocusedRef.current = true;
+      syncFlags();
+    };
+    const onBlur = () => {
+      windowFocusedRef.current = false;
+      syncFlags();
+    };
+    const onVisibility = () => syncFlags();
+    const onPageHide = () => {
+      pageVisibleRef.current = false;
+    };
+    const onPageShow = () => syncFlags();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   const updateListScrollUi = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
@@ -1062,6 +1148,7 @@ export default function ChatRoomPage() {
   const markVisibleRoomRead = useCallback(
     async (explicitMessageId?: string | null) => {
       if (!chatId || !me) return;
+      if (!isChatForeground()) return;
 
       const targetMessageId =
         explicitMessageId ?? latestMessageId;
@@ -1076,11 +1163,19 @@ export default function ChatRoomPage() {
       try {
         await markChatRead(chatId, targetMessageId);
         lastReadMarkedMessageIdRef.current = targetMessageId;
+        setChats((prev) =>
+          prev.map((c) => {
+            const withId = c as typeof c & { id?: string };
+            return withId.id === chatId || c.chat_id === chatId
+              ? { ...c, unread_count: 0 }
+              : c;
+          }),
+        );
       } catch (error) {
         console.error("chat room mark read", error);
       }
     },
-    [chatId, latestMessageId, markChatRead, me],
+    [chatId, isChatForeground, latestMessageId, markChatRead, me, setChats],
   );
 
   const backfillAfterReconnect = useCallback(async () => {
@@ -1105,20 +1200,10 @@ export default function ChatRoomPage() {
     if (!chatId || !isUuid(chatId)) return;
     lastReadMarkedMessageIdRef.current = null;
     setActiveChatId(chatId);
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.chat_id === chatId
-          ? {
-              ...m,
-              status: m.sender_id === me ? m.status : "seen",
-            }
-          : m,
-      ),
-    );
     return () => {
       setActiveChatId(null);
     };
-  }, [chatId, me, setActiveChatId]);
+  }, [chatId, setActiveChatId]);
 
   useEffect(() => {
     if (!chatId || !me || !isUuid(chatId)) return;
@@ -1132,17 +1217,30 @@ export default function ChatRoomPage() {
   }, [chatId, markVisibleRoomRead, me, messagesLoaded]);
 
   useEffect(() => {
-    if (!chatId) return;
-
-    setChats((prev) =>
-      prev.map((c) => {
-        const withId = c as typeof c & { id?: string };
-        return withId.id === chatId || c.chat_id === chatId
-          ? { ...c, unread_count: 0 }
-          : c;
-      }),
-    );
-  }, [chatId, setChats]);
+    if (!chatId || !isUuid(chatId)) return;
+    if (!messagesLoaded) return;
+    const onForegroundAttempt = () => {
+      const targetId =
+        lastLoadedMessageIdRef.current ??
+        messagesRef.current[messagesRef.current.length - 1]?.id ??
+        null;
+      void markVisibleRoomRead(targetId);
+    };
+    onForegroundAttempt();
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        onForegroundAttempt();
+      }
+    };
+    const onFocus = () => onForegroundAttempt();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [chatId, markVisibleRoomRead, messagesLoaded]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -1302,11 +1400,7 @@ export default function ChatRoomPage() {
                 newMessage.id,
                 newMessage.sender_id,
               );
-              if (
-                typeof document !== "undefined" &&
-                document.visibilityState === "visible" &&
-                currentChatIdRef.current === chatId
-              ) {
+              if (currentChatIdRef.current === chatId) {
                 void markVisibleRoomRead(newMessage.id);
               }
             }
@@ -1592,6 +1686,17 @@ export default function ChatRoomPage() {
     if (!text.trim()) return;
     if (!me || !chatId || !isUuid(chatId) || sendingText) return;
     if (sendingImage) return;
+    const trustDecision = canSendGuestMessage({ actorScope, chatId });
+    if (!trustDecision.allowed) {
+      setToast({
+        type: "info",
+        message:
+          trustDecision.reason === "burst_detected"
+            ? "Слишком часто. Подождите несколько секунд."
+            : "Подождите чуть-чуть перед следующим сообщением.",
+      });
+      return;
+    }
 
     setSendErr(null);
     const trimmed = text.trim();

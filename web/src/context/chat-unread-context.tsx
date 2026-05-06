@@ -255,11 +255,10 @@ function mergeServerRowsWithLocal(
       last_message_voice_url: preferLocalPayload
         ? localRow.last_message_voice_url
         : serverRow.last_message_voice_url,
-      unread_count: Math.max(
-        0,
-        Number(serverRow.unread_count || 0),
-        Number(localRow.unread_count || 0),
-      ),
+      // Server is source of truth for unread. Do not keep optimistic local value here.
+      unread_count: Number.isFinite(Number(serverRow.unread_count))
+        ? Math.max(0, Number(serverRow.unread_count || 0))
+        : Math.max(0, Number(localRow.unread_count || 0)),
     };
   });
 
@@ -893,7 +892,7 @@ export function ChatUnreadProvider({
             Boolean(routeChatId) &&
             routeChatId === messageChatId &&
             (typeof document === "undefined" ||
-              document.visibilityState === "visible");
+              (document.visibilityState === "visible" && document.hasFocus()));
 
           setRows((prev) => {
             const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
@@ -914,11 +913,8 @@ export function ChatUnreadProvider({
                       last_message_sender_id: messageSenderId,
                       last_message_image_url: messageImageUrl,
                       last_message_voice_url: messageVoiceUrl,
-                      unread_count: isOpenChat
-                        ? 0
-                        : fromMe
-                          ? Math.max(0, Number(chat.unread_count || 0))
-                          : Math.max(0, Number(chat.unread_count || 0)) + 1,
+                      // Keep server as source of truth for unread counters.
+                      unread_count: Math.max(0, Number(chat.unread_count || 0)),
                     }
                   : chat,
               )
@@ -929,8 +925,9 @@ export function ChatUnreadProvider({
                 return b.chat_id.localeCompare(a.chat_id);
               });
           });
-          if (!fromMe && !isOpenChat) {
-            scheduleRefresh(220, { silent: true });
+          // Always reconcile with server unread counters after insert.
+          if (!fromMe) {
+            scheduleRefresh(isOpenChat ? 90 : 220, { silent: true });
           }
         },
       ).on(
