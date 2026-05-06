@@ -5,11 +5,7 @@ import { FAVORITES_CHANGED_EVENT } from "./favoriteEvents";
 import { trackEvent } from "./analytics";
 import { decreaseTrust } from "./trust";
 import { supabase, isSupabaseConfigured } from "./supabase";
-import {
-  ALLOWED_LISTING_CITIES,
-  isAllowedListingCity,
-  normalizeAllowedListingCity,
-} from "./russianCities";
+import { normalizeAllowedListingCity } from "./russianCities";
 import { normalizeCommercialPremisesLabel } from "./realestateConstants";
 import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
 
@@ -237,7 +233,6 @@ function listingsFeedSelectBase() {
     .from("listings")
     .select(FEED_SELECT)
     .eq("status", "active")
-    .in("city", [...ALLOWED_LISTING_CITIES])
     .order("sort_order", { ascending: true, foreignTable: "images" })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -597,8 +592,7 @@ export async function fetchListingsCount(filters: {
     const base = supabase
       .from("listings")
       .select("id", { count: "exact", head: true })
-      .eq("status", "active")
-      .in("city", [...ALLOWED_LISTING_CITIES]);
+      .eq("status", "active");
     const q = applySafeFilters(
       base as unknown as ListingsFeedQuery,
       filterPayload,
@@ -712,7 +706,67 @@ let favoriteSingleCache = new Map<string, SingleFavoriteCacheEntry>();
 const FAVORITE_SINGLE_CACHE_LIMIT = 500;
 
 export async function getCitiesFromDb(): Promise<string[]> {
-  return [...ALLOWED_LISTING_CITIES];
+  const { data, error } = await supabase
+    .from("cities")
+    .select("name")
+    .order("name", { ascending: true });
+  if (error || !Array.isArray(data)) return [];
+  return Array.from(
+    new Set(
+      data
+        .map((row) => String((row as { name?: unknown }).name ?? "").trim())
+        .filter((name) => name.length > 0),
+    ),
+  );
+}
+
+export type RegionRow = { id: string; name: string };
+export type CityRow = { id: string; region_id: string; name: string };
+
+export async function getRegionsFromDb(): Promise<RegionRow[]> {
+  const { data, error } = await supabase
+    .from("regions")
+    .select("id,name")
+    .order("name", { ascending: true });
+  if (error || !Array.isArray(data)) return [];
+  return data
+    .map((row) => ({
+      id: String((row as { id?: unknown }).id ?? "").trim(),
+      name: String((row as { name?: unknown }).name ?? "").trim(),
+    }))
+    .filter((row) => row.id.length > 0 && row.name.length > 0);
+}
+
+export async function getCitiesByRegionFromDb(regionId: string): Promise<CityRow[]> {
+  const rid = String(regionId ?? "").trim();
+  if (!rid) return [];
+  const { data, error } = await supabase
+    .from("cities")
+    .select("id,region_id,name")
+    .eq("region_id", rid)
+    .order("name", { ascending: true });
+  if (error || !Array.isArray(data)) return [];
+  return data
+    .map((row) => ({
+      id: String((row as { id?: unknown }).id ?? "").trim(),
+      region_id: String((row as { region_id?: unknown }).region_id ?? "").trim(),
+      name: String((row as { name?: unknown }).name ?? "").trim(),
+    }))
+    .filter((row) => row.id.length > 0 && row.region_id.length > 0 && row.name.length > 0);
+}
+
+export async function getRegionIdByCityName(cityName: string): Promise<string | null> {
+  const city = normalizeAllowedListingCity(cityName);
+  if (!city) return null;
+  const { data, error } = await supabase
+    .from("cities")
+    .select("region_id")
+    .eq("name", city)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const regionId = String((data as { region_id?: unknown }).region_id ?? "").trim();
+  return regionId || null;
 }
 let favoriteSingleRpcUnavailableUntil = 0;
 
@@ -1243,7 +1297,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
         : null;
     const normalizedCity = normalizeAllowedListingCity(payload.city);
     if (!normalizedCity) {
-      return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
+      return { error: "Пожалуйста, выберите город" };
     }
     const insertPayload: Record<string, unknown> = {
       user_id: payload.user_id || effectiveUserId,
@@ -1338,11 +1392,6 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     if (!Number.isFinite(priceNum) || priceNum < 0) {
       console.error("VALIDATION ERROR: invalid price", payload.price);
       return { error: "Укажите корректную цену" };
-    }
-    
-    if (!isAllowedListingCity(normalizedCity)) {
-      console.error("VALIDATION ERROR: invalid city", normalizedCity);
-      return { error: "Пожалуйста, выберите город из списка (Москва/Сочи)" };
     }
     
     if (!insertPayload.category) {

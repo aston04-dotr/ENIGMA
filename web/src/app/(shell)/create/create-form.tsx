@@ -2,7 +2,14 @@
 
 import { useAuth } from "@/context/auth-context";
 import { CATEGORIES } from "@/lib/categories";
-import { insertListingRow, getCitiesFromDb } from "@/lib/listings";
+import {
+  getCitiesByRegionFromDb,
+  getRegionIdByCityName,
+  getRegionsFromDb,
+  insertListingRow,
+  type CityRow,
+  type RegionRow,
+} from "@/lib/listings";
 import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
@@ -12,7 +19,7 @@ import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
-import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
+import { normalizeAllowedListingCity } from "@/lib/russianCities";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -34,7 +41,6 @@ import {
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Select from "react-select";
 import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
 import {
   buildAutoParamsRecord,
@@ -362,8 +368,12 @@ export function CreateListingForm() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [city, setCity] = useState<string>(ALLOWED_LISTING_CITIES[0]);
-  const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
+  const [city, setCity] = useState<string>("");
+  const [regions, setRegions] = useState<RegionRow[]>([]);
+  const [selectedRegionId, setSelectedRegionId] = useState<string>("");
+  const [cities, setCities] = useState<CityRow[]>([]);
+  const [locationSheetOpen, setLocationSheetOpen] = useState(false);
+  const [locationSheetStep, setLocationSheetStep] = useState<1 | 2>(1);
   const [category, setCategory] = useState("other");
   const [files, setFiles] = useState<File[]>([]);
   const [categoryParams, setCategoryParams] = useState<CategoryFormParams>(
@@ -448,8 +458,13 @@ export function CreateListingForm() {
             : {}),
         },
       }));
-      if (isAllowedListingCity(feedCity)) {
-        setCity(feedCity);
+      const normalizedFeedCity = normalizeAllowedListingCity(feedCity);
+      if (normalizedFeedCity) {
+        setCity(normalizedFeedCity);
+        void (async () => {
+          const regionId = await getRegionIdByCityName(normalizedFeedCity);
+          if (regionId) setSelectedRegionId(regionId);
+        })();
       }
     } catch {
       /* ignore */
@@ -504,22 +519,20 @@ export function CreateListingForm() {
     trackEvent("create_open");
   }, []);
 
-  const safeCities = useMemo(() => {
-    const source = Array.isArray(cities) ? cities : [];
-    const normalized = source
-      .map((c) => (typeof c === "string" ? c.trim() : ""))
-      .filter((c) => c.length > 0);
-    const allowed = normalized.filter((c) => isAllowedListingCity(c));
-    return allowed.length > 0 ? Array.from(new Set(allowed)) : [...ALLOWED_LISTING_CITIES];
-  }, [cities]);
-
   const safeCategories = useMemo(() => (Array.isArray(CATEGORIES) ? CATEGORIES : []), []);
-
-  const selectedCity = useMemo(() => {
-    const normalized = typeof city === "string" ? city.trim() : "";
-    if (isAllowedListingCity(normalized) && safeCities.includes(normalized)) return normalized;
-    return safeCities[0] ?? ALLOWED_LISTING_CITIES[0];
-  }, [city, safeCities]);
+  const selectedCity = useMemo(() => normalizeAllowedListingCity(city) ?? "", [city]);
+  const regionOptions = useMemo(
+    () => regions.map((region) => ({ value: region.id, label: region.name })),
+    [regions],
+  );
+  const cityOptions = useMemo(
+    () => cities.map((cityRow) => ({ value: cityRow.name, label: cityRow.name })),
+    [cities],
+  );
+  const selectedRegionName = useMemo(
+    () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
+    [regions, selectedRegionId],
+  );
   const selectedFilePreviews = useMemo(
     () =>
       files.map((file, idx) => ({
@@ -529,15 +542,11 @@ export function CreateListingForm() {
     [files],
   );
 
-  const safeCitiesRef = useRef(safeCities);
-  safeCitiesRef.current = safeCities;
-
   const resetCreateFormState = useCallback(() => {
-    const defaultCity = safeCitiesRef.current[0] ?? ALLOWED_LISTING_CITIES[0];
     setTitle("");
     setDescription("");
     setPrice("");
-    setCity(defaultCity);
+    setCity("");
     setCategory("other");
     setFiles([]);
     setCategoryParams(EMPTY_CATEGORY_PARAMS);
@@ -547,16 +556,43 @@ export function CreateListingForm() {
   useEffect(() => {
     void (async () => {
       try {
-        const dbCities = await getCitiesFromDb();
-        const normalized = Array.isArray(dbCities) ? dbCities : [];
-        console.log("[CITIES-CREATE DEBUG] Loaded:", normalized.length, "cities");
-        setCities(normalized);
+        const dbRegions = await getRegionsFromDb();
+        setRegions(dbRegions);
+        if (dbRegions.length > 0) {
+          setSelectedRegionId((prev) => prev || dbRegions[0]!.id);
+        }
       } catch (loadError) {
         console.error("CREATE PAGE CRASH", loadError);
-        setCities([...ALLOWED_LISTING_CITIES]);
+        setRegions([]);
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const regionId = String(selectedRegionId ?? "").trim();
+    if (!regionId) {
+      setCities([]);
+      setCity("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const dbCities = await getCitiesByRegionFromDb(regionId);
+        if (cancelled) return;
+        setCities(dbCities);
+        setCity("");
+      } catch (e) {
+        if (cancelled) return;
+        console.error("CREATE PAGE CITIES LOAD ERROR", e);
+        setCities([]);
+        setCity("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRegionId]);
 
   const clearDraft = useCallback(async () => {
     try {
@@ -1048,8 +1084,8 @@ export function CreateListingForm() {
       setErr("Укажите цену");
       return;
     }
-    if (!isAllowedListingCity(selectedCity.trim())) {
-      setErr("Пожалуйста, выберите город из списка (Москва/Сочи)");
+    if (!selectedCity.trim()) {
+      setErr("Пожалуйста, выберите город");
       return;
     }
     const paramsError = validateCategoryRequiredFields();
@@ -1251,10 +1287,6 @@ export function CreateListingForm() {
     );
   }
 
-  console.log("[CITIES-CREATE DEBUG] state:", safeCities.length, safeCities);
-
-  const cityOptions = (safeCities || []).map((c) => ({ value: c, label: c }));
-
   const re = categoryParams.realestate;
   const isCommercialProp = re.propertyType === COMMERCIAL_PROPERTY_LABEL;
   const isHouseProp = re.propertyType === HOUSE_LABEL;
@@ -1269,8 +1301,6 @@ export function CreateListingForm() {
     const s = parseFlexiblePositiveNumber(re.plotArea);
     return s != null ? sotkiToHectaresDisplay(s) : "";
   }, [isLandPlotProp, re.plotArea, re.plotAreaUnitHa, landPlotHaTyping]);
-
-  console.log("[CITIES-CREATE DEBUG] options:", cityOptions?.length, cityOptions);
 
   if (listingRoleResolved === null) {
     return <CreateListingRolePicker />;
@@ -1417,18 +1447,22 @@ export function CreateListingForm() {
         />
       </div>
       <div>
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Город</label>
-        <div className="mt-2">
-          <Select
-            value={(cityOptions || []).find((option) => option?.value === selectedCity) ?? null}
-            onChange={(selectedOption) => setCity(selectedOption?.value || safeCities[0] || ALLOWED_LISTING_CITIES[0])}
-            options={cityOptions}
-            placeholder="Выберите город"
-            isSearchable={false}
-            className="react-select-container"
-            classNamePrefix="react-select"
-          />
-        </div>
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Локация</label>
+        <button
+          type="button"
+          onClick={() => {
+            setLocationSheetStep(1);
+            setLocationSheetOpen(true);
+          }}
+          className={`mt-2 flex w-full items-center justify-between ${inputClass}`}
+        >
+          <span className={selectedCity ? "text-fg" : "text-muted"}>
+            {selectedCity
+              ? `${selectedRegionName || "Регион"} · ${selectedCity}`
+              : "Выберите регион и город"}
+          </span>
+          <span className="text-muted">→</span>
+        </button>
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Категория</label>
@@ -2142,6 +2176,110 @@ export function CreateListingForm() {
             >
               Добавить телефон
             </Link>
+          </div>
+        </div>
+      ) : null}
+      {locationSheetOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-main/40 p-4 backdrop-blur-sm sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-location-title"
+          onClick={() => setLocationSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-card border border-line bg-elevated p-4 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="create-location-title" className="text-base font-semibold text-fg">
+                Локация
+              </h2>
+              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-muted">
+                {locationSheetStep} из 2
+              </span>
+            </div>
+            {locationSheetStep === 2 ? (
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-sm text-fg">{selectedRegionName || "Выбран регион"}</p>
+                <button
+                  type="button"
+                  onClick={() => setLocationSheetStep(1)}
+                  className="pressable rounded-card border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-fg"
+                >
+                  Назад
+                </button>
+              </div>
+            ) : null}
+            <div className="relative mt-3 min-h-[260px] overflow-hidden">
+              <div
+                className={`absolute inset-0 transition-all duration-250 ${
+                  locationSheetStep === 1
+                    ? "translate-x-0 opacity-100"
+                    : "-translate-x-4 pointer-events-none opacity-0"
+                }`}
+              >
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Выберите регион
+                </p>
+                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
+                  {regionOptions.map((region) => (
+                    <button
+                      key={region.value}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegionId(region.value);
+                        setLocationSheetStep(2);
+                      }}
+                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                        selectedRegionId === region.value
+                          ? "bg-accent/10 text-accent"
+                          : "text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span>{region.label}</span>
+                      {selectedRegionId === region.value ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div
+                className={`absolute inset-0 transition-all duration-250 ${
+                  locationSheetStep === 2
+                    ? "translate-x-0 opacity-100"
+                    : "translate-x-4 pointer-events-none opacity-0"
+                }`}
+              >
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Выберите город
+                </p>
+                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
+                  {cityOptions.map((cityOption) => (
+                    <button
+                      key={cityOption.value}
+                      type="button"
+                      onClick={() => {
+                        setCity(cityOption.value);
+                        setLocationSheetOpen(false);
+                      }}
+                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                        selectedCity === cityOption.value
+                          ? "bg-accent/10 text-accent"
+                          : "text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span>{cityOption.label}</span>
+                      {selectedCity === cityOption.value ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                  {cityOptions.length === 0 ? (
+                    <p className="px-2 py-3 text-sm text-muted">
+                      В этом регионе пока нет городов
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

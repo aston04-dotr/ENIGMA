@@ -10,12 +10,16 @@ import {
 import { ListingCard } from "@/components/ListingCard";
 import { CATEGORIES, categoryLabel } from "@/lib/categories";
 import { trackEvent } from "@/lib/analytics";
-import { ALLOWED_LISTING_CITIES, isAllowedListingCity } from "@/lib/russianCities";
+import { normalizeAllowedListingCity } from "@/lib/russianCities";
 import { listingIsRussiaForFeed } from "@/lib/feedGeo";
 import {
   fetchListings,
   fetchListingsCount,
-  getCitiesFromDb,
+  getCitiesByRegionFromDb,
+  getRegionIdByCityName,
+  getRegionsFromDb,
+  type CityRow,
+  type RegionRow,
   type FeedListingsCursor,
 } from "@/lib/listings";
 import {
@@ -77,6 +81,7 @@ const SEARCH_STOP_WORDS = new Set([
 
 type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
 type StoredFeedState = {
+  regionId?: string;
   city?: string;
   category?: string;
   scrollY?: number;
@@ -263,6 +268,7 @@ export function FeedPage({
   const cacheStorageKey = feedVariant === "seeking" ? CACHE_KEY_WANTED : CACHE_KEY;
   const feedSeed = useMemo(() => readFeedCache(cacheStorageKey), [cacheStorageKey]);
   const feedStateSeed = useMemo(() => readFeedState(), []);
+  const seededRegionId = String(feedStateSeed?.regionId ?? "").trim();
   const seededCity = String(feedStateSeed?.city ?? "").trim();
   const seededCategory = String(feedStateSeed?.category ?? "").trim();
   const [items, setItems] = useState<ListingRow[]>(() => feedSeed.items);
@@ -272,10 +278,11 @@ export function FeedPage({
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [serverFoundCount, setServerFoundCount] = useState<number | null>(null);
-  const [city, setCity] = useState<string>(
-    isAllowedListingCity(seededCity) ? seededCity : ALLOWED_LISTING_CITIES[0],
-  );
+  const [city, setCity] = useState<string>(normalizeAllowedListingCity(seededCity) ?? "");
+  const [regions, setRegions] = useState<RegionRow[]>([]);
+  const [selectedRegionId, setSelectedRegionId] = useState<string>(seededRegionId);
   const [citySheetOpen, setCitySheetOpen] = useState(false);
+  const [citySheetStep, setCitySheetStep] = useState<1 | 2>(1);
   const [selectedCategory, setSelectedCategory] = useState<string>(() => {
     if (seededCategory === ALL_CATEGORY) return ALL_CATEGORY;
     return CATEGORIES.some((x) => x.id === seededCategory)
@@ -319,16 +326,58 @@ export function FeedPage({
     feedStateSeed?.realPlotUseHa === true,
   );
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
-  const [cities, setCities] = useState<string[]>([...ALLOWED_LISTING_CITIES]);
+  const [cities, setCities] = useState<CityRow[]>([]);
   const [feedNonce, setFeedNonce] = useState(0);
+  const previousRegionIdRef = useRef<string>("");
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      const dbCities = await getCitiesFromDb();
-      console.log("[CITIES-FEED] Loaded:", dbCities.length, "cities");
-      setCities(dbCities);
+      const dbRegions = await getRegionsFromDb();
+      if (cancelled) return;
+      setRegions(dbRegions);
+      if (!selectedRegionId && dbRegions.length > 0) {
+        const mappedRegionId = seededCity
+          ? await getRegionIdByCityName(seededCity)
+          : null;
+        if (cancelled) return;
+        setSelectedRegionId(mappedRegionId || dbRegions[0]!.id);
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    const rid = String(selectedRegionId ?? "").trim();
+    const prevRegionId = previousRegionIdRef.current;
+    previousRegionIdRef.current = rid;
+    if (!rid) {
+      setCities([]);
+      setCity("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const dbCities = await getCitiesByRegionFromDb(rid);
+      if (cancelled) return;
+      setCities(dbCities);
+      const changedByUser = prevRegionId.length > 0 && prevRegionId !== rid;
+      if (changedByUser) {
+        setCity("");
+        return;
+      }
+      setCity((prevCity) => {
+        const normalized = normalizeAllowedListingCity(prevCity);
+        if (!normalized) return "";
+        return dbCities.some((c) => c.name === normalized) ? normalized : "";
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRegionId]);
 
   useEffect(() => {
     if (seededCategory) return;
@@ -338,12 +387,13 @@ export function FeedPage({
   useEffect(() => {
     const state = readFeedState();
     if (!state) return;
+    const savedRegionId = String(state.regionId ?? "").trim();
     const savedCity = String(state.city ?? "").trim();
     const savedCategory = String(state.category ?? "").trim();
     const savedScrollY = Number(state.scrollY ?? 0);
-    if (isAllowedListingCity(savedCity)) {
-      setCity(savedCity);
-    }
+    if (savedRegionId) setSelectedRegionId(savedRegionId);
+    const normalizedSavedCity = normalizeAllowedListingCity(savedCity);
+    if (normalizedSavedCity) setCity(normalizedSavedCity);
     if (savedCategory === ALL_CATEGORY || CATEGORIES.some((x) => x.id === savedCategory)) {
       setSelectedCategory(savedCategory || ALL_CATEGORY);
     }
@@ -367,6 +417,7 @@ export function FeedPage({
   useEffect(() => {
     const id = window.setTimeout(() => {
       persistFeedState({
+        regionId: selectedRegionId || undefined,
         city,
         category: selectedCategory,
         scrollY: typeof window !== "undefined" ? window.scrollY : 0,
@@ -383,6 +434,7 @@ export function FeedPage({
     }, FILTERS_DEBOUNCE_MS);
     return () => window.clearTimeout(id);
   }, [
+    selectedRegionId,
     city,
     selectedCategory,
     realAreaFrom,
@@ -487,7 +539,7 @@ export function FeedPage({
     const base = items.filter((x) => {
       if (hiddenIds.has(String(x.id ?? "").trim())) return false;
       if (!listingIsRussiaForFeed(x)) return false;
-      if (x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
+      if (city.trim() && x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
       const rowDealRaw =
         String(x.deal_type ?? "").trim() ||
         String(getParamsObject(x).deal_type ?? "").trim();
@@ -873,7 +925,7 @@ export function FeedPage({
     }`;
   }
   const hasActiveFilters =
-    city !== ALLOWED_LISTING_CITIES[0] ||
+    Boolean(city.trim()) ||
     selectedCategory !== ALL_CATEGORY ||
     sortMode !== "newest" ||
     Boolean(
@@ -900,13 +952,17 @@ export function FeedPage({
     () => CATEGORIES.filter((cat) => cat.id !== "other"),
     [],
   );
+  const selectedRegionName = useMemo(
+    () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
+    [regions, selectedRegionId],
+  );
 
   const resetFilters = useCallback(() => {
     trackEvent("filters_reset", {
       city,
       category: selectedCategory,
     });
-    setCity(ALLOWED_LISTING_CITIES[0]);
+    setCity("");
     setSelectedCategory(ALL_CATEGORY);
     setFeedDealSegment("sale");
     setSortMode("newest");
@@ -942,6 +998,7 @@ export function FeedPage({
 
   const rememberFeedStateBeforeOpen = useCallback(() => {
     persistFeedState({
+      regionId: selectedRegionId || undefined,
       city,
       category: selectedCategory,
       scrollY: typeof window !== "undefined" ? window.scrollY : 0,
@@ -956,6 +1013,7 @@ export function FeedPage({
       ...(feedVariant === "offers" ? { dealSegment: feedDealSegment } : {}),
     });
   }, [
+    selectedRegionId,
     city,
     selectedCategory,
     realAreaFrom,
@@ -1065,10 +1123,13 @@ export function FeedPage({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
-                onClick={() => setCitySheetOpen(true)}
+                onClick={() => {
+                  setCitySheetStep(1);
+                  setCitySheetOpen(true);
+                }}
                 className={filterRowClass}
               >
-                <span className={filterRowLabelClass}>Город: {city}</span>
+                <span className={filterRowLabelClass}>Город: {city || "Все города"}</span>
                 <span className={filterRowChevronClass}>{">"}</span>
               </button>
               <button
@@ -1270,29 +1331,98 @@ export function FeedPage({
             className="w-full max-w-sm rounded-card border border-line bg-elevated p-4 shadow-soft animate-[feedSheetUp_200ms_cubic-bezier(0.2,0.8,0.2,1)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="feed-city-title" className="text-base font-semibold text-fg">
-              Выберите город
-            </h2>
-            <div className="mt-3 max-h-[55vh] overflow-y-auto">
-              {cities.map((cityOption) => (
+            <div className="flex items-center justify-between">
+              <h2 id="feed-city-title" className="text-base font-semibold text-fg">
+                Локация
+              </h2>
+              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-muted">
+                {citySheetStep} из 2
+              </span>
+            </div>
+            {citySheetStep === 2 ? (
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-sm text-fg">{selectedRegionName || "Выбран регион"}</p>
                 <button
-                  key={cityOption}
                   type="button"
-                  onClick={() => {
-                    trackEvent("city_select", { city: cityOption });
-                    setCity(cityOption || ALLOWED_LISTING_CITIES[0]);
-                    setCitySheetOpen(false);
-                  }}
-                  className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
-                    city === cityOption
-                      ? "bg-accent/10 text-accent"
-                      : "text-fg hover:bg-elev-2"
-                  }`}
+                  onClick={() => setCitySheetStep(1)}
+                  className="pressable rounded-card border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-fg"
                 >
-                  <span>{cityOption}</span>
-                  {city === cityOption ? <span>✓</span> : null}
+                  Назад
                 </button>
-              ))}
+              </div>
+            ) : null}
+            <div className="relative mt-3 min-h-[260px] overflow-hidden">
+              <div
+                className={`absolute inset-0 transition-all duration-250 ${
+                  citySheetStep === 1
+                    ? "translate-x-0 opacity-100"
+                    : "-translate-x-4 pointer-events-none opacity-0"
+                }`}
+              >
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Выберите регион
+                </p>
+                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
+                  {regions.map((region) => (
+                    <button
+                      key={region.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegionId(region.id);
+                        setCitySheetStep(2);
+                      }}
+                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                        selectedRegionId === region.id
+                          ? "bg-accent/10 text-accent"
+                          : "text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span>{region.name}</span>
+                      {selectedRegionId === region.id ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div
+                className={`absolute inset-0 transition-all duration-250 ${
+                  citySheetStep === 2
+                    ? "translate-x-0 opacity-100"
+                    : "translate-x-4 pointer-events-none opacity-0"
+                }`}
+              >
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Выберите город
+                </p>
+                <div className="max-h-[min(58vh,460px)] overflow-y-auto overscroll-contain pr-1">
+                  {cities.map((cityOption) => (
+                    <button
+                      key={cityOption.id}
+                      type="button"
+                      onClick={() => {
+                        trackEvent("city_select", {
+                          city: cityOption.name,
+                          regionId: selectedRegionId,
+                        });
+                        setCity(cityOption.name);
+                        setCitySheetOpen(false);
+                      }}
+                      className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
+                        city === cityOption.name
+                          ? "bg-accent/10 text-accent"
+                          : "text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span>{cityOption.name}</span>
+                      {city === cityOption.name ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                  {cities.length === 0 ? (
+                    <p className="px-2 py-3 text-sm text-muted">
+                      В этом регионе пока нет городов
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
         </div>

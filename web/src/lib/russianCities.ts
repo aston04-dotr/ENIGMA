@@ -1,15 +1,13 @@
-export const ALLOWED_LISTING_CITIES = ["Москва", "Сочи"] as const;
+export const ALLOWED_LISTING_CITIES: readonly string[] = [];
 
-export type AllowedListingCity = (typeof ALLOWED_LISTING_CITIES)[number];
+export type AllowedListingCity = string;
 
 export const RUSSIAN_CITIES: readonly string[] = ALLOWED_LISTING_CITIES;
 
 export const RUSSIAN_CITIES_GEO: readonly string[] = ALLOWED_LISTING_CITIES;
 
-const ALLOWED_CITY_SET = new Set<string>(ALLOWED_LISTING_CITIES);
-
 export function isAllowedListingCity(city: string): city is AllowedListingCity {
-  return ALLOWED_CITY_SET.has(city);
+  return typeof city === "string" && city.trim().length > 0;
 }
 
 export function normalizeAllowedListingCity(raw: unknown): AllowedListingCity | null {

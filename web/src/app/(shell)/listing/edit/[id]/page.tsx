@@ -3,7 +3,7 @@
 import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { useAuth } from "@/context/auth-context";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
-import { fetchListingById } from "@/lib/listings";
+import { fetchListingById, getCitiesFromDb } from "@/lib/listings";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import {
   removeListingImagesFromStorage,
@@ -42,8 +42,6 @@ import {
   type CategoryEditParams,
 } from "@/lib/listingCategoryEdit";
 import {
-  ALLOWED_LISTING_CITIES,
-  isAllowedListingCity,
   normalizeAllowedListingCity,
 } from "@/lib/russianCities";
 import { useRouter, useParams } from "next/navigation";
@@ -196,6 +194,7 @@ export default function EditListingPage() {
     structuredClone(EMPTY_CATEGORY_EDIT_PARAMS),
   );
   const [editCity, setEditCity] = useState("");
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
   const [listingIntent, setListingIntent] = useState<"sale" | "rent">("sale");
   const [autoParams, setAutoParams] = useState<AutoParamsShape | null>(null);
   const [motoParams, setMotoParams] = useState<MotoParamsShape | null>(null);
@@ -259,8 +258,7 @@ export default function EditListingPage() {
         setListingCategory(cat);
         const cp = hydrateCategoryEditParams(res.row);
         setCategoryParams(cp);
-        const nc =
-          normalizeAllowedListingCity(res.row.city) ?? ALLOWED_LISTING_CITIES[0] ?? "";
+        const nc = normalizeAllowedListingCity(res.row.city) ?? "";
         setEditCity(nc);
         const intent = listingIntentFromRow(res.row);
         setListingIntent(intent);
@@ -297,6 +295,18 @@ export default function EditListingPage() {
     
     return () => { cancelled = true; };
   }, [id, session, authResolved, authLoading, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const dbCities = await getCitiesFromDb();
+      if (cancelled) return;
+      setCityOptions(dbCities);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -451,8 +461,8 @@ export default function EditListingPage() {
     }
 
     const normalizedCitySave = normalizeAllowedListingCity(editCity);
-    if (!normalizedCitySave || !isAllowedListingCity(editCity.trim())) {
-      setToast({ message: "Выберите город из списка", type: "error" });
+    if (!normalizedCitySave) {
+      setToast({ message: "Выберите город", type: "error" });
       return;
     }
 
@@ -920,7 +930,8 @@ export default function EditListingPage() {
             className={inputClass}
             disabled={saving}
           >
-            {ALLOWED_LISTING_CITIES.map((c) => (
+            <option value="">Выберите город</option>
+            {cityOptions.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
