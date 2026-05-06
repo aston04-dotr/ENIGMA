@@ -347,7 +347,10 @@ export default function ProfilePage() {
   }
 
   async function savePhone() {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id) {
+      setPhoneMessage("Сессия обновляется. Подождите пару секунд и нажмите снова.");
+      return;
+    }
     const raw = phoneInput.trim();
     const normalized = raw ? normalizeRussianPhone(phoneInput) : null;
     if (raw && !normalized) {
@@ -369,16 +372,27 @@ export default function ProfilePage() {
       digitsLen: normalized?.replace(/\D/g, "").length ?? 0,
     });
 
-    const { data: updated, error } = await supabase
-      .from("profiles")
-      .update({
-        phone: normalized,
-        phone_updated_at: normalized ? now : null,
-        updated_at: now,
-      })
-      .eq("id", uid)
-      .select("id, phone")
-      .maybeSingle();
+    let updated: { id: string; phone: string | null } | null = null;
+    let error: { message?: string; code?: string; details?: string } | null = null;
+    try {
+      const res = await supabase
+        .from("profiles")
+        .update({
+          phone: normalized,
+          phone_updated_at: normalized ? now : null,
+          updated_at: now,
+        })
+        .eq("id", uid)
+        .select("id, phone")
+        .maybeSingle();
+      updated = (res.data as { id: string; phone: string | null } | null) ?? null;
+      error = res.error as { message?: string; code?: string; details?: string } | null;
+    } catch (unexpected) {
+      console.error("[profile] phone:update:unexpected", unexpected);
+      setPhoneSaving(false);
+      setPhoneMessage("Ошибка сети. Проверьте интернет и попробуйте снова.");
+      return;
+    }
 
     if (error) {
       console.error("[profile] phone:update:error", error);
@@ -422,20 +436,31 @@ export default function ProfilePage() {
   }
 
   async function saveName() {
-    const { data: authData } = await supabase.auth.getUser();
-    const authUser = authData.user;
-    if (!authUser) return;
-    console.log("UPSERT USER ID:", authUser.id);
+    const uid = session?.user?.id;
+    if (!uid) {
+      setNameMessage("Сессия обновляется. Подождите пару секунд и нажмите снова.");
+      return;
+    }
+    console.log("UPSERT USER ID:", uid);
     setNameSaving(true);
     setNameMessage(null);
-    const { error } = await supabase.from("profiles").upsert(
-      {
-        id: authUser.id,
-        name: nameInput.trim() || null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" }
-    );
+    let error: { message?: string } | null = null;
+    try {
+      const res = await supabase.from("profiles").upsert(
+        {
+          id: uid,
+          name: nameInput.trim() || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+      error = res.error as { message?: string } | null;
+    } catch (unexpected) {
+      console.error("[profile] name:save:unexpected", unexpected);
+      setNameSaving(false);
+      setNameMessage("Ошибка сети. Проверьте интернет и попробуйте снова.");
+      return;
+    }
     setNameSaving(false);
     if (error) {
       setNameMessage(error.message || "Не удалось сохранить имя");

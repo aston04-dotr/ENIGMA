@@ -12,6 +12,7 @@ import React, {
 import { getSessionGuarded, getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
 import { useAuth } from "@/context/auth-context";
+import { listIncomingGuestChats, type GuestChatRow } from "@/lib/guestChats";
 import type { ChatListRow } from "@/lib/types";
 
 type CrossTabEvent =
@@ -43,6 +44,7 @@ const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
 const CHANNEL_NAME = "enigma-chat-sync";
 const STORAGE_KEY = "enigma:chat-sync";
 const PRESENCE_HEARTBEAT_MS = 25_000;
+const CHAT_REFRESH_POLL_MS = 8_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
 const REALTIME_EVENT_TTL_MS = 15_000;
@@ -101,6 +103,8 @@ function normalizeChatRow(
 
   return {
     chat_id: chatId,
+    source: "auth",
+    guest_uuid: null,
     buyer_id: buyerId,
     seller_id: sellerId,
     created_at: createdAt,
@@ -135,6 +139,35 @@ function normalizeChatRow(
     unread_count: Number.isFinite(Number(raw.unread_count))
       ? Math.max(0, Number(raw.unread_count))
       : 0,
+  };
+}
+
+function normalizeIncomingGuestRow(raw: GuestChatRow): ChatListRow {
+  const lastAt = raw.last_message_at || raw.last_message_created_at || raw.created_at || new Date(0).toISOString();
+  return {
+    chat_id: raw.chat_id,
+    source: "guest_inbox",
+    guest_uuid: raw.guest_uuid ?? null,
+    buyer_id: null,
+    seller_id: null,
+    created_at: raw.last_message_created_at || raw.last_message_at || new Date().toISOString(),
+    listing_id: raw.listing_id ?? null,
+    listing_image: null,
+    is_group: false,
+    title: null,
+    other_user_id: null,
+    other_name: raw.other_name || "Пользователь Enigma",
+    other_avatar: null,
+    other_public_id: null,
+    last_message_id: null,
+    last_message_text: raw.last_message_text ?? null,
+    last_message_sender_id: null,
+    last_message_created_at: raw.last_message_created_at ?? null,
+    last_message_image_url: null,
+    last_message_voice_url: null,
+    last_message_deleted: null,
+    last_message_at: lastAt,
+    unread_count: Math.max(0, Number(raw.unread_count ?? 0)),
   };
 }
 
@@ -608,7 +641,14 @@ export function ChatUnreadProvider({
           }
         }
 
-        setRows((prev) => mergeServerRowsWithLocal(prev, finalRows));
+        const incomingGuestRows = await listIncomingGuestChats(100);
+        const mergedPayload = [
+          ...finalRows,
+          ...incomingGuestRows
+            .filter((row) => isUuid(String(row.chat_id ?? "")))
+            .map((row) => normalizeIncomingGuestRow(row)),
+        ];
+        setRows((prev) => mergeServerRowsWithLocal(prev, mergedPayload));
         setHydratedState(true);
       } catch (e) {
         console.error("list_my_chats unexpected", e);
@@ -1116,6 +1156,17 @@ export function ChatUnreadProvider({
       }
     };
   }, [scheduleRefresh, upsertPresence, userId]);
+
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      void refreshChats({ silent: true });
+    }, CHAT_REFRESH_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [refreshChats, userId]);
 
   useEffect(() => {
     return () => {

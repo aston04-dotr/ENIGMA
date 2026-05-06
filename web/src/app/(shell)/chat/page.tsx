@@ -252,7 +252,13 @@ export default function ChatsPage() {
             <li key={row.chat_id}>
               <button
                 type="button"
-                onClick={() => router.push(`/chat/${row.chat_id}`)}
+                onClick={() =>
+                  router.push(
+                    row.source === "guest_inbox"
+                      ? `/chat-inbox/${row.chat_id}`
+                      : `/chat/${row.chat_id}`,
+                  )
+                }
                 className="pressable flex w-full items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
               >
                 <ChatListingThumb

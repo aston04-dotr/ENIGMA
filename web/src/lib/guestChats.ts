@@ -3,8 +3,11 @@ import { supabase } from "@/lib/supabase";
 
 export type GuestChatRow = {
   chat_id: string;
+  source?: "guest" | "guest_inbox";
+  guest_uuid?: string | null;
   peer_user_id: string;
   listing_id: string | null;
+  created_at?: string | null;
   other_name: string;
   last_message_text: string | null;
   last_message_sender_role: "guest" | "peer" | null;
@@ -30,8 +33,11 @@ function normalizeRows(raw: unknown): GuestChatRow[] {
     const row = (item ?? {}) as Record<string, unknown>;
     return {
       chat_id: String(row.chat_id ?? ""),
+      source: row.source === "guest_inbox" ? "guest_inbox" : "guest",
+      guest_uuid: row.guest_uuid == null ? null : String(row.guest_uuid),
       peer_user_id: String(row.peer_user_id ?? ""),
       listing_id: row.listing_id ? String(row.listing_id) : null,
+      created_at: row.created_at == null ? null : String(row.created_at),
       other_name: String(row.other_name ?? "Пользователь Enigma"),
       last_message_text: row.last_message_text == null ? null : String(row.last_message_text),
       last_message_sender_role:
@@ -180,4 +186,72 @@ export async function markGuestChatRead(chatId: string, upToMessageId?: string |
       p_up_to_message_id: upToMessageId ?? null,
     },
   );
+}
+
+export async function listIncomingGuestChats(limit = 50): Promise<GuestChatRow[]> {
+  const { data, error } = await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message?: string } | null }>)(
+    "list_incoming_guest_chats_controlled",
+    { p_limit: limit },
+  );
+  if (error) return [];
+  const payload = (data ?? {}) as Record<string, unknown>;
+  return normalizeRows(payload.rows);
+}
+
+export async function listIncomingGuestMessages(
+  chatId: string,
+  limit = 200,
+): Promise<GuestChatMessage[]> {
+  const { data, error } = await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message?: string } | null }>)(
+    "list_incoming_guest_messages_controlled",
+    {
+      p_chat_id: chatId,
+      p_limit: limit,
+    },
+  );
+  if (error) return [];
+  const payload = (data ?? {}) as Record<string, unknown>;
+  return normalizeMessages(payload.rows);
+}
+
+export async function markIncomingGuestChatRead(
+  chatId: string,
+  upToMessageId?: string | null,
+): Promise<void> {
+  await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ error: { message?: string } | null }>)(
+    "mark_incoming_guest_chat_read_controlled",
+    {
+      p_chat_id: chatId,
+      p_up_to_message_id: upToMessageId ?? null,
+    },
+  );
+}
+
+export async function sendIncomingGuestReply(
+  chatId: string,
+  text: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { error } = await (supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ error: { message?: string } | null }>)(
+    "enqueue_guest_peer_reply_controlled",
+    {
+      p_chat_id: chatId,
+      p_text: text,
+    },
+  );
+  if (error) {
+    return { ok: false, error: String(error.message ?? "Не удалось отправить сообщение") };
+  }
+  return { ok: true };
 }
