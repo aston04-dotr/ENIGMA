@@ -91,6 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshRejectedRef = useRef(false);
   const hardSignOutInFlightRef = useRef(false);
   const lastSessionSignatureRef = useRef<string>("");
+  const recoverTimerRef = useRef<number | null>(null);
+  const authFailureCountRef = useRef(0);
+  const sessionRef = useRef<Session | null>(null);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -100,6 +103,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadingRef.current = loading;
   }, [loading]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   const hardSignOut = useCallback(
     async (opts: { reason: string; redirectTo?: string; markRefreshRejected?: boolean }) => {
@@ -135,6 +142,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const scheduleSoftRecovery = useCallback((reason: string, baseDelayMs = 900) => {
+    if (typeof window === "undefined") return;
+    authFailureCountRef.current += 1;
+    const retryDelay = Math.min(8_000, baseDelayMs + authFailureCountRef.current * 450);
+    console.warn("[auth] soft recovery scheduled", { reason, retryDelay });
+    setReady(false);
+    setLoading(true);
+    setAuthResolved(false);
+    if (recoverTimerRef.current) {
+      window.clearTimeout(recoverTimerRef.current);
+      recoverTimerRef.current = null;
+    }
+    recoverTimerRef.current = window.setTimeout(() => {
+      recoverTimerRef.current = null;
+      setBootstrapKey((k) => k + 1);
+    }, retryDelay);
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!loading) return;
@@ -149,13 +174,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .getSession()
           .then(async ({ data, error }) => {
             if (error && isRefreshAuthFailure(error)) {
-              void hardSignOut({
-                reason: isStaleRefreshTokenError(error)
+              scheduleSoftRecovery(
+                isStaleRefreshTokenError(error)
                   ? "bootstrap-timeout stale refresh token"
                   : "bootstrap-timeout getSession 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              );
               return;
             }
             let effectiveSession = data.session ?? null;
@@ -164,13 +187,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 allowRefresh: true,
               });
               if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-                void hardSignOut({
-                  reason: isStaleRefreshTokenError(guarded.error)
+                scheduleSoftRecovery(
+                  isStaleRefreshTokenError(guarded.error)
                     ? "bootstrap-timeout guarded stale refresh token"
                     : "bootstrap-timeout guarded getSession 400/401",
-                  redirectTo: "/login?reason=stale_refresh_token",
-                  markRefreshRejected: true,
-                });
+                );
                 return;
               }
               effectiveSession = guarded.session;
@@ -202,11 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           })
           .catch((err) => {
             if (isRefreshAuthFailure(err)) {
-              void hardSignOut({
-                reason: "bootstrap-timeout getSession catch 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              scheduleSoftRecovery("bootstrap-timeout getSession catch 400/401");
               return;
             }
             console.warn("Session sync timeout check failed", err);
@@ -342,6 +359,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let initialSessionResolved = false;
 
     const applySession = (next: Session | null) => {
+      authFailureCountRef.current = 0;
+      if (recoverTimerRef.current && typeof window !== "undefined") {
+        window.clearTimeout(recoverTimerRef.current);
+        recoverTimerRef.current = null;
+      }
       const signature = next
         ? `${next.user?.id ?? "no-user"}:${tokenSuffix(next.refresh_token)}:${tokenSuffix(next.access_token)}`
         : "null";
@@ -382,11 +404,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "TOKEN_REFRESH_REJECTED") {
-        void hardSignOut({
-          reason: "TOKEN_REFRESH_REJECTED event",
-          redirectTo: "/login?reason=stale_refresh_token",
-          markRefreshRejected: true,
-        });
+        scheduleSoftRecovery("TOKEN_REFRESH_REJECTED event");
         return;
       }
 
@@ -407,11 +425,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               allowRefresh: true,
             });
             if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-              void hardSignOut({
-                reason: "SIGNED_IN getSession 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              scheduleSoftRecovery("SIGNED_IN getSession 400/401");
               return;
             }
             if (!mounted) return;
@@ -422,11 +436,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (err) {
             if (isRefreshAuthFailure(err)) {
-              void hardSignOut({
-                reason: "SIGNED_IN getSession catch 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              scheduleSoftRecovery("SIGNED_IN getSession catch 400/401");
               return;
             }
             console.warn("[auth] SIGNED_IN getSession failed", err);
@@ -456,11 +466,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               allowRefresh: true,
             });
             if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-              void hardSignOut({
-                reason: "SIGNED_OUT guard getSession 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              scheduleSoftRecovery("SIGNED_OUT guard getSession 400/401");
               return;
             }
             if (!mounted) return;
@@ -481,11 +487,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 allowRefresh: true,
               });
               if (retry.error && isRefreshAuthFailure(retry.error)) {
-                void hardSignOut({
-                  reason: "SIGNED_OUT guard getSession retry 400/401",
-                  redirectTo: "/login?reason=stale_refresh_token",
-                  markRefreshRejected: true,
-                });
+                scheduleSoftRecovery("SIGNED_OUT guard getSession retry 400/401");
                 return;
               }
               if (!mounted) return;
@@ -495,16 +497,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
             settledRef.current = true;
+            if (sessionRef.current?.user) {
+              scheduleSoftRecovery("SIGNED_OUT transient null session");
+              return;
+            }
             applySession(null);
             setProfile(null);
             setProfileLoading(false);
           } catch (err) {
             if (isRefreshAuthFailure(err)) {
-              void hardSignOut({
-                reason: "SIGNED_OUT guard getSession catch 400/401",
-                redirectTo: "/login?reason=stale_refresh_token",
-                markRefreshRejected: true,
-              });
+              scheduleSoftRecovery("SIGNED_OUT guard getSession catch 400/401");
               return;
             }
             console.warn("[auth] SIGNED_OUT getSession failed", err);
@@ -537,11 +539,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
         .then(({ session, error }) => {
           if (error && isRefreshAuthFailure(error)) {
-            void hardSignOut({
-              reason: "bootstrap fallback getSession 400/401",
-              redirectTo: "/login?reason=stale_refresh_token",
-              markRefreshRejected: true,
-            });
+            scheduleSoftRecovery("bootstrap fallback getSession 400/401");
             return;
           }
           if (!mounted || settledRef.current) return;
@@ -549,11 +547,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         .catch((err) => {
           if (isRefreshAuthFailure(err)) {
-            void hardSignOut({
-              reason: "bootstrap fallback getSession catch 400/401",
-              redirectTo: "/login?reason=stale_refresh_token",
-              markRefreshRejected: true,
-            });
+            scheduleSoftRecovery("bootstrap fallback getSession catch 400/401");
             return;
           }
           console.warn("[auth] getSession bootstrap fallback", err);
@@ -568,6 +562,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
       window.clearTimeout(bootstrapTimer);
+      if (recoverTimerRef.current) {
+        window.clearTimeout(recoverTimerRef.current);
+        recoverTimerRef.current = null;
+      }
       subData.subscription.unsubscribe();
       authListenerRegistrations = Math.max(0, authListenerRegistrations - 1);
       console.log("[auth] listener unregistered", {
@@ -575,7 +573,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         bootstrapKey,
       });
     };
-  }, [bootstrapKey, hardSignOut]);
+  }, [bootstrapKey, scheduleSoftRecovery]);
 
   const retryBootstrap = useCallback(
     (opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
@@ -587,6 +585,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onRecover = () => {
+      if (loadingRef.current) return;
+      if (sessionRef.current?.user) return;
+      retryBootstrap({ fromOnline: true });
+    };
+    window.addEventListener("online", onRecover);
+    window.addEventListener("pageshow", onRecover);
+    window.addEventListener("focus", onRecover);
+    return () => {
+      window.removeEventListener("online", onRecover);
+      window.removeEventListener("pageshow", onRecover);
+      window.removeEventListener("focus", onRecover);
+    };
+  }, [retryBootstrap]);
 
   const signOut = useCallback(async () => {
     refreshRejectedRef.current = false;

@@ -7,6 +7,7 @@ import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
+import { getOrCreateChat } from "@/lib/chats";
 import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { getSessionGuarded, supabase } from "@/lib/supabase";
@@ -21,7 +22,7 @@ import {
   validateChatImageFileDeep,
   withUploadProgress,
 } from "@/lib/chatImage";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -227,6 +228,7 @@ const MAX_MESSAGE_ENTER_ANIM = 0;
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
 const CHAT_DRAFT_PREFIX = "enigma:chat-draft:";
+const REALTIME_EVENT_TTL_MS = 15_000;
 
 function mergeIncomingInsert(
   prev: MessageRow[],
@@ -452,14 +454,20 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 
 export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
   const { session, loading, authResolved } = useAuth();
-  const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats } =
+  const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats, ready: chatReady } =
     useChatUnread();
 
   const me = session?.user?.id ?? null;
   const chatId = typeof id === "string" ? id.trim() : "";
+  const isGuestRoute = String(searchParams.get("guest") ?? "") === "1";
+  const guestPeerUserId = String(searchParams.get("peer") ?? "").trim();
+  const guestListingId = String(searchParams.get("listing") ?? "").trim();
+  const [resolvingGuestRoute, setResolvingGuestRoute] = useState(false);
+  const guestRouteResolvedRef = useRef(false);
   const actorScope = useMemo(() => getActorScope(me), [me]);
   const draftStorageKey = useMemo(
     () => `${CHAT_DRAFT_PREFIX}${actorScope}:${chatId}`,
@@ -503,6 +511,30 @@ export default function ChatRoomPage() {
     () => new Set(),
   );
 
+  useEffect(() => {
+    if (!session?.user?.id) {
+      guestRouteResolvedRef.current = false;
+      return;
+    }
+    if (!isGuestRoute || !guestPeerUserId) return;
+    if (guestRouteResolvedRef.current) return;
+    guestRouteResolvedRef.current = true;
+    setResolvingGuestRoute(true);
+    void (async () => {
+      try {
+        const res = await getOrCreateChat(guestPeerUserId, {
+          listingId: guestListingId || null,
+        });
+        if (res.ok && res.id && res.id !== chatId) {
+          router.replace(`/chat/${res.id}`);
+          return;
+        }
+      } finally {
+        setResolvingGuestRoute(false);
+      }
+    })();
+  }, [chatId, guestListingId, guestPeerUserId, isGuestRoute, router, session?.user?.id]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickBottomRef = useRef(true);
@@ -525,7 +557,7 @@ export default function ChatRoomPage() {
   const peerTypingIntervalRef = useRef<number | null>(null);
   const peerTypingHideTimerRef = useRef<number | null>(null);
   const typingShownAtRef = useRef(0);
-  const realtimeInsertIdsRef = useRef<Set<string>>(new Set());
+  const realtimeInsertIdsRef = useRef<Map<string, number>>(new Map());
   const peerOfflineTimerRef = useRef<number | null>(null);
   const optimisticMessageIdSeqRef = useRef(0);
   /** Синхронный id чата (устаревшие broadcast после смены комнаты). */
@@ -540,6 +572,18 @@ export default function ChatRoomPage() {
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
 
   messagesRef.current = messages;
+
+  const rememberRealtimeInsert = useCallback((id: string): boolean => {
+    const map = realtimeInsertIdsRef.current;
+    const now = Date.now();
+    for (const [k, ts] of map) {
+      if (now - ts > REALTIME_EVENT_TTL_MS) map.delete(k);
+    }
+    const prev = map.get(id);
+    if (prev && now - prev <= REALTIME_EVENT_TTL_MS) return true;
+    map.set(id, now);
+    return false;
+  }, []);
 
   const visibleMessages = useMemo(() => {
     if (!me) return messages;
@@ -1123,7 +1167,7 @@ export default function ChatRoomPage() {
       setMessagesLoaded(true);
       realtimeInsertIdsRef.current.clear();
       for (const row of safe) {
-        if (isUuid(row.id)) realtimeInsertIdsRef.current.add(row.id);
+        if (isUuid(row.id)) realtimeInsertIdsRef.current.set(row.id, Date.now());
       }
       lastLoadedMessageIdRef.current =
         safe.length > 0 ? safe[safe.length - 1].id : null;
@@ -1381,12 +1425,7 @@ export default function ChatRoomPage() {
               payload.new as Record<string, unknown>,
             );
             if (!newMessage.id || !String(newMessage.id).trim()) return;
-            if (isUuid(newMessage.id) && realtimeInsertIdsRef.current.has(newMessage.id)) {
-              return;
-            }
-            if (isUuid(newMessage.id)) {
-              realtimeInsertIdsRef.current.add(newMessage.id);
-            }
+            if (isUuid(newMessage.id) && rememberRealtimeInsert(newMessage.id)) return;
 
             setMessages((prev) => mergeIncomingInsert(prev, newMessage));
 
@@ -1711,7 +1750,7 @@ export default function ChatRoomPage() {
       created_at: new Date().toISOString(),
       deleted: false,
       hidden_for_user_ids: [],
-      status: "sent",
+      status: "sending",
       delivered_at: null,
       read_at: null,
     };
@@ -1744,6 +1783,13 @@ export default function ChatRoomPage() {
         if (error) {
           throw error;
         }
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === optimisticMessage.id
+              ? { ...message, status: "sent" }
+              : message,
+          ),
+        );
 
         try {
           await refreshChats({ silent: true });
@@ -1821,7 +1867,7 @@ export default function ChatRoomPage() {
       created_at: new Date().toISOString(),
       deleted: false,
       hidden_for_user_ids: [],
-      status: "sent",
+      status: "sending",
       delivered_at: null,
       read_at: null,
       pendingUpload: true,
@@ -2089,7 +2135,7 @@ export default function ChatRoomPage() {
     }
   }
 
-  if (loading || !authResolved) {
+  if (loading || !authResolved || !chatReady || resolvingGuestRoute) {
     return (
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5 text-sm text-muted">
         Подключение...

@@ -109,7 +109,7 @@ function ChatListingThumb({
 export default function ChatsPage() {
   const router = useRouter();
   const { session } = useAuth();
-  const { rows, loading, error, refreshChats } = useChatUnread();
+  const { rows, loading, ready: chatReady, error, refreshChats } = useChatUnread();
   const [systemNotices, setSystemNotices] = useState<
     import("@/lib/listingNotices").ListingOwnerNoticeRow[]
   >([]);
@@ -147,6 +147,29 @@ export default function ChatsPage() {
     void refreshChats();
     void loadNotices();
   }, [refreshChats, session?.user]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const onFocusLike = () => {
+      void refreshChats({ silent: true });
+      void loadNotices();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        onFocusLike();
+      }
+    };
+    window.addEventListener("focus", onFocusLike);
+    window.addEventListener("pageshow", onFocusLike);
+    window.addEventListener("online", onFocusLike);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocusLike);
+      window.removeEventListener("pageshow", onFocusLike);
+      window.removeEventListener("online", onFocusLike);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [loadNotices, refreshChats, session?.user]);
 
   if (!session?.user) return <GuestChatList />;
 
@@ -193,7 +216,7 @@ export default function ChatsPage() {
         <p className="mt-4 text-xs text-muted">Загрузка уведомлений…</p>
       ) : null}
 
-      {loading && sortedRows.length === 0 ? (
+      {(loading || !chatReady) && sortedRows.length === 0 ? (
         <ul className="mt-6 space-y-3">
           {Array.from({ length: 4 }).map((_, idx) => (
             <li
@@ -271,14 +294,14 @@ export default function ChatsPage() {
         })}
       </ul>
 
-      {!loading && sortedRows.length === 0 && !error ? (
+      {!loading && chatReady && sortedRows.length === 0 && !error ? (
         <EmptyState
           title="Нет переписок"
           subtitle="Откройте объявление и нажмите «Написать»."
         />
       ) : null}
 
-      {!loading && !rows.length ? (
+      {!loading && chatReady && !rows.length ? (
         <div className="mt-6">
           <Link
             href="/"

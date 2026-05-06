@@ -101,7 +101,7 @@ function tabColors(theme: UiTheme, active: boolean): { icon: string; label: stri
 function BottomNavInner() {
   const { loading, session } = useAuth();
   const { theme } = useTheme();
-  const { totalUnread } = useChatUnread();
+  const { totalUnread, ready: chatReady } = useChatUnread();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const intent = searchParams.get("intent");
@@ -129,8 +129,8 @@ function BottomNavInner() {
         const active = t.isActive(pathname, intent);
         const isChatTab = t.key === "chat";
         const isProfileTab = t.key === "profile";
-        const unread = isChatTab ? totalUnread : 0;
-        const profileUnreadDot = isProfileTab && totalUnread > 0;
+        const unread = isChatTab && chatReady ? totalUnread : 0;
+        const profileUnreadDot = isProfileTab && chatReady && totalUnread > 0;
         const { Icon } = t;
         const c = tabColors(theme, active);
 

@@ -23,6 +23,9 @@ type ChatUnreadContextValue = {
   rows: ChatListRow[];
   totalUnread: number;
   loading: boolean;
+  ready: boolean;
+  hydrated: boolean;
+  realtimeReady: boolean;
   error: string | null;
   activeChatId: string | null;
   refreshChats: (opts?: { silent?: boolean }) => Promise<void>;
@@ -42,6 +45,7 @@ const STORAGE_KEY = "enigma:chat-sync";
 const PRESENCE_HEARTBEAT_MS = 25_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
+const REALTIME_EVENT_TTL_MS = 15_000;
 
 function getErrorStatus(error: unknown): number {
   const status = Number(
@@ -367,8 +371,12 @@ export function ChatUnreadProvider({
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
   const [loadingState, setLoadingState] = useState(false);
+  const [hydratedState, setHydratedState] = useState(false);
+  const [realtimeReadyState, setRealtimeReadyState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
+  const [reconnectSeq, setReconnectSeq] = useState(0);
+  const processedRealtimeEventsRef = useRef<Map<string, number>>(new Map());
 
   const statusRef = useRef<{
     refreshTimer: number | null;
@@ -404,6 +412,8 @@ export function ChatUnreadProvider({
       markNoToken: false,
     };
     chatListAuthRetryRef.current = 0;
+    setHydratedState(false);
+    setRealtimeReadyState(false);
   }, [userId]);
 
   const refreshChats = useCallback(
@@ -599,6 +609,7 @@ export function ChatUnreadProvider({
         }
 
         setRows((prev) => mergeServerRowsWithLocal(prev, finalRows));
+        setHydratedState(true);
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
@@ -624,6 +635,18 @@ export function ChatUnreadProvider({
     },
     [refreshChats],
   );
+
+  const rememberRealtimeEvent = useCallback((key: string): boolean => {
+    const now = Date.now();
+    const map = processedRealtimeEventsRef.current;
+    for (const [k, ts] of map) {
+      if (now - ts > REALTIME_EVENT_TTL_MS) map.delete(k);
+    }
+    const prev = map.get(key);
+    if (prev && now - prev <= REALTIME_EVENT_TTL_MS) return true;
+    map.set(key, now);
+    return false;
+  }, []);
 
   const broadcast = useCallback((event: CrossTabEvent) => {
     busRef.current?.post(event);
@@ -810,6 +833,8 @@ export function ChatUnreadProvider({
       setRows([]);
       setError(null);
       setLoadingState(false);
+      setHydratedState(true);
+      setRealtimeReadyState(false);
       setActiveChatIdState(null);
       statusRef.current.activeChatId = null;
       return;
@@ -817,6 +842,25 @@ export function ChatUnreadProvider({
 
     void refreshChats();
   }, [loading, refreshChats, userId]);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (
+        event === "INITIAL_SESSION" ||
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "TOKEN_REFRESH_REJECTED"
+      ) {
+        setReconnectSeq((n) => n + 1);
+        scheduleRefresh(40, { silent: true });
+      }
+      if (event === "SIGNED_OUT") {
+        setReconnectSeq((n) => n + 1);
+        setRealtimeReadyState(false);
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [scheduleRefresh]);
 
   useEffect(() => {
     if (!user || !userId) return;
@@ -859,8 +903,10 @@ export function ChatUnreadProvider({
         },
         (payload) => {
           const msg = payload.new as Record<string, unknown>;
+          const messageId = String(msg.id ?? "").trim();
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
+          if (isUuid(messageId) && rememberRealtimeEvent(`insert:${messageId}`)) return;
 
           const messageText = String(msg.text ?? "");
           const messageCreatedAt = String(
@@ -939,8 +985,10 @@ export function ChatUnreadProvider({
         },
         (payload) => {
           const msg = payload.new as Record<string, unknown>;
+          const messageId = String(msg.id ?? "").trim();
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
+          if (isUuid(messageId) && rememberRealtimeEvent(`update:${messageId}`)) return;
           scheduleRefresh(70, { silent: true });
         },
       ).on(
@@ -952,8 +1000,10 @@ export function ChatUnreadProvider({
         },
         (payload) => {
           const oldMsg = payload.old as Record<string, unknown>;
+          const messageId = String(oldMsg.id ?? "").trim();
           const messageChatId = String(oldMsg.chat_id ?? "").trim();
           if (!messageChatId) return;
+          if (isUuid(messageId) && rememberRealtimeEvent(`delete:${messageId}`)) return;
           scheduleRefresh(70, { silent: true });
         },
       ).on(
@@ -974,6 +1024,8 @@ export function ChatUnreadProvider({
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
+          setRealtimeReadyState(true);
+          scheduleRefresh(50, { silent: true });
           return;
         }
 
@@ -982,6 +1034,7 @@ export function ChatUnreadProvider({
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
+          setRealtimeReadyState(false);
           const attempt = Math.min(
             statusRef.current.reconnectAttempt + 1,
             RECONNECT_MAX_ATTEMPTS,
@@ -1010,8 +1063,9 @@ export function ChatUnreadProvider({
         void supabase.removeChannel(statusRef.current.listChannel);
         statusRef.current.listChannel = null;
       }
+      setRealtimeReadyState(false);
     };
-  }, [user, userId, refreshChats]);
+  }, [reconnectSeq, rememberRealtimeEvent, scheduleRefresh, user, userId]);
 
   useEffect(() => {
     if (
@@ -1083,12 +1137,21 @@ export function ChatUnreadProvider({
   }, []);
 
   const totalUnread = useMemo(() => computeTotalUnread(rows), [rows]);
+  const readyState = useMemo(() => {
+    if (!userId) return true;
+    if (!hydratedState) return false;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    return realtimeReadyState;
+  }, [hydratedState, realtimeReadyState, userId]);
 
   const value = useMemo<ChatUnreadContextValue>(
     () => ({
       rows,
       totalUnread,
       loading: loadingState,
+      ready: readyState,
+      hydrated: hydratedState,
+      realtimeReady: realtimeReadyState,
       error,
       activeChatId,
       refreshChats,
@@ -1101,6 +1164,9 @@ export function ChatUnreadProvider({
       rows,
       totalUnread,
       loadingState,
+      readyState,
+      hydratedState,
+      realtimeReadyState,
       error,
       activeChatId,
       refreshChats,

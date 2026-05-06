@@ -6,6 +6,7 @@ export type GetOrCreateChatResult =
 
 export async function getOrCreateChat(
   sellerId: string,
+  opts?: { listingId?: string | null },
 ): Promise<GetOrCreateChatResult> {
   try {
     const { data: userData } = await supabase.auth.getUser();
@@ -15,13 +16,14 @@ export async function getOrCreateChat(
 
     const p_other_user_id =
       typeof sellerId === "string" ? sellerId.trim() : "";
+    const p_listing_id = String(opts?.listingId ?? "").trim() || null;
 
     if (!p_other_user_id || typeof p_other_user_id !== "string") {
       return { ok: false, error: "Invalid user id" };
     }
 
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
-      p_listing_id: null,
+      p_listing_id,
       p_other_user_id,
     });
 

@@ -215,7 +215,9 @@ export default function ListingDetailPage() {
       chatOpenInFlightRef.current = true;
       setIsChatLoading(true);
       try {
-        const chatRes = await getOrCreateChat(sellerUserId);
+        const chatRes = await getOrCreateChat(sellerUserId, {
+          listingId: rowId || null,
+        });
 
         if (chatRes.ok) {
           router.push(`/chat/${chatRes.id}`);
