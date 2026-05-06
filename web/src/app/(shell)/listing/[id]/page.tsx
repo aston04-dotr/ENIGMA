@@ -119,7 +119,11 @@ export default function ListingDetailPage() {
   const viewerId = session?.user?.id ?? null;
   const safeItem = (row || {}) as Partial<import("@/lib/types").ListingRow>;
   const rowId = typeof safeItem.id === "string" ? safeItem.id : "";
-  const ownerId = typeof safeItem.user_id === "string" ? safeItem.user_id : "";
+  const ownerId =
+    (typeof safeItem.user_id === "string" && safeItem.user_id.trim()) ||
+    (typeof (safeItem as { owner_id?: unknown }).owner_id === "string"
+      ? String((safeItem as { owner_id?: unknown }).owner_id ?? "").trim()
+      : "");
   const favoriteStateRaw = safeItem as {
     is_favorited?: unknown;
     isFavorited?: unknown;
@@ -198,7 +202,7 @@ export default function ListingDetailPage() {
           router.push(`/chat/${guestChatRes.chatId}?${query.toString()}`);
           return;
         }
-        setChatError("Не удалось открыть диалог. Попробуйте снова.");
+        setChatError(guestChatRes.error || "Не удалось открыть диалог. Попробуйте снова.");
         return;
       }
 
@@ -217,7 +221,7 @@ export default function ListingDetailPage() {
           router.push(`/chat/${chatRes.id}`);
         } else {
           console.error(chatRes.error);
-          setChatError("Не удалось открыть чат");
+          setChatError(chatRes.error || "Не удалось открыть чат");
         }
       } finally {
         chatOpenInFlightRef.current = false;
@@ -458,7 +462,7 @@ export default function ListingDetailPage() {
       } else if (typeof window !== "undefined") {
         window.prompt("Скопируйте номер", ownerPhone);
       }
-      setToast({ message: "Copied!", type: "success" });
+      setToast({ message: "Номер скопирован", type: "success" });
     } catch (copyError) {
       console.error("COPY PHONE ERROR", copyError);
       setToast({ message: "Не удалось скопировать номер", type: "error" });
@@ -663,7 +667,7 @@ export default function ListingDetailPage() {
                 onClick={() => void copyPhone()}
                 className="w-full min-h-[56px] rounded-card border border-line bg-elevated py-4 text-[17px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-md active:scale-[0.98]"
               >
-                {ownerPhone ? "📋 Copy Phone" : "Телефон не указан"}
+                {ownerPhone ? "📋 Скопировать номер" : "Телефон не указан"}
               </button>
               {ownerName ? (
                 <p className="text-center text-sm text-muted">

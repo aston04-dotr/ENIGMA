@@ -78,10 +78,19 @@ export async function getOrCreateGuestChat(
       p_fingerprint: identity.fingerprint,
     },
   );
-  if (error) return { ok: false, error: error.message || "guest chat unavailable" };
+  if (error) {
+    const raw = String(error.message ?? "").toLowerCase();
+    if (raw.includes("disabled")) {
+      return { ok: false, error: "Диалог временно недоступен. Попробуйте ещё раз через минуту." };
+    }
+    if (raw.includes("peer user required")) {
+      return { ok: false, error: "Не удалось определить продавца для диалога." };
+    }
+    return { ok: false, error: "Не удалось открыть диалог. Попробуйте снова." };
+  }
   const payload = (data ?? {}) as Record<string, unknown>;
   const chatId = String(payload.chat_id ?? "").trim();
-  if (!chatId) return { ok: false, error: "guest chat unavailable" };
+  if (!chatId) return { ok: false, error: "Не удалось открыть диалог. Попробуйте снова." };
   return { ok: true, chatId };
 }
 
