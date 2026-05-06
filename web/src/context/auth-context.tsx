@@ -10,7 +10,12 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getSessionGuarded, supabase } from "@/lib/supabase";
+import {
+  disableAuthRefresh,
+  getSessionGuarded,
+  hardResetSupabaseAuthState,
+  supabase,
+} from "@/lib/supabase";
 
 type UserRow = {
   id: string;
@@ -56,6 +61,17 @@ function isRefreshAuthFailure(error: unknown): boolean {
   return status === 400 || status === 401;
 }
 
+function isStaleRefreshTokenError(error: unknown): boolean {
+  const msg = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  return msg.includes("already used") || msg.includes("invalid refresh token");
+}
+
+function tokenSuffix(value: string | null | undefined): string {
+  const token = String(value ?? "").trim();
+  if (!token) return "";
+  return token.slice(-8);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -72,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const authEventDebounceRef = useRef<{ event: string; at: number }>({ event: "", at: 0 });
   const refreshRejectedRef = useRef(false);
   const hardSignOutInFlightRef = useRef(false);
+  const lastSessionSignatureRef = useRef<string>("");
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -88,34 +105,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hardSignOutInFlightRef.current = true;
       if (opts.markRefreshRejected) {
         refreshRejectedRef.current = true;
+        disableAuthRefresh(opts.reason);
       }
       console.warn("[auth] hard sign-out:", opts.reason);
-    setSession(null);
-    setUser(null);
-    setProfile(null);
-    setProfileLoading(false);
-    setAuthResolved(true);
-    setLoading(false);
-    setReady(true);
-    if (typeof window !== "undefined") {
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setProfileLoading(false);
+      setAuthResolved(true);
+      setLoading(false);
+      setReady(true);
+      await hardResetSupabaseAuthState(opts.reason);
       try {
-        window.localStorage.clear();
-        window.sessionStorage.clear();
-        document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
-      } catch (storageErr) {
-        console.warn("[auth] storage clear failed", storageErr);
-      }
-    }
-    try {
-      await supabase.auth.signOut({ scope: "global" });
-    } catch {
-      try {
-        await supabase.auth.signOut({ scope: "local" });
+        await supabase.auth.signOut({ scope: "global" });
       } catch {
         // noop
       }
-    }
-    if (typeof window !== "undefined") {
+      if (typeof window !== "undefined") {
+        try {
+          document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
+        } catch {
+          // noop
+        }
         window.location.href = opts.redirectTo ?? "/login?signed_out=1";
       }
     },
@@ -137,8 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .then(async ({ data, error }) => {
             if (error && isRefreshAuthFailure(error)) {
               void hardSignOut({
-                reason: "bootstrap-timeout getSession 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                reason: isStaleRefreshTokenError(error)
+                  ? "bootstrap-timeout stale refresh token"
+                  : "bootstrap-timeout getSession 400/401",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -150,8 +163,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               });
               if (guarded.error && isRefreshAuthFailure(guarded.error)) {
                 void hardSignOut({
-                  reason: "bootstrap-timeout guarded getSession 400/401",
-                  redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                  reason: isStaleRefreshTokenError(guarded.error)
+                    ? "bootstrap-timeout guarded stale refresh token"
+                    : "bootstrap-timeout guarded getSession 400/401",
+                  redirectTo: "/login?reason=stale_refresh_token",
                   markRefreshRejected: true,
                 });
                 return;
@@ -187,7 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (isRefreshAuthFailure(err)) {
               void hardSignOut({
                 reason: "bootstrap-timeout getSession catch 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -317,6 +332,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let initialSessionResolved = false;
 
     const applySession = (next: Session | null) => {
+      const signature = next
+        ? `${next.user?.id ?? "no-user"}:${tokenSuffix(next.refresh_token)}:${tokenSuffix(next.access_token)}`
+        : "null";
+      if (signature !== lastSessionSignatureRef.current) {
+        console.log("[auth] session replacement", {
+          prev: lastSessionSignatureRef.current || "none",
+          next: signature,
+        });
+        lastSessionSignatureRef.current = signature;
+      }
       setSession(next);
       setUser(next?.user ?? null);
       setAuthResolved(true);
@@ -339,13 +364,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authEventDebounceRef.current = { event, at: now };
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
-        console.log("[auth] event", event);
+        console.log("[auth] event", event, {
+          uid: nextSession?.user?.id ?? null,
+          refreshSuffix: tokenSuffix(nextSession?.refresh_token),
+          accessSuffix: tokenSuffix(nextSession?.access_token),
+        });
       }
 
       if (event === "TOKEN_REFRESH_REJECTED") {
         void hardSignOut({
           reason: "TOKEN_REFRESH_REJECTED event",
-          redirectTo: "/login?signed_out=1&reason=refresh_failed",
+          redirectTo: "/login?reason=stale_refresh_token",
           markRefreshRejected: true,
         });
         return;
@@ -370,7 +399,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (guarded.error && isRefreshAuthFailure(guarded.error)) {
               void hardSignOut({
                 reason: "SIGNED_IN getSession 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -382,7 +411,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (isRefreshAuthFailure(err)) {
               void hardSignOut({
                 reason: "SIGNED_IN getSession catch 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -413,7 +442,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (guarded.error && isRefreshAuthFailure(guarded.error)) {
               void hardSignOut({
                 reason: "SIGNED_OUT guard getSession 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -438,7 +467,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (retry.error && isRefreshAuthFailure(retry.error)) {
                 void hardSignOut({
                   reason: "SIGNED_OUT guard getSession retry 400/401",
-                  redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                  redirectTo: "/login?reason=stale_refresh_token",
                   markRefreshRejected: true,
                 });
                 return;
@@ -457,7 +486,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (isRefreshAuthFailure(err)) {
               void hardSignOut({
                 reason: "SIGNED_OUT guard getSession catch 400/401",
-                redirectTo: "/login?signed_out=1&reason=refresh_failed",
+                redirectTo: "/login?reason=stale_refresh_token",
                 markRefreshRejected: true,
               });
               return;
@@ -494,7 +523,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (error && isRefreshAuthFailure(error)) {
             void hardSignOut({
               reason: "bootstrap fallback getSession 400/401",
-              redirectTo: "/login?signed_out=1&reason=refresh_failed",
+              redirectTo: "/login?reason=stale_refresh_token",
               markRefreshRejected: true,
             });
             return;
@@ -506,7 +535,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isRefreshAuthFailure(err)) {
             void hardSignOut({
               reason: "bootstrap fallback getSession catch 400/401",
-              redirectTo: "/login?signed_out=1&reason=refresh_failed",
+              redirectTo: "/login?reason=stale_refresh_token",
               markRefreshRejected: true,
             });
             return;

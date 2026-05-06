@@ -7,6 +7,7 @@ import { getSupabasePublicConfig } from "./runtimeConfig";
 import type { Session } from "@supabase/supabase-js";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
+const AUTH_STORAGE_KEY = "enigma.supabase.auth.v1";
 
 type CookieItem = { name: string; value: string };
 type BrowserCookieOptions = {
@@ -36,6 +37,7 @@ function getAllCookies(): CookieItem[] {
       out.push({ name: n, value: v });
     }
   }
+  authLog("debug", "cookie read", { count: out.length });
   return out;
 }
 
@@ -78,6 +80,12 @@ function writeCookie(
     parts.push("Secure");
   }
   document.cookie = parts.join("; ");
+  authLog("debug", "cookie write", {
+    name,
+    valueSuffix: tokenSuffix(value),
+    sameSite,
+    secure: shouldUseSecure,
+  });
 }
 
 /**
@@ -89,6 +97,8 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    storageKey: AUTH_STORAGE_KEY,
+    multiTab: false,
   },
   cookies: {
     getAll() {
@@ -127,6 +137,7 @@ export const isSupabaseConfigured = configured;
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let refreshCooldownUntilMs = 0;
+let refreshDisabled = false;
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -151,6 +162,12 @@ function authLog(
   console.debug(`[auth-guard] ${message}`, data);
 }
 
+function tokenSuffix(value: string | null | undefined): string {
+  const token = String(value ?? "").trim();
+  if (!token) return "";
+  return token.slice(-8);
+}
+
 function getErrorStatus(error: unknown): number {
   const status = Number(
     (error as { status?: unknown; code?: unknown } | null)?.status ??
@@ -158,6 +175,86 @@ function getErrorStatus(error: unknown): number {
       0,
   );
   return Number.isFinite(status) ? status : 0;
+}
+
+function isStaleRefreshTokenError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  const msg = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  return (
+    status === 400 ||
+    msg.includes("already used") ||
+    msg.includes("invalid refresh token") ||
+    msg.includes("refresh token not found")
+  );
+}
+
+function clearAuthStorageByPrefix(): void {
+  if (typeof window === "undefined") return;
+  const prefixes = ["sb-", "supabase", AUTH_STORAGE_KEY];
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i);
+        if (!key) continue;
+        const normalized = key.toLowerCase();
+        if (prefixes.some((prefix) => normalized.startsWith(prefix) || normalized.includes(prefix))) {
+          keys.push(key);
+        }
+      }
+      keys.forEach((key) => storage.removeItem(key));
+      authLog("debug", "storage keys cleared", {
+        storage: storage === window.localStorage ? "localStorage" : "sessionStorage",
+        removedCount: keys.length,
+      });
+    } catch (error) {
+      authLog("warn", "storage clear failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+function clearSupabaseCookies(): void {
+  if (typeof document === "undefined") return;
+  try {
+    const cookieNames = document.cookie
+      .split(";")
+      .map((x) => x.trim().split("=")[0] ?? "")
+      .filter(Boolean)
+      .filter((name) => {
+        const normalized = name.toLowerCase();
+        return normalized.startsWith("sb-") || normalized.includes("supabase");
+      });
+    cookieNames.forEach((name) => {
+      document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
+    });
+    authLog("debug", "cookies cleared", { removedCount: cookieNames.length });
+  } catch (error) {
+    authLog("warn", "cookie clear failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export function disableAuthRefresh(reason: string): void {
+  refreshDisabled = true;
+  refreshCooldownUntilMs = Date.now() + 60_000;
+  authLog("warn", "refresh disabled", { reason, cooldownUntilMs: refreshCooldownUntilMs });
+}
+
+export async function hardResetSupabaseAuthState(reason: string): Promise<void> {
+  disableAuthRefresh(reason);
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch (error) {
+    authLog("warn", "local signOut failed during hard reset", {
+      reason,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  clearAuthStorageByPrefix();
+  clearSupabaseCookies();
 }
 
 function extractStack(): string | null {
@@ -171,6 +268,10 @@ function extractStack(): string | null {
 }
 
 async function runGuardedRefresh(reason: string): Promise<void> {
+  if (refreshDisabled) {
+    authLog("warn", "refresh skipped: globally disabled", { reason });
+    return;
+  }
   const now = Date.now();
   if (now < refreshCooldownUntilMs) {
     authLog("warn", "refresh skipped by cooldown", {
@@ -196,6 +297,9 @@ async function runGuardedRefresh(reason: string): Promise<void> {
           refreshCooldownUntilMs = Date.now() + 60_000;
         } else if (status === 400 || status === 401) {
           refreshCooldownUntilMs = Date.now() + 15_000;
+        }
+        if (isStaleRefreshTokenError(error)) {
+          await hardResetSupabaseAuthState("stale_refresh_token_during_refresh");
         }
         authLog("warn", "refresh failed", {
           reason,
@@ -239,13 +343,30 @@ export async function getSessionGuarded(
   const allowRefresh = opts?.allowRefresh !== false;
   const first = await supabase.auth.getSession();
   const firstSession = first.data.session ?? null;
-  if (firstSession) return { session: firstSession, error: first.error ?? null };
+  if (firstSession) {
+    authLog("debug", "session read (first)", {
+      reason,
+      refreshTokenSuffix: tokenSuffix(firstSession.refresh_token),
+      accessTokenSuffix: tokenSuffix(firstSession.access_token),
+    });
+    return { session: firstSession, error: first.error ?? null };
+  }
   if (!allowRefresh) return { session: null, error: first.error ?? null };
 
   await runGuardedRefresh(reason);
 
   const second = await supabase.auth.getSession();
-  return { session: second.data.session ?? null, error: second.error ?? null };
+  const secondSession = second.data.session ?? null;
+  if (secondSession) {
+    authLog("debug", "session read (after refresh)", {
+      reason,
+      refreshTokenSuffix: tokenSuffix(secondSession.refresh_token),
+      accessTokenSuffix: tokenSuffix(secondSession.access_token),
+    });
+  } else if (second.error && isStaleRefreshTokenError(second.error)) {
+    await hardResetSupabaseAuthState("stale_refresh_token_after_refresh");
+  }
+  return { session: secondSession, error: second.error ?? null };
 }
 
 /**
@@ -261,7 +382,7 @@ export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
       /** Один shared GoTrue — `supabase`; здесь только чтение токена для PostgREST. */
       accessToken: async () => {
         const { session } = await getSessionGuarded("rest-access-token", {
-          allowRefresh: true,
+          allowRefresh: false,
         });
         return session?.access_token ?? null;
       },

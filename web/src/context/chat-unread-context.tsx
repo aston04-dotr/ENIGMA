@@ -65,7 +65,7 @@ function isUuid(value: string): boolean {
 
 async function sessionHasAccessToken(): Promise<boolean> {
   const { session } = await getSessionGuarded("chat-session-has-token", {
-    allowRefresh: true,
+    allowRefresh: false,
   });
   return Boolean(session?.access_token?.trim());
 }
@@ -421,7 +421,7 @@ export function ChatUnreadProvider({
 
       try {
         const { session, error } = await getSessionGuarded("chat-refresh-chats", {
-          allowRefresh: true,
+          allowRefresh: false,
         });
         if (error && isAuthFailure(error)) {
           await signOut();
@@ -645,7 +645,7 @@ export function ChatUnreadProvider({
       if (!rest) return;
       const { session: presenceSession } = await getSessionGuarded(
         "chat-presence-upsert",
-        { allowRefresh: true },
+        { allowRefresh: false },
       );
       if (!presenceSession?.access_token) {
         if (!logOnceRef.current.presenceNoToken) {
@@ -723,7 +723,7 @@ export function ChatUnreadProvider({
 
       try {
         const { session: markSession } = await getSessionGuarded("chat-mark-read", {
-          allowRefresh: true,
+          allowRefresh: false,
         });
         if (!markSession?.access_token) {
           if (!logOnceRef.current.markNoToken) {
