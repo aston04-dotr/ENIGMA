@@ -42,6 +42,12 @@ type ProfileRow = {
   email?: string | null;
 };
 
+type ChatParticipantsRow = {
+  buyer_id?: string | null;
+  seller_id?: string | null;
+  listing_id?: string | null;
+};
+
 type RetryOptions = {
   retries: number;
   delayMs: number;
@@ -560,20 +566,49 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { data: members, error: membersError } = await supabase
-      .from("chat_members")
-      .select("user_id")
-      .eq("chat_id", record.chat_id)
-      .neq("user_id", record.sender_id);
+    // Primary path: 1:1 chat schema (buyer_id/seller_id).
+    // Fallback path: legacy/group membership in chat_members.
+    const { data: chatParticipants, error: chatParticipantsError } = await supabase
+      .from("chats")
+      .select("buyer_id,seller_id,listing_id")
+      .eq("id", record.chat_id)
+      .maybeSingle();
 
-    if (membersError) {
-      console.error("chat_members select failed", membersError);
-      return new Response("Error", { status: 500 });
+    let recipientIds: string[] = [];
+    if (!chatParticipantsError && chatParticipants) {
+      const cp = chatParticipants as ChatParticipantsRow;
+      recipientIds = Array.from(
+        new Set(
+          [cp.buyer_id, cp.seller_id]
+            .map((v) => String(v ?? "").trim())
+            .filter((v) => v.length > 0 && v !== record.sender_id),
+        ),
+      );
+      console.log("RECIPIENT SOURCE: chats.buyer_id/seller_id", {
+        chat_id: record.chat_id,
+        recipients: recipientIds,
+      });
+    } else {
+      if (chatParticipantsError) {
+        console.error("chats select failed", chatParticipantsError);
+      }
+      const { data: members, error: membersError } = await supabase
+        .from("chat_members")
+        .select("user_id")
+        .eq("chat_id", record.chat_id)
+        .neq("user_id", record.sender_id);
+      if (membersError) {
+        console.error("chat_members select failed", membersError);
+        return new Response("Error", { status: 500 });
+      }
+      recipientIds = Array.from(
+        new Set((members ?? []).map((m: { user_id: string }) => String(m.user_id ?? "").trim()).filter(Boolean)),
+      );
+      console.log("RECIPIENT SOURCE: chat_members fallback", {
+        chat_id: record.chat_id,
+        recipients: recipientIds,
+      });
     }
-
-    const recipientIds = [
-      ...new Set((members ?? []).map((m: { user_id: string }) => m.user_id)),
-    ];
     if (!recipientIds.length) {
       return new Response("OK", { status: 200 });
     }
@@ -594,16 +629,11 @@ serve(async (req) => {
     console.log("EMAIL TARGET RECIPIENTS:", recipientTargetIds);
     if (!recipientTargetIds.length) return new Response("ok", { status: 200 });
 
-    const [{ data: recipientProfiles }, { data: chatRow }] = await Promise.all([
+    const [{ data: recipientProfiles }] = await Promise.all([
       supabase
         .from("profiles")
         .select("id,email")
         .in("id", recipientTargetIds),
-      supabase
-        .from("chats")
-        .select("listing_id")
-        .eq("id", record.chat_id)
-        .maybeSingle(),
     ]);
 
     const recipientEmailMap = new Map<string, string>();
@@ -632,7 +662,9 @@ serve(async (req) => {
 
     let listingTitle = "Ваше объявление";
     let listingImage = "";
-    const listingId = String((chatRow as { listing_id?: string | null } | null)?.listing_id ?? "").trim();
+    const listingId = String(
+      (chatParticipants as ChatParticipantsRow | null)?.listing_id ?? "",
+    ).trim();
     if (listingId) {
       const [{ data: listingRow }, { data: imageRow }] = await Promise.all([
         supabase
