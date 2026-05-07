@@ -2,10 +2,10 @@
 
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorUi } from "@/components/ErrorUi";
-import { GuestChatList } from "@/components/guest/GuestChatList";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { normalizeChatParticipantName } from "@/lib/guestIdentity";
+import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -171,7 +171,28 @@ export default function ChatsPage() {
     };
   }, [loadNotices, refreshChats, session?.user]);
 
-  if (!session?.user) return <GuestChatList />;
+  if (!session?.user) {
+    return (
+      <main className="safe-pt min-h-screen bg-main px-5 pb-6 pt-10">
+        <h1 className="text-[26px] font-bold tracking-tight text-fg">Чаты</h1>
+        <div className="mt-5 rounded-card border border-line bg-elevated p-4">
+          <p className="text-sm text-muted">
+            Сохраните мой Enigma, чтобы писать продавцам и видеть личные сообщения.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              rememberSaveEnigmaContinuationRoute("/chat");
+              router.push("/login?reason=save_enigma&source=chat_page");
+            }}
+            className="pressable mt-3 min-h-[44px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
+          >
+            Сохранить мой Enigma
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="safe-pt min-h-screen bg-main px-5 pb-6 pt-8">
@@ -252,13 +273,7 @@ export default function ChatsPage() {
             <li key={row.chat_id}>
               <button
                 type="button"
-                onClick={() =>
-                  router.push(
-                    row.source === "guest_inbox"
-                      ? `/chat-inbox/${row.chat_id}`
-                      : `/chat/${row.chat_id}`,
-                  )
-                }
+                onClick={() => router.push(`/chat/${row.chat_id}`)}
                 className="pressable flex w-full items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
               >
                 <ChatListingThumb

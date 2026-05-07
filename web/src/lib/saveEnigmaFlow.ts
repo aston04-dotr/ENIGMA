@@ -1,5 +1,6 @@
 const STORAGE_KEY = "enigma:save-flow:v1";
 const CONTINUATION_ROUTE_KEY = "enigma:save-enigma:continue-route";
+const PENDING_CHAT_INTENT_KEY = "enigma:save-enigma:pending-chat-intent";
 const PROMPT_THRESHOLDS = [4, 9, 15];
 const DEFAULT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -145,6 +146,50 @@ export function consumeSaveEnigmaContinuationRoute(): string | null {
     window.localStorage.removeItem(CONTINUATION_ROUTE_KEY);
     if (!route.startsWith("/")) return null;
     return route;
+  } catch {
+    return null;
+  }
+}
+
+type PendingChatIntent = {
+  peerUserId: string;
+  listingId: string | null;
+  createdAtMs: number;
+};
+
+export function rememberPendingChatIntent(peerUserId: string, listingId?: string | null): void {
+  if (typeof window === "undefined") return;
+  const peer = String(peerUserId ?? "").trim();
+  if (!peer) return;
+  const payload: PendingChatIntent = {
+    peerUserId: peer,
+    listingId: listingId ? String(listingId) : null,
+    createdAtMs: Date.now(),
+  };
+  try {
+    window.localStorage.setItem(PENDING_CHAT_INTENT_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
+export function consumePendingChatIntent(maxAgeMs = 30 * 60 * 1000): PendingChatIntent | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(PENDING_CHAT_INTENT_KEY);
+    window.localStorage.removeItem(PENDING_CHAT_INTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingChatIntent>;
+    const peerUserId = String(parsed.peerUserId ?? "").trim();
+    if (!peerUserId) return null;
+    const createdAtMs = Number(parsed.createdAtMs ?? 0);
+    if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) return null;
+    if (Date.now() - createdAtMs > Math.max(60_000, maxAgeMs)) return null;
+    return {
+      peerUserId,
+      listingId: parsed.listingId ? String(parsed.listingId) : null,
+      createdAtMs,
+    };
   } catch {
     return null;
   }

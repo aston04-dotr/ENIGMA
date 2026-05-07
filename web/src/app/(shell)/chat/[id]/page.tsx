@@ -2,13 +2,13 @@
 
 import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
-import { GuestChatRoom } from "@/components/guest/GuestChatRoom";
 import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { getOrCreateChat } from "@/lib/chats";
 import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity";
+import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { getSessionGuarded, supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -2144,7 +2144,31 @@ export default function ChatRoomPage() {
   }
 
   if (!session) {
-    return <GuestChatRoom chatId={chatId} />;
+    return (
+      <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5">
+        <div className="w-full max-w-sm rounded-card border border-line bg-elevated p-4">
+          <p className="text-sm text-muted">
+            Сохраните мой Enigma, чтобы открыть личные сообщения.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                rememberSaveEnigmaContinuationRoute(
+                  `${window.location.pathname}${window.location.search}`,
+                );
+              } else {
+                rememberSaveEnigmaContinuationRoute(`/chat/${chatId}`);
+              }
+              router.push("/login?reason=save_enigma&source=chat_room");
+            }}
+            className="pressable mt-3 min-h-[44px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
+          >
+            Сохранить мой Enigma
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (

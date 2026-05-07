@@ -1,10 +1,14 @@
 "use client";
 
 import { signInWithMagicLink } from "@/lib/auth";
+import { getOrCreateChat } from "@/lib/chats";
 import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
-import { consumeSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import {
+  consumePendingChatIntent,
+  consumeSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 import { trackEvent } from "@/lib/analytics";
 import {
   getSessionGuarded,
@@ -41,6 +45,7 @@ export default function LoginPage() {
   const [saveMode, setSaveMode] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const loginSuccessTrackedRef = useRef(false);
+  const loginRedirectingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,24 +104,39 @@ export default function LoginPage() {
   // Редирект если уже вошёл
   useEffect(() => {
     if (ready && session?.user) {
+      if (loginRedirectingRef.current) return;
+      loginRedirectingRef.current = true;
       if (!loginSuccessTrackedRef.current) {
         loginSuccessTrackedRef.current = true;
         trackEvent("login_success", { user_id: session.user.id });
       }
-      if (typeof window !== "undefined") {
-        const search = new URLSearchParams(window.location.search);
-        const returnTo = String(search.get("returnTo") ?? "").trim();
-        if (returnTo.startsWith("/")) {
-          router.replace(returnTo);
+      void (async () => {
+        const pendingChatIntent = consumePendingChatIntent();
+        if (pendingChatIntent) {
+          const chatRes = await getOrCreateChat(pendingChatIntent.peerUserId, {
+            listingId: pendingChatIntent.listingId,
+          });
+          if (chatRes.ok && chatRes.id) {
+            router.replace(`/chat/${chatRes.id}`);
+            return;
+          }
+        }
+
+        if (typeof window !== "undefined") {
+          const search = new URLSearchParams(window.location.search);
+          const returnTo = String(search.get("returnTo") ?? "").trim();
+          if (returnTo.startsWith("/")) {
+            router.replace(returnTo);
+            return;
+          }
+        }
+        const continuationRoute = consumeSaveEnigmaContinuationRoute();
+        if (continuationRoute) {
+          router.replace(continuationRoute);
           return;
         }
-      }
-      const continuationRoute = consumeSaveEnigmaContinuationRoute();
-      if (continuationRoute) {
-        router.replace(continuationRoute);
-        return;
-      }
-      router.replace("/");
+        router.replace("/");
+      })();
     }
   }, [ready, session, router]);
 

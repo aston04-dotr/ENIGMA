@@ -186,8 +186,6 @@ export type MessageRow = {
  */
 export type ChatListRow = {
   chat_id: string;
-  source?: "auth" | "guest_inbox";
-  guest_uuid?: string | null;
   /** Из RPC `chats` (1:1) */
   buyer_id: string | null;
   seller_id: string | null;

@@ -123,6 +123,8 @@ function BottomNavInner() {
         const href =
           isGuest && t.key === "create"
             ? "/login?reason=save_enigma&source=create_tab"
+            : isGuest && t.key === "chat"
+              ? "/login?reason=save_enigma&source=chat_tab"
             : isGuest && t.key === "profile"
               ? "/login?reason=save_enigma&source=profile_tab"
               : t.href;

@@ -10,7 +10,6 @@ import { useTheme } from "@/context/theme-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { webBoostPaymentQuery } from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
-import { getOrCreateGuestChat } from "@/lib/guestChats";
 import {
   fetchListingFavoriteCounts,
   fetchListingById,
@@ -30,7 +29,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { recordMeaningfulAction, rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import {
+  recordMeaningfulAction,
+  rememberPendingChatIntent,
+  rememberSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 
 const FEED_STATE_KEY = "feed_state";
 
@@ -189,20 +192,13 @@ export default function ListingDetailPage() {
       const uid = session?.user?.id;
       if (!uid) {
         recordMeaningfulAction("chat_intent", 2);
-        const guestChatRes = await getOrCreateGuestChat(
-          sellerUserId,
-          rowId || null,
-        );
-        if (guestChatRes.ok) {
-          const query = new URLSearchParams({
-            guest: "1",
-            peer: sellerUserId,
-          });
-          if (rowId) query.set("listing", rowId);
-          router.push(`/chat/${guestChatRes.chatId}?${query.toString()}`);
-          return;
-        }
-        setChatError(guestChatRes.error || "Не удалось открыть диалог. Попробуйте снова.");
+        const continuation =
+          rowId && String(rowId).trim().length > 0
+            ? `/listing/${encodeURIComponent(String(rowId))}`
+            : undefined;
+        rememberSaveEnigmaContinuationRoute(continuation);
+        rememberPendingChatIntent(sellerUserId, rowId || null);
+        router.push("/login?reason=save_enigma&source=write_seller");
         return;
       }
 

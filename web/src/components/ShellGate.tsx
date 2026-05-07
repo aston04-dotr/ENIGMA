@@ -7,13 +7,12 @@ import { usePathname } from "next/navigation";
 function isPublicGuestRoute(pathname: string): boolean {
   if (pathname === "/") return true;
   if (pathname === "/wanted") return true;
-  if (pathname === "/chat") return true;
-  if (pathname.startsWith("/chat/")) return true;
   if (pathname.startsWith("/listing/")) return true;
   return false;
 }
 
 function isProtectedRoute(pathname: string): boolean {
+  if (pathname === "/chat" || pathname.startsWith("/chat/")) return true;
   if (pathname === "/create" || pathname.startsWith("/create/")) return true;
   if (pathname === "/profile" || pathname.startsWith("/profile/")) return true;
   if (pathname === "/payment" || pathname.startsWith("/payment/")) return true;
