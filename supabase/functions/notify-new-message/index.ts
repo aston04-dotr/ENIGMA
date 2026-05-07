@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { Resend } from "npm:resend@4.0.0";
 
 type MessageRow = {
   id: string;
@@ -114,6 +113,29 @@ function buildSenderName(profile: ProfileRow | null | undefined): string {
   return name || "Enigma";
 }
 
+function errorToLog(error: unknown): Record<string, unknown> {
+  if (!error) return { error: "unknown" };
+  if (error instanceof Error) {
+    const withExtras = error as Error & {
+      status?: number;
+      body?: string;
+      body_json?: Record<string, unknown> | null;
+    };
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      status: withExtras.status ?? null,
+      body: withExtras.body ?? null,
+      body_json: withExtras.body_json ?? null,
+    };
+  }
+  if (typeof error === "object") {
+    return { ...(error as Record<string, unknown>) };
+  }
+  return { error: String(error) };
+}
+
 type EmailFallbackData = {
   chatId: string;
   senderName: string;
@@ -183,7 +205,7 @@ function generateEmailTemplate(data: EmailFallbackData): string {
 }
 
 async function sendEmailFallback(
-  resend: Resend,
+  resendApiKey: string,
   email: string,
   data: EmailFallbackData,
 ): Promise<boolean> {
@@ -194,39 +216,76 @@ async function sendEmailFallback(
   console.log("SENDING EMAIL TO:", to);
   console.log("USING FROM EMAIL:", fromEmail);
 
-  const { error } = await withRetry(
-    () =>
-      resend.emails.send({
-        from: `Enigma <${fromEmail}>`,
-        to,
-        subject: "У вас новое сообщение в Enigma",
-        html: generateEmailTemplate(data),
-      }),
+  const resendResult = await withRetry(
+    async () => {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: `Enigma <${fromEmail}>`,
+          to,
+          subject: "У вас новое сообщение в Enigma",
+          html: generateEmailTemplate(data),
+        }),
+      });
+      const responseText = await response.text();
+      let responseJson: Record<string, unknown> | null = null;
+      try {
+        responseJson = responseText ? (JSON.parse(responseText) as Record<string, unknown>) : null;
+      } catch {
+        responseJson = null;
+      }
+      if (!response.ok) {
+        const err = new Error(
+          `Resend HTTP ${response.status}: ${response.statusText} :: ${responseText}`,
+        );
+        (err as Error & { status?: number; body?: string; body_json?: Record<string, unknown> | null }).status =
+          response.status;
+        (err as Error & { status?: number; body?: string; body_json?: Record<string, unknown> | null }).body =
+          responseText;
+        (err as Error & { status?: number; body?: string; body_json?: Record<string, unknown> | null }).body_json =
+          responseJson;
+        throw err;
+      }
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        body: responseText,
+        bodyJson: responseJson,
+      };
+    },
     {
       retries: 2,
       delayMs: 800,
       shouldRetry: (error: unknown) => {
+        const status = Number((error as { status?: unknown } | null)?.status ?? 0);
+        if (Number.isFinite(status) && status > 0) {
+          return shouldRetryHttpStatus(status);
+        }
         const msg = String((error as { message?: string } | null)?.message ?? "").toLowerCase();
-        return (
-          msg.includes("timeout") ||
-          msg.includes("network") ||
-          msg.includes("rate") ||
-          msg.includes("429") ||
-          msg.includes("500") ||
-          msg.includes("502") ||
-          msg.includes("503") ||
-          msg.includes("504")
-        );
+        return msg.includes("timeout") || msg.includes("network");
       },
     },
   );
+  const sentData = resendResult as {
+    status: number;
+    statusText: string;
+    body: string;
+    bodyJson?: Record<string, unknown> | null;
+  };
 
-  if (error) {
-    console.log("EMAIL ERROR:", { email: to, error });
-    return false;
-  }
-
-  console.log("EMAIL SENT");
+  console.log("EMAIL SENT", {
+    email: to,
+    resend_id: sentData.bodyJson?.id ?? null,
+    chat_id: data.chatId,
+    response_status: sentData.status,
+    response_status_text: sentData.statusText,
+    response_body: sentData.body,
+    response_body_json: sentData.bodyJson ?? null,
+  });
   return true;
 }
 
@@ -498,7 +557,6 @@ serve(async (req) => {
     const siteUrl =
       optionalEnv("NEXT_PUBLIC_SITE_URL") || "https://enigma-app.online";
     const resendApiKey = optionalEnv("RESEND_API_KEY");
-    const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -596,33 +654,64 @@ serve(async (req) => {
       listingImage = String((imageRow as { url?: string | null } | null)?.url ?? "").trim();
     }
 
-    console.log("PUSH DISABLED: email-only mode");
+    console.log("NOTIFY MODE: email-first fallback (push-independent)");
 
-    if (resend) {
+    if (resendApiKey) {
+      let successCount = 0;
+      const failedRecipients: string[] = [];
       for (const recipientId of recipientTargetIds) {
         console.log("EMAIL FALLBACK TARGET", recipientId);
         const recipientEmail = recipientEmailMap.get(recipientId);
         if (!recipientEmail) {
           console.log("NO EMAIL FOR USER", recipientId);
+          failedRecipients.push(`${recipientId}:no_email`);
           continue;
         }
-
-        await sendEmailFallback(resend, recipientEmail, {
-          chatId: record.chat_id,
-          senderName,
-          messageBody,
-          listingTitle,
-          listingImage,
-          chatUrl: url,
+        try {
+          const sent = await sendEmailFallback(resendApiKey, recipientEmail, {
+            chatId: record.chat_id,
+            senderName,
+            messageBody,
+            listingTitle,
+            listingImage,
+            chatUrl: url,
+          });
+          if (sent) {
+            successCount += 1;
+          } else {
+            failedRecipients.push(`${recipientId}:${recipientEmail}`);
+          }
+        } catch (emailErr) {
+          console.error("EMAIL FALLBACK EXCEPTION", {
+            recipientId,
+            recipientEmail,
+            ...errorToLog(emailErr),
+          });
+          failedRecipients.push(`${recipientId}:${recipientEmail}`);
+        }
+      }
+      console.log("EMAIL FALLBACK SUMMARY", {
+        message_id: record.id,
+        chat_id: record.chat_id,
+        recipients_total: recipientTargetIds.length,
+        email_success: successCount,
+        email_failed: failedRecipients.length,
+        failed_recipients: failedRecipients,
+      });
+      // Return 500 when nothing was delivered via email so webhook can retry.
+      if (recipientTargetIds.length > 0 && successCount === 0) {
+        return new Response("Email delivery failed for all recipients", {
+          status: 500,
         });
       }
     } else {
       console.log("RESEND DISABLED: missing RESEND_API_KEY");
+      return new Response("Resend disabled", { status: 500 });
     }
 
     return new Response("ok", { status: 200 });
   } catch (error) {
-    console.error("notify-new-message fatal", error);
+    console.error("notify-new-message fatal", errorToLog(error));
     return new Response("Error", { status: 500 });
   }
 });
