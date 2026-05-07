@@ -6,6 +6,10 @@
   "scripts": {
     "web": "npm run dev --prefix web",
     "web:build": "npm run build --prefix web",
+    "mobile:sync": "npm run cap:sync --prefix web",
+    "mobile:android": "npm run cap:open:android --prefix web",
+    "mobile:ios": "npm run cap:open:ios --prefix web",
+    "mobile:assets": "npm run cap:assets --prefix web",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

@@ -47,6 +47,18 @@ const CHAT_REFRESH_POLL_MS = 8_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_ATTEMPTS = 6;
 const REALTIME_EVENT_TTL_MS = 15_000;
+const UNREAD_RECONCILE_DEBOUNCE_MS = 160;
+const UNREAD_RECONCILE_POLL_MS = 35_000;
+const DEV_CHAT_DEBUG = process.env.NODE_ENV === "development";
+
+function chatDebugLog(event: string, payload?: Record<string, unknown>) {
+  if (!DEV_CHAT_DEBUG) return;
+  if (payload) {
+    console.debug(`[chat-unread][dev] ${event}`, payload);
+    return;
+  }
+  console.debug(`[chat-unread][dev] ${event}`);
+}
 
 function getErrorStatus(error: unknown): number {
   const status = Number(
@@ -327,6 +339,17 @@ function rowMatchesChatId(row: ChatListRow, messageChatId: string): boolean {
   return String(withId.id ?? "").trim() === messageChatId;
 }
 
+function isChatForegroundForId(chatId: string, activeChatId: string | null): boolean {
+  if (!chatId || !activeChatId || chatId !== activeChatId) return false;
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  const routeChatId =
+    String(window.location.pathname || "").match(/^\/chat\/([0-9a-f-]{36})$/i)?.[1] ?? null;
+  if (!routeChatId || routeChatId !== chatId) return false;
+  if (document.visibilityState !== "visible") return false;
+  if (document.hidden) return false;
+  return true;
+}
+
 export function ChatUnreadProvider({
   children,
 }: {
@@ -346,17 +369,20 @@ export function ChatUnreadProvider({
 
   const statusRef = useRef<{
     refreshTimer: number | null;
+    reconcileTimer: number | null;
     reconnectTimer: number | null;
     reconnectAttempt: number;
     listChannel: ReturnType<typeof supabase.channel> | null;
     activeChatId: string | null;
   }>({
     refreshTimer: null,
+    reconcileTimer: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
     listChannel: null,
     activeChatId: null,
   });
+  const rowsRef = useRef<ChatListRow[]>([]);
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
@@ -382,12 +408,21 @@ export function ChatUnreadProvider({
     setRealtimeReadyState(false);
   }, [userId]);
 
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
+      chatDebugLog("refreshChats:start", {
+        silent: Boolean(opts?.silent),
+        userId: userId ?? null,
+      });
       if (!userId) {
         setRows([]);
         setError(null);
         setLoadingState(false);
+        chatDebugLog("refreshChats:skip:no-user");
         return;
       }
 
@@ -423,6 +458,9 @@ export function ChatUnreadProvider({
             }, retryDelay);
           }
           if (!opts?.silent) setLoadingState(false);
+          chatDebugLog("refreshChats:skip:no-token", {
+            retry: chatListAuthRetryRef.current,
+          });
           return;
         }
         chatListAuthRetryRef.current = 0;
@@ -444,6 +482,10 @@ export function ChatUnreadProvider({
             hint: res.error.hint,
           });
           setError(res.error.message || "Не удалось загрузить чаты");
+          chatDebugLog("refreshChats:error", {
+            message: res.error.message ?? null,
+            code: res.error.code ?? null,
+          });
           return;
         }
 
@@ -551,14 +593,133 @@ export function ChatUnreadProvider({
 
         setRows((prev) => mergeServerRowsWithLocal(prev, finalRows));
         setHydratedState(true);
+        chatDebugLog("refreshChats:done", {
+          rows: finalRows.length,
+          totalUnread: computeTotalUnread(finalRows),
+          silent: Boolean(opts?.silent),
+        });
       } catch (e) {
         console.error("list_my_chats unexpected", e);
         setError("Не удалось загрузить чаты");
+        chatDebugLog("refreshChats:unexpected-error");
       } finally {
         if (!opts?.silent) setLoadingState(false);
       }
     },
     [signOut, userId],
+  );
+
+  const reconcileUnreadSnapshot = useCallback(
+    async (reason: string) => {
+      chatDebugLog("reconcile:start", { reason, userId: userId ?? null });
+      if (!userId) return;
+      try {
+        const { session, error } = await getSessionGuarded("chat-reconcile-unread", {
+          allowRefresh: true,
+        });
+        if (error && isAuthFailure(error)) {
+          await signOut();
+          return;
+        }
+        if (!session?.access_token) {
+          chatDebugLog("reconcile:skip:no-token", { reason });
+          return;
+        }
+        const rest = getSupabaseRestWithSession();
+        if (!rest) return;
+        const res = await rest.rpc("list_my_chats", {
+          p_limit: 200,
+        });
+        if (res.error || !Array.isArray(res.data)) {
+          chatDebugLog("reconcile:error", {
+            reason,
+            message: res.error?.message ?? null,
+            code: res.error?.code ?? null,
+          });
+          return;
+        }
+        const serverRows = res.data
+          .map((row) => normalizeChatRow(row as Record<string, unknown>, userId))
+          .filter((row) => isUuid(row.chat_id));
+        const serverTotal = computeTotalUnread(serverRows);
+        const localRows = rowsRef.current;
+        const localTotal = computeTotalUnread(localRows);
+        const serverByChat = new Map(serverRows.map((row) => [row.chat_id, row]));
+        const localByChat = new Map(localRows.map((row) => [row.chat_id, row]));
+        const hasNewChats = serverRows.some((row) => !localByChat.has(row.chat_id));
+        let unreadDrift = localTotal !== serverTotal || hasNewChats;
+        if (!unreadDrift) {
+          for (const [chatId, serverRow] of serverByChat) {
+            const localRow = localByChat.get(chatId);
+            if (!localRow) {
+              unreadDrift = true;
+              break;
+            }
+            if (
+              Math.max(0, Number(localRow.unread_count || 0)) !==
+              Math.max(0, Number(serverRow.unread_count || 0))
+            ) {
+              unreadDrift = true;
+              break;
+            }
+          }
+        }
+
+        if (!unreadDrift) {
+          chatDebugLog("reconcile:no-drift", {
+            reason,
+            totalUnread: serverTotal,
+            chats: serverRows.length,
+          });
+          return;
+        }
+
+        chatDebugLog("reconcile:drift-detected", {
+          reason,
+          localTotal,
+          serverTotal,
+          localChats: localRows.length,
+          serverChats: serverRows.length,
+        });
+
+        setRows((prev) => {
+          const serverMap = new Map(serverRows.map((row) => [row.chat_id, row]));
+          const merged = prev.map((row) => {
+            const serverRow = serverMap.get(row.chat_id);
+            if (!serverRow) return row;
+            serverMap.delete(row.chat_id);
+            return {
+              ...row,
+              unread_count: Math.max(0, Number(serverRow.unread_count || 0)),
+              last_message_id: serverRow.last_message_id ?? row.last_message_id,
+              last_message_text: serverRow.last_message_text ?? row.last_message_text,
+              last_message_sender_id:
+                serverRow.last_message_sender_id ?? row.last_message_sender_id,
+              last_message_created_at:
+                serverRow.last_message_created_at ?? row.last_message_created_at,
+              last_message_at: serverRow.last_message_at ?? row.last_message_at,
+              last_message_deleted:
+                serverRow.last_message_deleted ?? row.last_message_deleted,
+              last_message_image_url:
+                serverRow.last_message_image_url ?? row.last_message_image_url,
+              last_message_voice_url:
+                serverRow.last_message_voice_url ?? row.last_message_voice_url,
+            };
+          });
+          if (serverMap.size > 0) {
+            merged.push(...Array.from(serverMap.values()));
+          }
+          return sortByLastMessageDesc(merged);
+        });
+
+        void refreshChats({ silent: true });
+        busRef.current?.post({ type: "chat-refresh" });
+      } catch (error) {
+        chatDebugLog("reconcile:unexpected-error", { reason });
+        console.error("chat unread reconcile unexpected", error);
+      }
+    },
+    [refreshChats, signOut, userId],
   );
 
   const scheduleRefresh = useCallback(
@@ -577,6 +738,20 @@ export function ChatUnreadProvider({
     [refreshChats],
   );
 
+  const scheduleReconcile = useCallback(
+    (reason: string, delayMs = UNREAD_RECONCILE_DEBOUNCE_MS) => {
+      if (typeof window === "undefined") return;
+      if (statusRef.current.reconcileTimer) {
+        window.clearTimeout(statusRef.current.reconcileTimer);
+      }
+      statusRef.current.reconcileTimer = window.setTimeout(() => {
+        statusRef.current.reconcileTimer = null;
+        void reconcileUnreadSnapshot(reason);
+      }, delayMs);
+    },
+    [reconcileUnreadSnapshot],
+  );
+
   const rememberRealtimeEvent = useCallback((key: string): boolean => {
     const now = Date.now();
     const map = processedRealtimeEventsRef.current;
@@ -592,6 +767,16 @@ export function ChatUnreadProvider({
   const broadcast = useCallback((event: CrossTabEvent) => {
     busRef.current?.post(event);
   }, []);
+
+  const triggerRealtimeRecover = useCallback(
+    (reason: string) => {
+      chatDebugLog("realtime:recover", { reason });
+      setReconnectSeq((n) => n + 1);
+      scheduleRefresh(40, { silent: true });
+      scheduleReconcile(reason, 120);
+    },
+    [scheduleReconcile, scheduleRefresh],
+  );
 
   const upsertPresence = useCallback(async () => {
     const normalizedUserId = String(userId ?? "").trim();
@@ -771,6 +956,10 @@ export function ChatUnreadProvider({
     if (loading) return;
 
     if (!userId) {
+      if (typeof window !== "undefined" && statusRef.current.reconcileTimer) {
+        window.clearTimeout(statusRef.current.reconcileTimer);
+        statusRef.current.reconcileTimer = null;
+      }
       setRows([]);
       setError(null);
       setLoadingState(false);
@@ -782,7 +971,8 @@ export function ChatUnreadProvider({
     }
 
     void refreshChats();
-  }, [loading, refreshChats, userId]);
+    scheduleReconcile("initial-launch", 220);
+  }, [loading, refreshChats, scheduleReconcile, userId]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
@@ -794,6 +984,7 @@ export function ChatUnreadProvider({
       ) {
         setReconnectSeq((n) => n + 1);
         scheduleRefresh(40, { silent: true });
+        scheduleReconcile(`auth:${event.toLowerCase()}`, 140);
       }
       if (event === "SIGNED_OUT") {
         setReconnectSeq((n) => n + 1);
@@ -801,7 +992,7 @@ export function ChatUnreadProvider({
       }
     });
     return () => data.subscription.unsubscribe();
-  }, [scheduleRefresh]);
+  }, [scheduleReconcile, scheduleRefresh]);
 
   useEffect(() => {
     if (!user || !userId) return;
@@ -848,6 +1039,11 @@ export function ChatUnreadProvider({
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
           if (isUuid(messageId) && rememberRealtimeEvent(`insert:${messageId}`)) return;
+          chatDebugLog("realtime:messages:insert", {
+            chatId: messageChatId,
+            messageId: isUuid(messageId) ? messageId : null,
+            senderId: String(msg.sender_id ?? "") || null,
+          });
 
           const messageText = String(msg.text ?? "");
           const messageCreatedAt = String(
@@ -867,19 +1063,7 @@ export function ChatUnreadProvider({
             Boolean(userId) && String(msg.sender_id ?? "") === String(userId);
 
           const currentChatId = statusRef.current.activeChatId;
-          const routeChatId =
-            typeof window !== "undefined"
-              ? String(window.location.pathname || "").match(
-                  /^\/chat\/([0-9a-f-]{36})$/i,
-                )?.[1] ?? null
-              : null;
-          const isOpenChat =
-            Boolean(currentChatId) &&
-            messageChatId === currentChatId &&
-            Boolean(routeChatId) &&
-            routeChatId === messageChatId &&
-            (typeof document === "undefined" ||
-              (document.visibilityState === "visible" && document.hasFocus()));
+          const isOpenChat = isChatForegroundForId(messageChatId, currentChatId);
 
           setRows((prev) => {
             const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
@@ -900,8 +1084,11 @@ export function ChatUnreadProvider({
                       last_message_sender_id: messageSenderId,
                       last_message_image_url: messageImageUrl,
                       last_message_voice_url: messageVoiceUrl,
-                      // Keep server as source of truth for unread counters.
-                      unread_count: Math.max(0, Number(chat.unread_count || 0)),
+                      // Instant badge UX: bump locally, then reconcile with server refresh.
+                      unread_count:
+                        !fromMe && !isOpenChat
+                          ? Math.max(0, Number(chat.unread_count || 0)) + 1
+                          : Math.max(0, Number(chat.unread_count || 0)),
                     }
                   : chat,
               )
@@ -915,6 +1102,11 @@ export function ChatUnreadProvider({
           // Always reconcile with server unread counters after insert.
           if (!fromMe) {
             scheduleRefresh(isOpenChat ? 90 : 220, { silent: true });
+            broadcast({ type: "chat-refresh" });
+            chatDebugLog("realtime:messages:insert:reconcile", {
+              chatId: messageChatId,
+              isOpenChat,
+            });
           }
         },
       ).on(
@@ -985,10 +1177,15 @@ export function ChatUnreadProvider({
       statusRef.current.listChannel = channel;
 
       channel.subscribe((status) => {
+        chatDebugLog("realtime:channel:status", {
+          status,
+          attempt: statusRef.current.reconnectAttempt,
+        });
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
           setRealtimeReadyState(true);
           scheduleRefresh(50, { silent: true });
+          scheduleReconcile("realtime-subscribed", 160);
           return;
         }
 
@@ -1028,7 +1225,49 @@ export function ChatUnreadProvider({
       }
       setRealtimeReadyState(false);
     };
-  }, [reconnectSeq, rememberRealtimeEvent, scheduleRefresh, user, userId]);
+  }, [
+    reconnectSeq,
+    rememberRealtimeEvent,
+    scheduleReconcile,
+    scheduleRefresh,
+    user,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    let removeListener: (() => void) | null = null;
+    void (async () => {
+      try {
+        const [{ Capacitor }, { App }] = await Promise.all([
+          import("@capacitor/core"),
+          import("@capacitor/app"),
+        ]);
+        if (cancelled || !Capacitor.isNativePlatform()) return;
+        const handle = await App.addListener("appStateChange", ({ isActive }) => {
+          chatDebugLog("capacitor:appStateChange", { isActive });
+          if (!isActive) return;
+          void upsertPresence();
+          triggerRealtimeRecover("capacitor-resume");
+          chatDebugLog("capacitor:resume");
+        });
+        if (cancelled) {
+          await handle.remove();
+          return;
+        }
+        removeListener = () => {
+          void handle.remove();
+        };
+      } catch {
+        // noop: web build without native runtime
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (removeListener) removeListener();
+    };
+  }, [triggerRealtimeRecover, upsertPresence]);
 
   useEffect(() => {
     if (
@@ -1047,18 +1286,18 @@ export function ChatUnreadProvider({
     const onVisibility = () => {
       ping();
       if (document.visibilityState === "visible") {
-        scheduleRefresh(80, { silent: true });
+        triggerRealtimeRecover("visibility-visible");
       }
     };
 
     const onFocus = () => {
       ping();
-      scheduleRefresh(80, { silent: true });
+      triggerRealtimeRecover("window-focus");
     };
 
     const onOnline = () => {
       ping();
-      scheduleRefresh(80, { silent: true });
+      triggerRealtimeRecover("network-online");
     };
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -1078,7 +1317,7 @@ export function ChatUnreadProvider({
         presenceIntervalRef.current = null;
       }
     };
-  }, [scheduleRefresh, upsertPresence, userId]);
+  }, [triggerRealtimeRecover, upsertPresence, userId]);
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
@@ -1092,11 +1331,26 @@ export function ChatUnreadProvider({
   }, [refreshChats, userId]);
 
   useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      scheduleReconcile("periodic-drift-check", 0);
+    }, UNREAD_RECONCILE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [scheduleReconcile, userId]);
+
+  useEffect(() => {
     return () => {
       if (typeof window !== "undefined") {
         if (statusRef.current.refreshTimer) {
           window.clearTimeout(statusRef.current.refreshTimer);
           statusRef.current.refreshTimer = null;
+        }
+        if (statusRef.current.reconcileTimer) {
+          window.clearTimeout(statusRef.current.reconcileTimer);
+          statusRef.current.reconcileTimer = null;
         }
         if (statusRef.current.reconnectTimer) {
           window.clearTimeout(statusRef.current.reconnectTimer);
@@ -1111,6 +1365,12 @@ export function ChatUnreadProvider({
   }, []);
 
   const totalUnread = useMemo(() => computeTotalUnread(rows), [rows]);
+  useEffect(() => {
+    chatDebugLog("totalUnread:changed", {
+      totalUnread,
+      rows: rows.length,
+    });
+  }, [rows.length, totalUnread]);
   const readyState = useMemo(() => {
     if (!userId) return true;
     if (!hydratedState) return false;

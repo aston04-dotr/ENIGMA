@@ -1,0 +1,11 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="enigmaGradient" x1="128" y1="128" x2="896" y2="896" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5FFF"/>
+      <stop offset="0.5" stop-color="#7B4FE8"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#0B0F14"/>
+  <path d="M312 290H716V370H420V476H674V554H420V734H716V814H312V290Z" fill="url(#enigmaGradient)"/>
+</svg>
