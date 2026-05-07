@@ -194,12 +194,32 @@ async function sendEmailFallback(
   console.log("SENDING EMAIL TO:", to);
   console.log("USING FROM EMAIL:", fromEmail);
 
-  const { error } = await resend.emails.send({
-    from: `Enigma <${fromEmail}>`,
-    to,
-    subject: "Новое сообщение в Enigma",
-    html: generateEmailTemplate(data),
-  });
+  const { error } = await withRetry(
+    () =>
+      resend.emails.send({
+        from: `Enigma <${fromEmail}>`,
+        to,
+        subject: "У вас новое сообщение в Enigma",
+        html: generateEmailTemplate(data),
+      }),
+    {
+      retries: 2,
+      delayMs: 800,
+      shouldRetry: (error: unknown) => {
+        const msg = String((error as { message?: string } | null)?.message ?? "").toLowerCase();
+        return (
+          msg.includes("timeout") ||
+          msg.includes("network") ||
+          msg.includes("rate") ||
+          msg.includes("429") ||
+          msg.includes("500") ||
+          msg.includes("502") ||
+          msg.includes("503") ||
+          msg.includes("504")
+        );
+      },
+    },
+  );
 
   if (error) {
     console.log("EMAIL ERROR:", { email: to, error });

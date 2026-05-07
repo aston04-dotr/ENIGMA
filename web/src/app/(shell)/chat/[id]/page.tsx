@@ -458,7 +458,7 @@ export default function ChatRoomPage() {
   const pathname = usePathname();
   const router = useRouter();
   const { session, loading, authResolved } = useAuth();
-  const { markChatRead, setActiveChatId, getChatRow, refreshChats, setChats, ready: chatReady } =
+  const { markChatRead, setActiveChatId, getChatRow, refreshChats, ready: chatReady } =
     useChatUnread();
 
   const me = session?.user?.id ?? null;
@@ -1208,19 +1208,11 @@ export default function ChatRoomPage() {
       try {
         await markChatRead(chatId, targetMessageId);
         lastReadMarkedMessageIdRef.current = targetMessageId;
-        setChats((prev) =>
-          prev.map((c) => {
-            const withId = c as typeof c & { id?: string };
-            return withId.id === chatId || c.chat_id === chatId
-              ? { ...c, unread_count: 0 }
-              : c;
-          }),
-        );
       } catch (error) {
         console.error("chat room mark read", error);
       }
     },
-    [chatId, isChatForeground, latestMessageId, markChatRead, me, setChats],
+    [chatId, isChatForeground, latestMessageId, markChatRead, me],
   );
 
   const backfillAfterReconnect = useCallback(async () => {

@@ -229,46 +229,10 @@ function messageTimestampMs(row: ChatListRow): number {
 }
 
 function mergeServerRowsWithLocal(
-  prev: ChatListRow[],
+  _prev: ChatListRow[],
   next: ChatListRow[],
 ): ChatListRow[] {
-  const prevByChat = new Map(prev.map((row) => [row.chat_id, row]));
-  const merged = next.map((serverRow) => {
-    const localRow = prevByChat.get(serverRow.chat_id);
-    if (!localRow) return serverRow;
-
-    const localTs = messageTimestampMs(localRow);
-    const serverTs = messageTimestampMs(serverRow);
-    const preferLocalPayload = localTs > serverTs;
-
-    return {
-      ...serverRow,
-      last_message_text: preferLocalPayload
-        ? localRow.last_message_text
-        : serverRow.last_message_text,
-      last_message_at: preferLocalPayload
-        ? localRow.last_message_at
-        : serverRow.last_message_at,
-      last_message_created_at: preferLocalPayload
-        ? localRow.last_message_created_at
-        : serverRow.last_message_created_at,
-      last_message_sender_id: preferLocalPayload
-        ? localRow.last_message_sender_id
-        : serverRow.last_message_sender_id,
-      last_message_image_url: preferLocalPayload
-        ? localRow.last_message_image_url
-        : serverRow.last_message_image_url,
-      last_message_voice_url: preferLocalPayload
-        ? localRow.last_message_voice_url
-        : serverRow.last_message_voice_url,
-      // Server is source of truth for unread. Do not keep optimistic local value here.
-      unread_count: Number.isFinite(Number(serverRow.unread_count))
-        ? Math.max(0, Number(serverRow.unread_count || 0))
-        : Math.max(0, Number(localRow.unread_count || 0)),
-    };
-  });
-
-  return sortByLastMessageDesc(merged);
+  return sortByLastMessageDesc(next);
 }
 
 type MessageSnapshotRow = {
@@ -582,31 +546,6 @@ export function ChatUnreadProvider({
               if (!listingImage) return row;
               return { ...row, listing_image: listingImage };
             });
-          }
-        }
-
-        const chatIds = finalRows
-          .map((row) => String(row.chat_id ?? "").trim())
-          .filter((id) => id.length > 0);
-        if (chatIds.length > 0) {
-          const messagesRes = await (rest.from("messages") as any)
-            .select(
-              "id,chat_id,sender_id,text,image_url,voice_url,created_at,deleted,read_at",
-            )
-            .in("chat_id", chatIds)
-            .order("created_at", { ascending: false })
-            .limit(2000);
-          if (messagesRes.error) {
-            console.error(
-              "SUPABASE ERROR: messages snapshot for chat list",
-              messagesRes.error,
-            );
-          } else if (Array.isArray(messagesRes.data)) {
-            finalRows = hydrateRowsFromMessagesSnapshot(
-              finalRows,
-              messagesRes.data as MessageSnapshotRow[],
-              userId,
-            );
           }
         }
 
@@ -1015,6 +954,28 @@ export function ChatUnreadProvider({
           schema: "public",
           table: "chat_members",
           filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          scheduleRefresh(70, { silent: true });
+        },
+      ).on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chats",
+          filter: `buyer_id=eq.${userId}`,
+        },
+        () => {
+          scheduleRefresh(70, { silent: true });
+        },
+      ).on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chats",
+          filter: `seller_id=eq.${userId}`,
         },
         () => {
           scheduleRefresh(70, { silent: true });
