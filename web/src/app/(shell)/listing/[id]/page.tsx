@@ -410,6 +410,11 @@ export default function ListingDetailPage() {
     typeof safeItem.city === "string" && safeItem.city.trim()
       ? safeItem.city
       : "-";
+  const district =
+    typeof safeItem.district === "string" && safeItem.district.trim()
+      ? safeItem.district.trim()
+      : "";
+  const location = district ? `${city}, ${district}` : city;
   const category =
     typeof safeItem.category === "string" ? safeItem.category : "";
   const viewCount = Number.isFinite(Number(safeItem.view_count))
@@ -576,7 +581,7 @@ export default function ListingDetailPage() {
           {listingFacts ? (
             <p className="mt-2 break-words text-[13px] leading-snug text-muted">{listingFacts}</p>
           ) : null}
-          <p className="mt-3 text-sm text-muted">{city} · {categoryLabel(category)}</p>
+          <p className="mt-3 text-sm text-muted">{location} · {categoryLabel(category)}</p>
           <div className="mt-2">
             <ListingMetricsRow
               views={viewCount}

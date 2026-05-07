@@ -118,6 +118,9 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     price: Number(data.price ?? 0),
     category: String(data.category ?? ""),
     city: normalizedCity,
+    city_id: data.city_id != null ? String(data.city_id).trim() : null,
+    district: data.district != null ? String(data.district).trim() : null,
+    district_id: data.district_id != null ? String(data.district_id).trim() : null,
     view_count: 0,
     created_at: String(data.created_at ?? ""),
     is_partner_ad: data.is_partner_ad === true,
@@ -224,6 +227,7 @@ type ListingFilters = {
   maxPrice?: number;
   search?: string;
   city?: string;
+  district?: string;
   dealType?: "sale" | "rent";
   listingKind?: "offer" | "seeking";
 };
@@ -314,6 +318,10 @@ function applySafeFilters(
     if (city) {
       q = q.eq("city", city);
     }
+    const district = String(filters.district ?? "").trim();
+    if (district) {
+      q = q.eq("district", district);
+    }
     const category = filters.category?.trim();
     if (filters.categoriesIn && filters.categoriesIn.length > 0) {
       q = q.in("category", filters.categoriesIn);
@@ -376,6 +384,7 @@ export async function fetchListings(filters: {
   maxPrice?: number;
   search?: string;
   city?: string;
+  district?: string;
   dealType?: "sale" | "rent";
   listingKind?: "offer" | "seeking";
   /** Курсор следующей страницы (composite). Строковый legacy-курсор игнорируется. */
@@ -412,6 +421,7 @@ export async function fetchListings(filters: {
 
   const filterPayload: ListingFilters = {
     city: filters.city,
+    district: filters.district,
     category: filters.category,
     categoriesIn:
       Array.isArray(filters.categoriesIn) && filters.categoriesIn.length > 0
@@ -426,6 +436,7 @@ export async function fetchListings(filters: {
 
   const hasFilters = Boolean(
     filters.city?.trim() ||
+      filters.district?.trim() ||
       filters.category?.trim() ||
       (filters.categoriesIn && filters.categoriesIn.length > 0) ||
       searchActive ||
@@ -522,7 +533,8 @@ export async function fetchListings(filters: {
               if (tokens.length === 0) return true;
               const title = String(row.title ?? "").toLowerCase();
               const description = String(row.description ?? "").toLowerCase();
-              const haystack = `${title} ${description}`;
+              const district = String(row.district ?? "").toLowerCase();
+              const haystack = `${title} ${description} ${district}`;
               const allTokensPresent = tokens.every((token) => haystack.includes(token));
               if (!allTokensPresent) return false;
               if (tokens.length >= 2) {
@@ -567,6 +579,7 @@ export async function fetchListingsCount(filters: {
   maxPrice?: number;
   search?: string;
   city?: string;
+  district?: string;
   dealType?: "sale" | "rent";
   listingKind?: "offer" | "seeking";
 }): Promise<number> {
@@ -576,6 +589,7 @@ export async function fetchListingsCount(filters: {
   const searchActive = searchTrim.length > 2;
   const filterPayload: ListingFilters = {
     city: filters.city,
+    district: filters.district,
     category: filters.category,
     categoriesIn:
       Array.isArray(filters.categoriesIn) && filters.categoriesIn.length > 0
@@ -722,6 +736,7 @@ export async function getCitiesFromDb(): Promise<string[]> {
 
 export type RegionRow = { id: string; name: string };
 export type CityRow = { id: string; region_id: string; name: string };
+export type CityDistrictRow = { id: string; region_id: string; city_id: string; name: string };
 
 export async function getRegionsFromDb(): Promise<RegionRow[]> {
   const { data, error } = await supabase
@@ -755,6 +770,25 @@ export async function getCitiesByRegionFromDb(regionId: string): Promise<CityRow
     .filter((row) => row.id.length > 0 && row.region_id.length > 0 && row.name.length > 0);
 }
 
+export async function getCityByNameFromDb(cityName: string): Promise<CityRow | null> {
+  const normalized = normalizeAllowedListingCity(cityName);
+  if (!normalized) return null;
+  const { data, error } = await supabase
+    .from("cities")
+    .select("id,region_id,name")
+    .eq("name", normalized)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const city: CityRow = {
+    id: String((data as { id?: unknown }).id ?? "").trim(),
+    region_id: String((data as { region_id?: unknown }).region_id ?? "").trim(),
+    name: String((data as { name?: unknown }).name ?? "").trim(),
+  };
+  if (!city.id || !city.region_id || !city.name) return null;
+  return city;
+}
+
 export async function getRegionIdByCityName(cityName: string): Promise<string | null> {
   const city = normalizeAllowedListingCity(cityName);
   if (!city) return null;
@@ -767,6 +801,27 @@ export async function getRegionIdByCityName(cityName: string): Promise<string | 
   if (error || !data) return null;
   const regionId = String((data as { region_id?: unknown }).region_id ?? "").trim();
   return regionId || null;
+}
+
+export async function getDistrictsByCityFromDb(cityId: string): Promise<CityDistrictRow[]> {
+  const cid = String(cityId ?? "").trim();
+  if (!cid) return [];
+  const { data, error } = await supabase
+    .from("city_districts")
+    .select("id,region_id,city_id,name")
+    .eq("city_id", cid)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (error || !Array.isArray(data)) return [];
+  return data
+    .map((row) => ({
+      id: String((row as { id?: unknown }).id ?? "").trim(),
+      region_id: String((row as { region_id?: unknown }).region_id ?? "").trim(),
+      city_id: String((row as { city_id?: unknown }).city_id ?? "").trim(),
+      name: String((row as { name?: unknown }).name ?? "").trim(),
+    }))
+    .filter((row) => row.id && row.region_id && row.city_id && row.name);
 }
 let favoriteSingleRpcUnavailableUntil = 0;
 
@@ -1109,6 +1164,9 @@ export function parseListingRow(data: Record<string, unknown>): ListingRow {
     price: Number.isFinite(price) ? price : 0,
     category: normalizeListingText(data.category, ""),
     city: normalizedCity,
+    city_id: data.city_id != null ? String(data.city_id).trim() : null,
+    district: data.district != null ? String(data.district).trim() : null,
+    district_id: data.district_id != null ? String(data.district_id).trim() : null,
     view_count: Number.isFinite(viewCount) ? viewCount : 0,
     created_at: String(data.created_at ?? ""),
     updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
@@ -1270,6 +1328,9 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
     const payloadContactPhone = (payload as ListingInsertPayload & { contact_phone?: string | null })
       .contact_phone;
     const payloadExtended = payload as ListingInsertPayload & {
+      city_id?: string | null;
+      district?: string | null;
+      district_id?: string | null;
       commercial_type?: string | null;
       has_gas?: boolean;
       has_water?: boolean;
@@ -1306,6 +1367,15 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
       description: payload.description?.trim() || "",
       price: priceNum,
       city: normalizedCity,
+      city_id: payloadExtended.city_id ? String(payloadExtended.city_id).trim() : null,
+      district: (() => {
+        const value = String(payloadExtended.district ?? "").trim();
+        return value || null;
+      })(),
+      district_id: (() => {
+        const value = String(payloadExtended.district_id ?? "").trim();
+        return value || null;
+      })(),
       category: payload.category || "other",
       params: payloadParams,
       contact_phone: payloadContactPhone || null,

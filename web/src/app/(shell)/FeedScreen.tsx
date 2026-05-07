@@ -17,9 +17,11 @@ import {
   fetchListings,
   fetchListingsCount,
   getCitiesByRegionFromDb,
+  getDistrictsByCityFromDb,
   getRegionIdByCityName,
   getRegionsFromDb,
   type CityRow,
+  type CityDistrictRow,
   type RegionRow,
   type FeedListingsCursor,
 } from "@/lib/listings";
@@ -84,6 +86,7 @@ type FeedCache = { items: ListingRow[]; nextCursor: FeedListingsCursor | null };
 type StoredFeedState = {
   regionId?: string;
   city?: string;
+  district?: string;
   category?: string;
   scrollY?: number;
   timestamp?: number;
@@ -271,6 +274,7 @@ export function FeedPage({
   const feedStateSeed = useMemo(() => readFeedState(), []);
   const seededRegionId = String(feedStateSeed?.regionId ?? "").trim();
   const seededCity = String(feedStateSeed?.city ?? "").trim();
+  const seededDistrict = String(feedStateSeed?.district ?? "").trim();
   const seededCategory = String(feedStateSeed?.category ?? "").trim();
   const [items, setItems] = useState<ListingRow[]>(() => feedSeed.items);
   const [nextCursor, setNextCursor] = useState<FeedListingsCursor | null>(
@@ -280,6 +284,8 @@ export function FeedPage({
   const [feedNotice, setFeedNotice] = useState<string | null>(null);
   const [serverFoundCount, setServerFoundCount] = useState<number | null>(null);
   const [city, setCity] = useState<string>(normalizeAllowedListingCity(seededCity) ?? "");
+  const [selectedCityId, setSelectedCityId] = useState<string>("");
+  const [district, setDistrict] = useState<string>(seededDistrict);
   const [regions, setRegions] = useState<RegionRow[]>([]);
   const [selectedRegionId, setSelectedRegionId] = useState<string>(seededRegionId);
   const [citySheetOpen, setCitySheetOpen] = useState(false);
@@ -328,6 +334,7 @@ export function FeedPage({
   );
   const [isFeedRefreshing, setIsFeedRefreshing] = useState(false);
   const [cities, setCities] = useState<CityRow[]>([]);
+  const [districts, setDistricts] = useState<CityDistrictRow[]>([]);
   const [feedNonce, setFeedNonce] = useState(0);
   const previousRegionIdRef = useRef<string>("");
 
@@ -356,7 +363,10 @@ export function FeedPage({
     previousRegionIdRef.current = rid;
     if (!rid) {
       setCities([]);
+      setSelectedCityId("");
       setCity("");
+      setDistricts([]);
+      setDistrict("");
       return;
     }
     let cancelled = false;
@@ -366,12 +376,17 @@ export function FeedPage({
       setCities(dbCities);
       const changedByUser = prevRegionId.length > 0 && prevRegionId !== rid;
       if (changedByUser) {
+        setSelectedCityId("");
         setCity("");
+        setDistricts([]);
+        setDistrict("");
         return;
       }
       setCity((prevCity) => {
         const normalized = normalizeAllowedListingCity(prevCity);
         if (!normalized) return "";
+        const cityMatch = dbCities.find((c) => c.name === normalized);
+        setSelectedCityId(cityMatch?.id ?? "");
         return dbCities.some((c) => c.name === normalized) ? normalized : "";
       });
     })();
@@ -390,11 +405,13 @@ export function FeedPage({
     if (!state) return;
     const savedRegionId = String(state.regionId ?? "").trim();
     const savedCity = String(state.city ?? "").trim();
+    const savedDistrict = String(state.district ?? "").trim();
     const savedCategory = String(state.category ?? "").trim();
     const savedScrollY = Number(state.scrollY ?? 0);
     if (savedRegionId) setSelectedRegionId(savedRegionId);
     const normalizedSavedCity = normalizeAllowedListingCity(savedCity);
     if (normalizedSavedCity) setCity(normalizedSavedCity);
+    if (savedDistrict) setDistrict(savedDistrict);
     if (savedCategory === ALL_CATEGORY || CATEGORIES.some((x) => x.id === savedCategory)) {
       setSelectedCategory(savedCategory || ALL_CATEGORY);
     }
@@ -416,10 +433,38 @@ export function FeedPage({
   }, []);
 
   useEffect(() => {
+    const cityId = String(selectedCityId ?? "").trim();
+    if (!cityId) {
+      setDistricts([]);
+      setDistrict("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const dbDistricts = await getDistrictsByCityFromDb(cityId);
+        if (cancelled) return;
+        setDistricts(dbDistricts);
+        setDistrict((prev) =>
+          dbDistricts.some((row) => row.name === prev) ? prev : "",
+        );
+      } catch {
+        if (cancelled) return;
+        setDistricts([]);
+        setDistrict("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCityId]);
+
+  useEffect(() => {
     const id = window.setTimeout(() => {
       persistFeedState({
         regionId: selectedRegionId || undefined,
         city,
+        district,
         category: selectedCategory,
         scrollY: typeof window !== "undefined" ? window.scrollY : 0,
         timestamp: Date.now(),
@@ -437,6 +482,7 @@ export function FeedPage({
   }, [
     selectedRegionId,
     city,
+    district,
     selectedCategory,
     realAreaFrom,
     realAreaTo,
@@ -492,6 +538,7 @@ export function FeedPage({
         fetchedCount,
         filters: {
           city,
+          district,
           category: selectedCategory,
           listingType: feedDealSegment,
           searchText: searchQuery.trim(),
@@ -499,10 +546,13 @@ export function FeedPage({
         },
       });
     },
-    [city, selectedCategory, feedDealSegment, searchQuery, feedVariant],
+    [city, district, selectedCategory, feedDealSegment, searchQuery, feedVariant],
   );
   const feedFilters = useMemo(() => {
     const f: Parameters<typeof fetchListings>[0] = { city: city.trim() };
+    if (district.trim()) {
+      f.district = district.trim();
+    }
     const q = searchQuery.trim();
     if (q.length > 2) {
       f.search = q;
@@ -523,7 +573,7 @@ export function FeedPage({
       f.category = selectedCategory;
     }
     return f;
-  }, [city, selectedCategory, feedDealSegment, feedVariant, searchQuery]);
+  }, [city, district, selectedCategory, feedDealSegment, feedVariant, searchQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -553,6 +603,12 @@ export function FeedPage({
       if (hiddenIds.has(String(x.id ?? "").trim())) return false;
       if (!listingIsRussiaForFeed(x)) return false;
       if (city.trim() && x.city?.toLowerCase().trim() !== city.toLowerCase().trim()) return false;
+      if (
+        district.trim() &&
+        String(x.district ?? "").toLowerCase().trim() !== district.toLowerCase().trim()
+      ) {
+        return false;
+      }
       const rowDealRaw =
         String(x.deal_type ?? "").trim() ||
         String(getParamsObject(x).deal_type ?? "").trim();
@@ -582,7 +638,8 @@ export function FeedPage({
         : base.filter((row) => {
             const title = String(row.title ?? "").toLowerCase();
             const description = String(row.description ?? "").toLowerCase();
-            const haystack = `${title} ${description}`;
+            const districtText = String(row.district ?? "").toLowerCase();
+            const haystack = `${title} ${description} ${districtText}`;
             return searchTokens.every((token) => haystack.includes(token));
           });
     const minPrice = parseIntOrNull(priceFrom);
@@ -683,6 +740,7 @@ export function FeedPage({
     feedHiddenTick,
     items,
     city,
+    district,
     selectedCategory,
     priceFrom,
     priceTo,
@@ -821,7 +879,7 @@ export function FeedPage({
 
   const runPrefetch = useCallback(async () => {
     if (!nextCursor || prefetchingRef.current) return;
-    const key = `${nextCursor.created_at}\0${nextCursor.id}\0${city}\0${selectedCategory}\0${feedDealSegment}\0${feedVariant}\0${cacheStorageKey}`;
+    const key = `${nextCursor.created_at}\0${nextCursor.id}\0${city}\0${district}\0${selectedCategory}\0${feedDealSegment}\0${feedVariant}\0${cacheStorageKey}`;
     if (prefetchedRef.current && prefetchKeyRef.current === key) return;
     prefetchingRef.current = true;
     try {
@@ -840,7 +898,7 @@ export function FeedPage({
     } finally {
       prefetchingRef.current = false;
     }
-  }, [nextCursor, feedFilters, city, selectedCategory, session?.user?.id, feedDealSegment, feedVariant, cacheStorageKey]);
+  }, [nextCursor, feedFilters, city, district, selectedCategory, session?.user?.id, feedDealSegment, feedVariant, cacheStorageKey]);
 
   useEffect(() => {
     persistFeedCategory(selectedCategory);
@@ -939,6 +997,7 @@ export function FeedPage({
   }
   const hasActiveFilters =
     Boolean(city.trim()) ||
+    Boolean(district.trim()) ||
     selectedCategory !== ALL_CATEGORY ||
     sortMode !== "newest" ||
     Boolean(
@@ -976,6 +1035,9 @@ export function FeedPage({
       category: selectedCategory,
     });
     setCity("");
+    setSelectedCityId("");
+    setDistrict("");
+    setDistricts([]);
     setSelectedCategory(ALL_CATEGORY);
     setFeedDealSegment("sale");
     setSortMode("newest");
@@ -1013,6 +1075,7 @@ export function FeedPage({
     persistFeedState({
       regionId: selectedRegionId || undefined,
       city,
+      district,
       category: selectedCategory,
       scrollY: typeof window !== "undefined" ? window.scrollY : 0,
       timestamp: Date.now(),
@@ -1028,6 +1091,7 @@ export function FeedPage({
   }, [
     selectedRegionId,
     city,
+    district,
     selectedCategory,
     realAreaFrom,
     realAreaTo,
@@ -1142,7 +1206,9 @@ export function FeedPage({
                 }}
                 className={filterRowClass}
               >
-                <span className={filterRowLabelClass}>Город: {city || "Все города"}</span>
+                <span className={filterRowLabelClass}>
+                  {district ? `Район: ${district}` : `Город: ${city || "Все города"}`}
+                </span>
                 <span className={filterRowChevronClass}>{">"}</span>
               </button>
               <button
@@ -1420,6 +1486,8 @@ export function FeedPage({
                             regionId: selectedRegionId,
                           });
                           setCity(cityOption.name);
+                          setSelectedCityId(cityOption.id);
+                          setDistrict("");
                           setCitySheetOpen(false);
                         }}
                         className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
@@ -1491,6 +1559,28 @@ export function FeedPage({
                   className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
                 />
               </div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                Район
+              </label>
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                disabled={!selectedCityId || districts.length === 0}
+                className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">
+                  {!selectedCityId
+                    ? "Сначала выберите город"
+                    : districts.length === 0
+                      ? "Для города пока нет районов"
+                      : "Любой район"}
+                </option>
+                {districts.map((districtOption) => (
+                  <option key={districtOption.id} value={districtOption.name}>
+                    {districtOption.name}
+                  </option>
+                ))}
+              </select>
               {selectedCategory === "auto" ? (
                 <>
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">

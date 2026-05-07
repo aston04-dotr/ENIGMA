@@ -4,10 +4,12 @@ import { useAuth } from "@/context/auth-context";
 import { CATEGORIES } from "@/lib/categories";
 import {
   getCitiesByRegionFromDb,
+  getDistrictsByCityFromDb,
   getRegionIdByCityName,
   getRegionsFromDb,
   insertListingRow,
   type CityRow,
+  type CityDistrictRow,
   type RegionRow,
 } from "@/lib/listings";
 import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
@@ -369,9 +371,13 @@ export function CreateListingForm() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [city, setCity] = useState<string>("");
+  const [selectedCityId, setSelectedCityId] = useState<string>("");
+  const [district, setDistrict] = useState<string>("");
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string>("");
   const [regions, setRegions] = useState<RegionRow[]>([]);
   const [selectedRegionId, setSelectedRegionId] = useState<string>("");
   const [cities, setCities] = useState<CityRow[]>([]);
+  const [districts, setDistricts] = useState<CityDistrictRow[]>([]);
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
   const [locationSheetStep, setLocationSheetStep] = useState<1 | 2>(1);
   const [category, setCategory] = useState("other");
@@ -461,15 +467,19 @@ export function CreateListingForm() {
       const normalizedFeedCity = normalizeAllowedListingCity(feedCity);
       if (normalizedFeedCity) {
         setCity(normalizedFeedCity);
+        setDistrict("");
+        setSelectedDistrictId("");
         void (async () => {
           const regionId = await getRegionIdByCityName(normalizedFeedCity);
           if (regionId) setSelectedRegionId(regionId);
+          const cityRow = cities.find((c) => c.name === normalizedFeedCity);
+          if (cityRow?.id) setSelectedCityId(cityRow.id);
         })();
       }
     } catch {
       /* ignore */
     }
-  }, [listingIntent]);
+  }, [listingIntent, cities]);
 
   const isDirty = Boolean(
     title.trim() ||
@@ -526,8 +536,17 @@ export function CreateListingForm() {
     [regions],
   );
   const cityOptions = useMemo(
-    () => cities.map((cityRow) => ({ value: cityRow.name, label: cityRow.name })),
+    () => cities.map((cityRow) => ({ id: cityRow.id, value: cityRow.name, label: cityRow.name })),
     [cities],
+  );
+  const districtOptions = useMemo(
+    () =>
+      districts.map((districtRow) => ({
+        id: districtRow.id,
+        value: districtRow.name,
+        label: districtRow.name,
+      })),
+    [districts],
   );
   const selectedRegionName = useMemo(
     () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
@@ -547,6 +566,9 @@ export function CreateListingForm() {
     setDescription("");
     setPrice("");
     setCity("");
+    setSelectedCityId("");
+    setDistrict("");
+    setSelectedDistrictId("");
     setCategory("other");
     setFiles([]);
     setCategoryParams(EMPTY_CATEGORY_PARAMS);
@@ -573,6 +595,10 @@ export function CreateListingForm() {
     if (!regionId) {
       setCities([]);
       setCity("");
+      setSelectedCityId("");
+      setDistricts([]);
+      setDistrict("");
+      setSelectedDistrictId("");
       return;
     }
     let cancelled = false;
@@ -582,17 +608,62 @@ export function CreateListingForm() {
         if (cancelled) return;
         setCities(dbCities);
         setCity("");
+        setSelectedCityId("");
+        setDistricts([]);
+        setDistrict("");
+        setSelectedDistrictId("");
       } catch (e) {
         if (cancelled) return;
         console.error("CREATE PAGE CITIES LOAD ERROR", e);
         setCities([]);
         setCity("");
+        setSelectedCityId("");
+        setDistricts([]);
+        setDistrict("");
+        setSelectedDistrictId("");
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [selectedRegionId]);
+
+  useEffect(() => {
+    const cityId = String(selectedCityId ?? "").trim();
+    if (!cityId) {
+      setDistricts([]);
+      setDistrict("");
+      setSelectedDistrictId("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const dbDistricts = await getDistrictsByCityFromDb(cityId);
+        if (cancelled) return;
+        setDistricts(dbDistricts);
+        setDistrict("");
+        setSelectedDistrictId("");
+      } catch (districtLoadError) {
+        if (cancelled) return;
+        console.error("CREATE PAGE DISTRICTS LOAD ERROR", districtLoadError);
+        setDistricts([]);
+        setDistrict("");
+        setSelectedDistrictId("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCityId]);
+
+  useEffect(() => {
+    if (!city.trim() || selectedCityId) return;
+    const match = cities.find((cityRow) => cityRow.name === city);
+    if (match?.id) {
+      setSelectedCityId(match.id);
+    }
+  }, [cities, city, selectedCityId]);
 
   const clearDraft = useCallback(async () => {
     try {
@@ -640,6 +711,9 @@ export function CreateListingForm() {
   }, [categoryParams.fashion]);
 
   const validateCategoryRequiredFields = useCallback((): string | null => {
+    if (districtOptions.length > 0 && !district.trim()) {
+      return "Выберите район/локальную зону";
+    }
     if (category === "auto") {
       const p = categoryParams.auto;
       if (!p.brand.trim() || !p.model.trim() || !p.year.trim() || !p.mileage.trim()) {
@@ -789,7 +863,7 @@ export function CreateListingForm() {
       }
     }
     return null;
-  }, [category, categoryParams, listingIntent, resolveFashionSize, resolveKidsSize]);
+  }, [category, categoryParams, district, districtOptions.length, listingIntent, resolveFashionSize, resolveKidsSize]);
 
   const buildSpecsSummary = useCallback((): string => {
     if (category === "auto") {
@@ -805,6 +879,9 @@ export function CreateListingForm() {
         ["Сделка", listingIntent === "rent" ? "Аренда" : "Продажа"],
         ["Тип", p.propertyType],
       );
+      if (district.trim()) {
+        specs.push(["Район", district.trim()]);
+      }
       if (p.propertyType === COMMERCIAL_PROPERTY_LABEL && p.commercialPremisesType.trim()) {
         specs.push(["Тип помещения", p.commercialPremisesType]);
       }
@@ -887,7 +964,7 @@ export function CreateListingForm() {
     if (filled.length === 0) return "";
     const lines = filled.map(([label, value]) => `- ${label}: ${value}`).join("\n");
     return `Характеристики:\n${lines}`;
-  }, [category, categoryParams, listingIntent, resolveFashionSize, resolveKidsSize]);
+  }, [category, categoryParams, district, listingIntent, resolveFashionSize, resolveKidsSize]);
 
   const buildParamsFromForm = useCallback((): Record<string, unknown> => {
     const toIntOrNull = (raw: string): number | null => {
@@ -1177,6 +1254,9 @@ export function CreateListingForm() {
         price: priceNum,
         category,
         city: selectedCity.trim(),
+        city_id: selectedCityId || null,
+        district: district.trim() || null,
+        district_id: selectedDistrictId || null,
         params,
         user_id: uid,
         owner_id: uid,
@@ -1229,6 +1309,7 @@ export function CreateListingForm() {
       trackEvent("listing_publish", {
         category,
         city: selectedCity,
+        district: district.trim(),
         listing_intent: listingIntent,
       });
       await clearDraft();
@@ -1251,6 +1332,9 @@ export function CreateListingForm() {
     description,
     price,
     selectedCity,
+    selectedCityId,
+    district,
+    selectedDistrictId,
     category,
     listingIntent,
     categoryParams,
@@ -1460,11 +1544,42 @@ export function CreateListingForm() {
         >
           <span className={selectedCity ? "text-fg" : "text-muted"}>
             {selectedCity
-              ? `${selectedRegionName || "Регион"} · ${selectedCity}`
+              ? `${selectedRegionName || "Регион"} · ${selectedCity}${district ? ` · ${district}` : ""}`
               : "Выберите регион и город"}
           </span>
           <span className="text-muted">→</span>
         </button>
+      </div>
+      <div>
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Район / локальная зона
+        </label>
+        <select
+          value={district}
+          onChange={(e) => {
+            const nextDistrict = e.target.value;
+            setDistrict(nextDistrict);
+            const match = districtOptions.find((d) => d.value === nextDistrict);
+            setSelectedDistrictId(match?.id ?? "");
+          }}
+          disabled={!selectedCityId || districtOptions.length === 0}
+          className={`mt-2 ${inputClass} ${
+            !selectedCityId || districtOptions.length === 0 ? "cursor-not-allowed opacity-65" : ""
+          }`}
+        >
+          <option value="">
+            {!selectedCityId
+              ? "Сначала выберите город"
+              : districtOptions.length === 0
+                ? "Для этого города пока нет районов"
+                : "Выберите район *"}
+          </option>
+          {districtOptions.map((districtOption) => (
+            <option key={districtOption.id} value={districtOption.value}>
+              {districtOption.label}
+            </option>
+          ))}
+        </select>
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Категория</label>
@@ -2265,6 +2380,9 @@ export function CreateListingForm() {
                         type="button"
                         onClick={() => {
                           setCity(cityOption.value);
+                          setSelectedCityId(cityOption.id);
+                          setDistrict("");
+                          setSelectedDistrictId("");
                           setLocationSheetOpen(false);
                         }}
                         className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${

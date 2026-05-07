@@ -74,6 +74,11 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
     typeof safeItem?.city === "string" && safeItem.city.trim()
       ? safeItem.city
       : "Город не указан";
+  const itemDistrict =
+    typeof safeItem?.district === "string" && safeItem.district.trim()
+      ? safeItem.district.trim()
+      : "";
+  const itemLocation = itemDistrict ? `${itemCity}, ${itemDistrict}` : itemCity;
   const boosted = safeItem ? isBoostActive(safeItem) : false;
   const lid = String(safeItem?.id ?? "").trim();
   const viewerId = session?.user?.id ?? null;
@@ -373,7 +378,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           <div className="flex items-center gap-2.5 text-[13px] text-muted/70">
             <span className="inline-flex items-center gap-1 text-muted/70">
               <LocationTinyIcon />
-              <span>{itemCity}</span>
+              <span>{itemLocation}</span>
             </span>
             <span className="text-muted/60">·</span>
             <span className="inline-flex items-center gap-1 tabular-nums text-muted/70">

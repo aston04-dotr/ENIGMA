@@ -3,7 +3,13 @@
 import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { useAuth } from "@/context/auth-context";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
-import { fetchListingById, getCitiesFromDb } from "@/lib/listings";
+import {
+  fetchListingById,
+  getCitiesFromDb,
+  getCityByNameFromDb,
+  getDistrictsByCityFromDb,
+  type CityDistrictRow,
+} from "@/lib/listings";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
 import {
   removeListingImagesFromStorage,
@@ -194,6 +200,10 @@ export default function EditListingPage() {
     structuredClone(EMPTY_CATEGORY_EDIT_PARAMS),
   );
   const [editCity, setEditCity] = useState("");
+  const [selectedCityId, setSelectedCityId] = useState("");
+  const [editDistrict, setEditDistrict] = useState("");
+  const [selectedDistrictId, setSelectedDistrictId] = useState("");
+  const [districtOptions, setDistrictOptions] = useState<CityDistrictRow[]>([]);
   const [cityOptions, setCityOptions] = useState<string[]>([]);
   const [listingIntent, setListingIntent] = useState<"sale" | "rent">("sale");
   const [autoParams, setAutoParams] = useState<AutoParamsShape | null>(null);
@@ -202,6 +212,7 @@ export default function EditListingPage() {
   const originalMotoJsonRef = useRef("");
   const originalExtrasRef = useRef({
     city: "",
+    district: "",
     intent: "sale" as "sale" | "rent",
     miscJson: "",
   });
@@ -260,10 +271,14 @@ export default function EditListingPage() {
         setCategoryParams(cp);
         const nc = normalizeAllowedListingCity(res.row.city) ?? "";
         setEditCity(nc);
+        const loadedDistrict = String(res.row.district ?? "").trim();
+        setEditDistrict(loadedDistrict);
+        setSelectedDistrictId(String(res.row.district_id ?? "").trim());
         const intent = listingIntentFromRow(res.row);
         setListingIntent(intent);
         originalExtrasRef.current = {
           city: nc,
+          district: loadedDistrict,
           intent,
           miscJson: miscSliceForDirty(cat, cp),
         };
@@ -307,6 +322,52 @@ export default function EditListingPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const city = normalizeAllowedListingCity(editCity);
+    if (!city) {
+      setSelectedCityId("");
+      setDistrictOptions([]);
+      setEditDistrict("");
+      setSelectedDistrictId("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const cityRow = await getCityByNameFromDb(city);
+      if (cancelled || !cityRow?.id) {
+        if (!cancelled) {
+          setSelectedCityId("");
+          setDistrictOptions([]);
+          setEditDistrict("");
+          setSelectedDistrictId("");
+        }
+        return;
+      }
+      setSelectedCityId(cityRow.id);
+      const districts = await getDistrictsByCityFromDb(cityRow.id);
+      if (cancelled) return;
+      setDistrictOptions(districts);
+      if (districts.length === 0) {
+        setEditDistrict("");
+        setSelectedDistrictId("");
+        return;
+      }
+      const matched =
+        districts.find((d) => d.id === selectedDistrictId) ??
+        districts.find((d) => d.name === editDistrict);
+      if (matched) {
+        setEditDistrict(matched.name);
+        setSelectedDistrictId(matched.id);
+      } else {
+        setEditDistrict("");
+        setSelectedDistrictId("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editCity, selectedDistrictId, editDistrict]);
 
   useEffect(() => {
     return () => {
@@ -465,6 +526,10 @@ export default function EditListingPage() {
       setToast({ message: "Выберите город", type: "error" });
       return;
     }
+    if (districtOptions.length > 0 && !editDistrict.trim()) {
+      setToast({ message: "Выберите район/локальную зону", type: "error" });
+      return;
+    }
 
     if (listingCategory === "auto") {
       if (!autoParams) {
@@ -533,12 +598,19 @@ export default function EditListingPage() {
 
     setSaving(true);
     try {
+      const resolvedCity =
+        selectedCityId && selectedCityId.trim()
+          ? { id: selectedCityId.trim() }
+          : await getCityByNameFromDb(normalizedCitySave);
       const listingPatch: Record<string, unknown> = {
         title: titleTrim,
         description: descriptionTrim,
         price: priceNum,
         updated_at: new Date().toISOString(),
         city: normalizedCitySave,
+        city_id: resolvedCity?.id ?? null,
+        district: editDistrict.trim() || null,
+        district_id: selectedDistrictId || null,
         deal_type: listingIntent,
       };
 
@@ -653,6 +725,7 @@ export default function EditListingPage() {
       }
       originalExtrasRef.current = {
         city: normalizedCitySave,
+        district: editDistrict.trim(),
         intent: listingIntent,
         miscJson: miscSliceForDirty(listingCategory, categoryParams),
       };
@@ -737,6 +810,7 @@ export default function EditListingPage() {
     if (!originalData) return false;
     if (
       editCity.trim() !== originalExtrasRef.current.city ||
+      editDistrict.trim() !== originalExtrasRef.current.district ||
       listingIntent !== originalExtrasRef.current.intent
     ) {
       return true;
@@ -745,7 +819,7 @@ export default function EditListingPage() {
     return (
       miscSliceForDirty(listingCategory, categoryParams) !== originalExtrasRef.current.miscJson
     );
-  }, [originalData, editCity, listingIntent, listingCategory, categoryParams]);
+  }, [originalData, editCity, editDistrict, listingIntent, listingCategory, categoryParams]);
 
   const hasChanges = Boolean(
     originalData &&
@@ -934,6 +1008,34 @@ export default function EditListingPage() {
             {cityOptions.map((c) => (
               <option key={c} value={c}>
                 {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-muted">Район / локальная зона</label>
+          <select
+            value={editDistrict}
+            onChange={(e) => {
+              const nextDistrict = e.target.value;
+              setEditDistrict(nextDistrict);
+              const match = districtOptions.find((d) => d.name === nextDistrict);
+              setSelectedDistrictId(match?.id ?? "");
+            }}
+            className={inputClass}
+            disabled={saving || !selectedCityId || districtOptions.length === 0}
+          >
+            <option value="">
+              {!selectedCityId
+                ? "Сначала выберите город"
+                : districtOptions.length === 0
+                  ? "Для этого города пока нет районов"
+                  : "Выберите район"}
+            </option>
+            {districtOptions.map((districtOption) => (
+              <option key={districtOption.id} value={districtOption.name}>
+                {districtOption.name}
               </option>
             ))}
           </select>

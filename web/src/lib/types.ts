@@ -26,6 +26,9 @@ export type ListingInsertPayload = {
   price: number;
   category: string;
   city: string;
+  city_id?: string | null;
+  district?: string | null;
+  district_id?: string | null;
   user_id: string;
   owner_id: string;
   /** Структурированные параметры объявления (для фильтров/поиска). */
@@ -76,6 +79,9 @@ export type ListingRow = {
   price: number;
   category: string;
   city: string | null;
+  city_id?: string | null;
+  district?: string | null;
+  district_id?: string | null;
   view_count: number;
   created_at: string;
   updated_at?: string | null;
