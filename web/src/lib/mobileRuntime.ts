@@ -1,39 +1,32 @@
-const MOBILE_PLACEHOLDER_ID = "__mobile__";
+/** PWA / web URL helpers (installable web app; no hybrid shell). */
 
-export function isLocalMobileBundleRuntime(): boolean {
-  if (typeof process !== "undefined" && process.env.CAP_LOCAL_BUNDLE === "1") {
-    return true;
-  }
-  if (typeof window === "undefined") return false;
-  const protocol = String(window.location.protocol || "").toLowerCase();
-  return protocol === "capacitor:" || protocol === "file:";
-}
+const LEGACY_STATIC_PLACEHOLDER_ID = "__mobile__";
 
 function encodeId(id: string): string {
   return encodeURIComponent(String(id || "").trim());
 }
 
 export function chatPath(chatId: string): string {
-  if (!isLocalMobileBundleRuntime()) return `/chat/${encodeId(chatId)}`;
-  return `/chat/${MOBILE_PLACEHOLDER_ID}?id=${encodeId(chatId)}`;
+  return `/chat/${encodeId(chatId)}`;
 }
 
 export function listingPath(listingId: string): string {
-  if (!isLocalMobileBundleRuntime()) return `/listing/${encodeId(listingId)}`;
-  return `/listing/${MOBILE_PLACEHOLDER_ID}?id=${encodeId(listingId)}`;
+  return `/listing/${encodeId(listingId)}`;
 }
 
 export function listingEditPath(listingId: string): string {
-  if (!isLocalMobileBundleRuntime()) return `/listing/edit/${encodeId(listingId)}`;
-  return `/listing/edit/${MOBILE_PLACEHOLDER_ID}?id=${encodeId(listingId)}`;
+  return `/listing/edit/${encodeId(listingId)}`;
 }
 
+/**
+ * Resolves dynamic route param + optional `?id=` (legacy static-export placeholder).
+ */
 export function resolveRuntimeRouteId(
   routeId: string | null | undefined,
   queryId: string | null | undefined,
 ): string {
   const normalizedRoute = String(routeId ?? "").trim();
-  if (normalizedRoute && normalizedRoute !== MOBILE_PLACEHOLDER_ID) {
+  if (normalizedRoute && normalizedRoute !== LEGACY_STATIC_PLACEHOLDER_ID) {
     return normalizedRoute;
   }
   return String(queryId ?? "").trim();

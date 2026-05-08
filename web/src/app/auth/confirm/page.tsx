@@ -7,7 +7,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getSessionGuarded } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 type Phase = "loading" | "success" | "error";
@@ -127,15 +126,6 @@ export default function AuthConfirmPage() {
         }
 
         setPhase("success");
-        const { session } = await withTimeout(
-          getSessionGuarded("auth-confirm-success", { allowRefresh: true }),
-          AUTH_FINALIZE_TIMEOUT_MS,
-          "authConfirm:hydrateSession",
-        );
-        if (!session?.user) {
-          setPhase("error");
-          return;
-        }
         console.debug("[auth-confirm] success", { elapsedMs: Date.now() - startedAt });
         router.replace("/");
         router.refresh();

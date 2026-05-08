@@ -44,6 +44,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     }
   }, [hasMounted]);
 
+  // Единственный «лишний» размонт всего дерева: Landing → app после hasMounted.
+  // Смена роутов не размонтирует ChatUnreadProvider (корневой layout.tsx стабилен).
   if (!hasMounted) {
     return (
       <div className="min-h-screen bg-main">

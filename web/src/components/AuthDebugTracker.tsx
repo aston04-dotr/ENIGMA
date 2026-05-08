@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { subscribeEnigmaAuthSingleton } from "@/lib/supabaseAuthSingleton";
 
 /** В проде отключено: monkey-patch history + poll 400ms дают лаги после входа. */
 export function AuthDebugTracker() {
@@ -74,17 +74,13 @@ export function AuthDebugTracker() {
   }, [pathname]);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+    return subscribeEnigmaAuthSingleton((event, session) => {
       console.log("[debug][auth event]", event, typeof window !== "undefined" ? window.location.href : "", {
         userId: session?.user?.id ?? null,
         email: session?.user?.email ?? null,
         hasSession: Boolean(session),
       });
     });
-
-    return () => {
-      sub.subscription.unsubscribe();
-    };
   }, []);
 
   return null;

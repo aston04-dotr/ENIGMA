@@ -10,10 +10,6 @@ import {
   consumeSaveEnigmaContinuationRoute,
 } from "@/lib/saveEnigmaFlow";
 import { trackEvent } from "@/lib/analytics";
-import {
-  getSessionGuarded,
-  hardResetSupabaseAuthState,
-} from "@/lib/supabase";
 import { chatPath } from "@/lib/mobileRuntime";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -46,30 +42,6 @@ export default function LoginPage() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const loginSuccessTrackedRef = useRef(false);
   const loginRedirectingRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const search = new URLSearchParams(window.location.search);
-        const reason = String(search.get("reason") ?? "");
-        const forceCleanup = reason === "refresh_failed" || reason === "stale_refresh_token";
-        const { session } = await getSessionGuarded("login-initial-cleanup", {
-          allowRefresh: false,
-        });
-        if (cancelled) return;
-        if (session?.user && !forceCleanup) return;
-        if (forceCleanup) {
-          await hardResetSupabaseAuthState("login-page-initial-cleanup");
-        }
-      } catch {
-        // Keep login stable: do not wipe auth state on transient read failures.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (consumeAccessDeniedMessage()) {

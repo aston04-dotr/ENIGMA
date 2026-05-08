@@ -23,10 +23,10 @@ export function registerRapidListingCreated(userId: string): void {
 /** Lower own trust (spam, duplicates, device limits, etc.). Triggers auto-ban at 0. */
 export async function decreaseTrust(userId: string, amount: number): Promise<{ error: string | null }> {
   const {
-    data: { session },
+    data: { user },
     error: authErr,
-  } = await supabase.auth.getSession();
-  const self = session?.user?.id;
+  } = await supabase.auth.getUser();
+  const self = user?.id;
   if (authErr || !self) {
     return { error: "Нет сессии" };
   }
@@ -40,9 +40,9 @@ export async function decreaseTrust(userId: string, amount: number): Promise<{ e
 /** +5 доверия не чаще раза в сутки (миграция 019). Ошибки игнорируются, если RPC ещё не развёрнут. */
 export async function tryDailyTrustRecovery(): Promise<void> {
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
     if (process.env.NODE_ENV === "development") {
       console.warn("no user, skip rpc try_daily_trust_recovery");
     }
@@ -60,9 +60,9 @@ export async function reportListingTrustPenalty(
   reason: string
 ): Promise<{ error: string | null }> {
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
     if (process.env.NODE_ENV === "development") {
       console.warn("no user, skip rpc report_listing_trust_penalty");
     }

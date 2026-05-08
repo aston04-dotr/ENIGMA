@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Enigma</string>
-    <string name="title_activity_main">Enigma</string>
-    <string name="package_name">online.enigma.app</string>
-    <string name="custom_url_scheme">online.enigma.app</string>
-</resources>

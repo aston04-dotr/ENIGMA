@@ -1,15 +1,11 @@
 "use client";
 
-import { useAuth } from "@/context/auth-context";
 import { useOnline } from "@/hooks/useOnline";
 import { OfflineUi } from "@/components/OfflineUi";
 import { useEffect, useState } from "react";
 
 export function OfflineGate({ children }: { children: React.ReactNode }) {
-  const { retryBootstrap } = useAuth();
-  const online = useOnline(() => {
-    retryBootstrap({ fromOnline: true });
-  });
+  const online = useOnline();
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {

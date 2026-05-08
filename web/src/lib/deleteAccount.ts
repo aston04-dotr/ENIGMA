@@ -31,9 +31,9 @@ export function consumeAccessDeniedMessage(): boolean {
  */
 export async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
     console.warn("no user, skip rpc delete_my_account");
     return { ok: false, error: "Нет сессии" };
   }

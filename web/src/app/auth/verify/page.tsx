@@ -3,15 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { debugAuthPersistenceSnapshot, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
-import { isLocalMobileBundleRuntime } from "@/lib/mobileRuntime";
 
 const RESEND_SECONDS = 60;
-const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
 const VERIFY_TIMEOUT_MS = 15_000;
-const SESSION_FALLBACK_RETRY_DELAY_MS = 400;
-const NAVIGATION_SETTLE_DELAY_MS = 400;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -43,14 +39,9 @@ export default function VerifyPage() {
   const [ready, setReady] = useState(false);
   const isSubmittingRef = useRef(false);
   const hasNavigatedRef = useRef(false);
-  const isMobileRuntimeRef = useRef(false);
-
-  const delay = (ms: number) =>
-    new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    isMobileRuntimeRef.current = isLocalMobileBundleRuntime();
 
     const queryEmail = searchParams.get("email")?.trim().toLowerCase() ?? "";
     const queryCode = (searchParams.get("code") ?? "")
@@ -97,12 +88,6 @@ export default function VerifyPage() {
     const startedAt = Date.now();
 
     try {
-      if (isMobileRuntimeRef.current) {
-        console.log("[mobile-otp] verify_start", {
-          email: email ? "***" : "",
-          codeLen: code.length,
-        });
-      }
       console.debug("[auth-verify] otp verify:start", { email, codeLen: code.length });
       const { data: verifyData, error: verifyError } = await withTimeout(
         supabase.auth.verifyOtp({
@@ -116,73 +101,13 @@ export default function VerifyPage() {
       console.debug("[auth-verify] otp verify:resolved", {
         hasSessionFromVerify: Boolean(verifyData?.session?.user),
       });
-      await debugAuthPersistenceSnapshot("verify:after-verifyOtp");
       if (verifyError) {
-        if (isMobileRuntimeRef.current) {
-          const status = Number(
-            (verifyError as { status?: unknown; code?: unknown }).status ??
-              (verifyError as { status?: unknown; code?: unknown }).code ??
-              0,
-          );
-          console.error("[mobile-otp] verify_error", {
-            status,
-            message: verifyError.message ?? "verify_failed",
-          });
-        }
         console.error("[auth-verify] otp verify:error", verifyError);
         setError(verifyError.message || "Неверный или устаревший код");
         return;
       }
       console.debug("[auth-verify] otp verify:success");
-      if (verifyData?.session?.access_token && verifyData?.session?.refresh_token) {
-        await withTimeout(
-          supabase.auth.setSession({
-            access_token: verifyData.session.access_token,
-            refresh_token: verifyData.session.refresh_token,
-          }),
-          AUTH_FINALIZE_TIMEOUT_MS,
-          "verifyOtp:setSession",
-        );
-        await debugAuthPersistenceSnapshot("verify:after-setSession");
-      }
-
       localStorage.removeItem("auth_email");
-      let hydrated: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
-      const firstSessionRes = await withTimeout(
-        supabase.auth.getSession(),
-        AUTH_FINALIZE_TIMEOUT_MS,
-        "verifyOtp:getSession:first",
-      );
-      hydrated = firstSessionRes.data.session ?? null;
-      if (!hydrated?.user) {
-        await debugAuthPersistenceSnapshot("verify:after-getSession:first-empty");
-        await delay(SESSION_FALLBACK_RETRY_DELAY_MS);
-        const retrySessionRes = await withTimeout(
-          supabase.auth.getSession(),
-          AUTH_FINALIZE_TIMEOUT_MS,
-          "verifyOtp:getSession:retry",
-        );
-        hydrated = retrySessionRes.data.session ?? null;
-      }
-      if (isMobileRuntimeRef.current) {
-        console.log("[mobile-session] otp_verify_session_check", {
-          hasSession: Boolean(hydrated?.user),
-          flow: "single-shot+retry",
-        });
-      }
-      console.debug("[auth-verify] otp verify:session-check", {
-        hasSession: Boolean(hydrated?.user),
-        flow: "single-shot+retry",
-      });
-
-      if (!hydrated?.user) {
-        if (isMobileRuntimeRef.current) {
-          console.error("[mobile-session] otp_verify_session_missing");
-        }
-        setError("Сессия не подтвердилась. Повторите вход.");
-        return;
-      }
-      await delay(NAVIGATION_SETTLE_DELAY_MS);
       console.debug("[auth-verify] otp verify:success", {
         elapsedMs: Date.now() - startedAt,
       });
@@ -191,9 +116,6 @@ export default function VerifyPage() {
         return;
       }
       hasNavigatedRef.current = true;
-      if (isMobileRuntimeRef.current) {
-        console.log("[mobile-otp] verify_ok_navigate_profile");
-      }
       router.replace("/profile");
       router.refresh();
     } catch (error) {
@@ -210,23 +132,12 @@ export default function VerifyPage() {
     setResendLoading(true);
     setError("");
 
-    if (isMobileRuntimeRef.current) {
-      console.log("[mobile-otp] resend_start", { email: email ? "***" : "" });
-    }
     const { error: resendError } = await signInWithMagicLink(email);
 
     setResendLoading(false);
     if (resendError) {
-      if (isMobileRuntimeRef.current) {
-        console.error("[mobile-otp] resend_error", {
-          message: resendError.message ?? "resend_failed",
-        });
-      }
       setError(resendError.message || "Не удалось отправить код снова");
       return;
-    }
-    if (isMobileRuntimeRef.current) {
-      console.log("[mobile-otp] resend_ok");
     }
 
     setSecondsLeft(RESEND_SECONDS);

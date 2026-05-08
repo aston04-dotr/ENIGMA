@@ -4,7 +4,7 @@ import { getListingsPageSize } from "./runtimeConfig";
 import { FAVORITES_CHANGED_EVENT } from "./favoriteEvents";
 import { trackEvent } from "./analytics";
 import { decreaseTrust } from "./trust";
-import { getSessionGuarded, supabase, isSupabaseConfigured } from "./supabase";
+import { supabase, isSupabaseConfigured } from "./supabase";
 import { normalizeAllowedListingCity } from "./russianCities";
 import { normalizeCommercialPremisesLabel } from "./realestateConstants";
 import type { ListingInsertPayload, ListingRow, UserRow } from "./types";
@@ -934,13 +934,11 @@ export async function toggleFavorite({ listingId, state, onOptimistic, onRollbac
 
   try {
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-
-    if (sessionError || !user?.id) {
-      throw new Error(sessionError?.message || "not_authenticated");
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+    if (userError || !user?.id) {
+      throw new Error(userError?.message || "not_authenticated");
     }
 
     if (next.isFavorited) {
@@ -1089,9 +1087,9 @@ async function mergeFavoriteCounts(listings: ListingRow[]): Promise<ListingRow[]
 /** true, если RPC выполнился без ошибки (можно локально +1 к счётчику). */
 export async function incrementViews(listingId: string): Promise<boolean> {
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
     if (process.env.NODE_ENV === "development") {
       console.warn("no user, skip rpc increment_listing_views");
     }
@@ -1307,13 +1305,7 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
   
   try {
     // 1. GUARANTEE USER AUTHENTICATION (anti-race после свежего входа)
-    let { data: userData, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !userData?.user) {
-      await getSessionGuarded("listings-insert-row", { allowRefresh: true });
-      const retryUser = await supabase.auth.getUser();
-      userData = retryUser.data;
-      authErr = retryUser.error;
-    }
+    const { data: userData, error: authErr } = await supabase.auth.getUser();
 
     if (authErr || !userData?.user) {
       console.error("AUTH ERROR:", authErr?.message);

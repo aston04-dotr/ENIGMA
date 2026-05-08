@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getSessionGuarded, getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import {
   isBackoffSkipped,
   isSupabaseReachable,
@@ -75,25 +75,12 @@ function safeJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-async function hasValidAccessToken(): Promise<boolean> {
-  const { session } = await getSessionGuarded("push-has-token", {
-    allowRefresh: false,
-  });
-  return Boolean(session?.access_token?.trim());
-}
-
 async function upsertWebPushSubscription(
   userId: string,
   subscription: PushSubscription,
 ): Promise<boolean> {
   const normalizedUserId = String(userId ?? "").trim();
   if (!normalizedUserId || !isUuid(normalizedUserId)) return false;
-  const { session } = await getSessionGuarded("push-upsert-subscription", {
-    allowRefresh: false,
-  });
-  if (!session?.user?.id || session.user.id !== normalizedUserId) {
-    return false;
-  }
 
   const endpoint = subscription.endpoint?.trim();
   if (!endpoint) return false;
@@ -120,7 +107,7 @@ async function upsertWebPushSubscription(
     last_seen_at: new Date().toISOString(),
   };
   const out = await withPostgrestBackoff({
-    checkSession: hasValidAccessToken,
+    checkSession: () => Boolean(normalizedUserId),
     checkHealth: isSupabaseReachable,
     logLabel: "web push upsert",
     run: (signal) =>
@@ -146,21 +133,11 @@ async function removeWebPushSubscription(
   const trimmed = endpoint?.trim() ?? "";
   if (!trimmed) return;
 
-  const { session } = await getSessionGuarded("push-remove-subscription", {
-    allowRefresh: false,
-  });
-  if (!session?.user?.id) {
-    return;
-  }
-  if (session.user.id !== normalizedUserId) {
-    return;
-  }
-
   const rest = getSupabaseRestWithSession();
   if (!rest) return;
 
   const out = await withPostgrestBackoff({
-    checkSession: hasValidAccessToken,
+    checkSession: () => Boolean(normalizedUserId),
     checkHealth: isSupabaseReachable,
     logLabel: "web push delete",
     run: (signal) =>

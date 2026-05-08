@@ -11,7 +11,7 @@ import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity
 import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { chatPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
-import { getSessionGuarded, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
@@ -1804,25 +1804,12 @@ export default function ChatRoomPage() {
   }
 
   async function ensureUploadSession(): Promise<boolean> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) {
+    if (!session?.user) {
       if (typeof window !== "undefined") {
         window.alert("Нет сессии. Перезайди.");
       }
       return false;
     }
-
-    const { session } = await getSessionGuarded("chat-upload-ensure-session", {
-      allowRefresh: true,
-    });
-    console.log("SESSION:", { hasSession: Boolean(session) });
-    if (!session) {
-      if (typeof window !== "undefined") {
-        window.alert("Нет сессии. Перезайди.");
-      }
-      return false;
-    }
-
     return true;
   }
 

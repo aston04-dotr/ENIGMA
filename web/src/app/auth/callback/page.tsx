@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getSessionGuarded } from "@/lib/supabase";
 
 /**
  * Совместимость со старыми redirect URL вида /auth/callback.
@@ -69,15 +68,6 @@ export default function CallbackPage() {
           );
         }
 
-        const { session } = await withTimeout(
-          getSessionGuarded("auth-callback-success", { allowRefresh: true }),
-          12_000,
-          "authCallback:hydrateSession",
-        );
-        if (!session?.user) {
-          router.replace("/login?auth_error=session_not_ready");
-          return;
-        }
         console.debug("[auth-callback] success", { elapsedMs: Date.now() - startedAt });
         router.replace("/");
         router.refresh();

@@ -9,10 +9,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import {
+  getRestAccessToken,
+  getSupabaseRestWithSession,
+  setRestAccessToken,
+  supabase,
+} from "@/lib/supabase";
 import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
 import { useAuth } from "@/context/auth-context";
-import type { ChatListRow } from "@/lib/types";
+import { bumpEnigmaCounter, getEnigmaDebugCounters } from "@/lib/enigmaDebugCounters";
+import { isAuthCircuitOpen } from "@/lib/authCircuitState";
+import { reportEnigmaIllegalState } from "@/lib/enigmaIllegalState";
+import { subscribeEnigmaAuthSingleton } from "@/lib/supabaseAuthSingleton";
+import {
+  setTransportRealtimeChannelProbe,
+  setTransportTokenProbe,
+} from "@/lib/supabaseTransportInstrument";
 
 type CrossTabEvent =
   | { type: "chat-refresh" }
@@ -51,6 +63,12 @@ const REALTIME_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 const REALTIME_FAILURE_LIMIT = 5;
 const FALLBACK_POLL_MS = 25_000;
 const AUTH_STABILIZE_DELAY_MS = 800;
+/** Foreground/resume: only coalesced silent list refresh — never bumps realtime teardown. */
+const FOREGROUND_SILENT_REFRESH_DEBOUNCE_MS = 3_500;
+/** Rate-limit [CHAT_STORM_SOURCE] presence logs (heartbeats stay enabled). */
+const PRESENCE_STORM_LOG_MIN_INTERVAL_MS = 20_000;
+/** Bundle DB presence + push last_seen REST calls — avoids REST JWT getter storms. */
+const REST_PRESENCE_BUNDLE_INTERVAL_MS = 120_000;
 const DEV_CHAT_DEBUG = process.env.NODE_ENV === "development";
 
 function chatStormSource(source: string, payload?: Record<string, unknown>) {
@@ -359,6 +377,30 @@ function isChatForegroundForId(chatId: string, activeChatId: string | null): boo
   return true;
 }
 
+const G_CHAT_RT_PROBE = globalThis as typeof globalThis & {
+  __ENIGMA_CHAT_RT_EFFECT_PROBE__?: { lastUserId: string | null; lastAt: number };
+};
+
+/** Dev Strict Mode mounts effects twice rapidly — tag so logs are not confused with prod churn. */
+function probeChatRealtimeEffectStrictDuplicate(userId: string | null) {
+  if (process.env.NODE_ENV === "production" || typeof userId !== "string" || !userId) return;
+  const now = Date.now();
+  const prev = G_CHAT_RT_PROBE.__ENIGMA_CHAT_RT_EFFECT_PROBE__;
+  if (
+    prev &&
+    prev.lastUserId === userId &&
+    now - prev.lastAt < 120
+  ) {
+    bumpEnigmaCounter("strictModeDuplicateCount");
+    console.warn("[STRICT_MODE_DUPLICATE_EFFECT]", {
+      realm: "chat-realtime-setup",
+      userId,
+      deltaMs: now - prev.lastAt,
+    });
+  }
+  G_CHAT_RT_PROBE.__ENIGMA_CHAT_RT_EFFECT_PROBE__ = { lastUserId: userId, lastAt: now };
+}
+
 export function ChatUnreadProvider({
   children,
 }: {
@@ -374,6 +416,8 @@ export function ChatUnreadProvider({
     ready: authReady,
   } = useAuth();
   const userId = user?.id ?? null;
+  const userIdRef = useRef<string | null>(userId);
+  userIdRef.current = userId;
   const authLifecycleReady =
     authResolved &&
     !loading &&
@@ -385,7 +429,6 @@ export function ChatUnreadProvider({
   const [realtimeReadyState, setRealtimeReadyState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
-  const [reconnectSeq, setReconnectSeq] = useState(0);
   const [realtimeDisabledState, setRealtimeDisabledState] = useState(false);
   const [realtimeMode, setRealtimeMode] = useState<"realtime" | "polling" | "disabled">(
     "disabled",
@@ -410,8 +453,7 @@ export function ChatUnreadProvider({
   });
   const rowsRef = useRef<ChatListRow[]>([]);
   const authLifecycleReadyRef = useRef(authLifecycleReady);
-  const lastRecoverAtRef = useRef(0);
-  const authChangeListenerAttachedRef = useRef(false);
+  const lastForegroundSilentRefreshAtRef = useRef(0);
   const realtimeDisabledRef = useRef(false);
   const maxRealtimeFailuresRef = useRef(0);
   const hasLoggedRealtimeDisabledRef = useRef(false);
@@ -419,11 +461,105 @@ export function ChatUnreadProvider({
   const authStabilizedRef = useRef(false);
   const authReadyRef = useRef(false);
   const stableSessionRef = useRef<typeof session | null>(session ?? null);
+
+  useEffect(() => {
+    stableSessionRef.current = session ?? null;
+    setRestAccessToken(session ?? null);
+  }, [session]);
+  const lastPresenceStormLogAtRef = useRef(0);
+  const realtimeConnectOwnerRef = useRef(0);
+  const realtimeListChannelReadyRef = useRef(false);
   const bootstrapCompletedRef = useRef(false);
   const authStabilizeTimerRef = useRef<number | null>(null);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
   const lastReconcileScheduledAtRef = useRef(0);
+  const pendingSilentRefreshAfterCurrentRef = useRef(false);
+  const reconcileDeferredReasonRef = useRef<string | null>(null);
+  const lastRestPresenceBundleAtRef = useRef(0);
+  const scheduleRefreshRef = useRef<(delayMs?: number, opts?: { silent?: boolean }) => void>(() => {});
+  const scheduleReconcileRef = useRef<(reason: string, delayMs?: number) => void>(() => {});
+  const singletonSignedInUidRef = useRef<string | null>(null);
+  /** realtime tryBootstrap freeze: duplicate path same user already live */
+  const realtimeBootstrapPathPrevUidRef = useRef<string | null>(null);
+
+  const refreshChatsRef = useRef<
+    ((opts?: { silent?: boolean }) => Promise<void>) | null
+  >(null);
+  const reconcileUnreadSnapshotRef = useRef<
+    ((reason: string) => Promise<void>) | null
+  >(null);
+
+  /** List channel lifecycle — gate reconnect storms (idle | connecting | subscribed). */
+  const realtimeListConnectionStateRef = useRef<"idle" | "connecting" | "subscribed">(
+    "idle",
+  );
+  /** Suppress stale Realtime callbacks after newer connect(); bump only when opening a subscribe. */
+  const subscribeGenerationRef = useRef(0);
+  /** user id aligned with LIST SUBSCRIBED (cleared when channel torn down). */
+  const realtimeListSubscribedForUserRef = useRef<string | null>(null);
+
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+  const authResolvedRef = useRef(authResolved);
+  authResolvedRef.current = authResolved;
+  useEffect(() => {
+    console.warn("[CHAT_PROVIDER_MOUNT]");
+    return () => {
+      console.warn("[CHAT_PROVIDER_UNMOUNT]");
+    };
+  }, []);
+
+  useEffect(() => {
+    setTransportTokenProbe(() => ({
+      hasRestToken: Boolean(getRestAccessToken()?.trim()),
+      hasSessionToken: Boolean(stableSessionRef.current?.access_token?.trim()),
+    }));
+  }, []);
+
+  useEffect(() => {
+    setTransportRealtimeChannelProbe(() =>
+      Boolean(statusRef.current.listChannel),
+    );
+    return () => setTransportRealtimeChannelProbe(() => false);
+  }, []);
+
+  useEffect(() => {
+    return subscribeEnigmaAuthSingleton((event, sessionSnap) => {
+      if (sessionSnap) {
+        stableSessionRef.current = sessionSnap;
+        setRestAccessToken(sessionSnap);
+      } else if (event === "SIGNED_OUT") {
+        stableSessionRef.current = null;
+        setRestAccessToken(null);
+      }
+
+      const uid = sessionSnap?.user?.id ?? null;
+
+      if (event === "INITIAL_SESSION") {
+        if (uid) singletonSignedInUidRef.current = uid;
+        /* No list/realtime reschedule — INITIAL_SESSION mirrors uid only */
+        return;
+      }
+      if (event === "TOKEN_REFRESHED") {
+        if (uid) singletonSignedInUidRef.current = uid;
+        /* No reconcile storm on token churn */
+        return;
+      }
+      if (event === "SIGNED_OUT") {
+        singletonSignedInUidRef.current = null;
+        return;
+      }
+      if (event === "SIGNED_IN") {
+        const prevUid = singletonSignedInUidRef.current;
+        if (prevUid !== null && prevUid === uid && uid !== null) {
+          /* Duplicate SIGNED_IN same user — Realtime gated by subscribed list channel */
+          return;
+        }
+        singletonSignedInUidRef.current = uid ?? null;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     authLifecycleReadyRef.current = authLifecycleReady;
@@ -443,10 +579,6 @@ export function ChatUnreadProvider({
   }, [authStabilizedState]);
 
   useEffect(() => {
-    stableSessionRef.current = session ?? null;
-  }, [session]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     if (authStabilizeTimerRef.current) {
       window.clearTimeout(authStabilizeTimerRef.current);
@@ -455,20 +587,17 @@ export function ChatUnreadProvider({
     if (!userId) {
       authStabilizedRef.current = true;
       authReadyRef.current = true;
-      bootstrapCompletedRef.current = false;
       setAuthStabilizedState(true);
       return;
     }
     if (!authLifecycleReady) {
       authStabilizedRef.current = false;
       authReadyRef.current = false;
-      bootstrapCompletedRef.current = false;
       setAuthStabilizedState(false);
       return;
     }
     authStabilizedRef.current = false;
     authReadyRef.current = false;
-    bootstrapCompletedRef.current = false;
     setAuthStabilizedState(false);
     authStabilizeTimerRef.current = window.setTimeout(() => {
       authStabilizeTimerRef.current = null;
@@ -505,6 +634,17 @@ export function ChatUnreadProvider({
       markNoToken: false,
     };
     chatListAuthRetryRef.current = 0;
+    lastRestPresenceBundleAtRef.current = 0;
+    realtimeListChannelReadyRef.current = false;
+    realtimeListConnectionStateRef.current = "idle";
+    realtimeListSubscribedForUserRef.current = null;
+    realtimeBootstrapPathPrevUidRef.current = null;
+    const gListCreate = globalThis as typeof globalThis & {
+      __ENIGMA_LIST_CREATE_LAST__?: unknown;
+    };
+    delete gListCreate.__ENIGMA_LIST_CREATE_LAST__;
+    pendingSilentRefreshAfterCurrentRef.current = false;
+    reconcileDeferredReasonRef.current = null;
     setHydratedState(false);
     setRealtimeReadyState(false);
     maxRealtimeFailuresRef.current = 0;
@@ -523,10 +663,6 @@ export function ChatUnreadProvider({
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
-      chatStormSource("refreshChats", {
-        silent: Boolean(opts?.silent),
-        userId: userId ?? null,
-      });
       if (!authReadyRef.current && userId) {
         chatDebugLog("refreshChats:blocked:auth-not-stabilized", {
           silent: Boolean(opts?.silent),
@@ -535,12 +671,24 @@ export function ChatUnreadProvider({
         return;
       }
       if (refreshInFlightRef.current) {
+        if (opts?.silent) pendingSilentRefreshAfterCurrentRef.current = true;
         chatDebugLog("refreshChats:join-inflight", {
           silent: Boolean(opts?.silent),
         });
         return refreshInFlightRef.current;
       }
 
+      const sessionAccess = stableSessionRef.current?.access_token?.trim() ?? "";
+      const restReady = Boolean(getRestAccessToken()?.trim());
+      if (!sessionAccess || !restReady) {
+        bumpEnigmaCounter("refreshChatsSkipNoTokenCount");
+        return;
+      }
+
+      chatStormSource("refreshChats", {
+        silent: Boolean(opts?.silent),
+        userId: userId ?? null,
+      });
       const run = (async () => {
       chatDebugLog("refreshChats:start", {
         silent: Boolean(opts?.silent),
@@ -565,8 +713,9 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
-        const accessToken = stableSessionRef.current?.access_token ?? null;
-        if (!accessToken) {
+        const accessToken = stableSessionRef.current?.access_token?.trim() ?? "";
+        const restTokenReady = Boolean(getRestAccessToken()?.trim());
+        if (!accessToken || !restTokenReady) {
           if (!logOnceRef.current.listNoToken) {
             logOnceRef.current.listNoToken = true;
             if (process.env.NODE_ENV === "development") {
@@ -576,6 +725,7 @@ export function ChatUnreadProvider({
             }
           }
           if (!opts?.silent) setLoadingState(false);
+          bumpEnigmaCounter("refreshChatsSkipNoTokenCount");
           chatDebugLog("refreshChats:skip:no-token");
           return;
         }
@@ -586,6 +736,12 @@ export function ChatUnreadProvider({
           console.error("[list_my_chats] Supabase URL/key не настроены");
           if (!opts?.silent) setLoadingState(false);
           return;
+        }
+        bumpEnigmaCounter("refreshChatsStartCount");
+        if (reconcileInFlightRef.current) {
+          reportEnigmaIllegalState("refreshStartedRpcWhileReconcileInflight", {
+            userId: userId ?? null,
+          });
         }
         const res = await rest.rpc("list_my_chats", {
           p_limit: 100,
@@ -720,6 +876,15 @@ export function ChatUnreadProvider({
         chatDebugLog("refreshChats:unexpected-error");
       } finally {
         if (!opts?.silent) setLoadingState(false);
+        const deferredReconcile = reconcileDeferredReasonRef.current;
+        reconcileDeferredReasonRef.current = null;
+        if (deferredReconcile) {
+          scheduleReconcileRef.current(deferredReconcile, 0);
+        }
+        if (pendingSilentRefreshAfterCurrentRef.current) {
+          pendingSilentRefreshAfterCurrentRef.current = false;
+          scheduleRefreshRef.current(0, { silent: true });
+        }
       }
       })();
 
@@ -733,26 +898,43 @@ export function ChatUnreadProvider({
 
   const reconcileUnreadSnapshot = useCallback(
     async (reason: string) => {
-      chatStormSource("reconcile", { reason, userId: userId ?? null });
       if (!authReadyRef.current && userId) {
         chatDebugLog("reconcile:blocked:auth-not-stabilized", { reason, userId });
+        return;
+      }
+      if (refreshInFlightRef.current) {
+        reconcileDeferredReasonRef.current = reason;
+        chatDebugLog("reconcile:deferred:refresh-in-flight", { reason, userId: userId ?? null });
         return;
       }
       if (reconcileInFlightRef.current) {
         chatDebugLog("reconcile:join-inflight", { reason, userId: userId ?? null });
         return reconcileInFlightRef.current;
       }
+      const reconcileToken = stableSessionRef.current?.access_token?.trim() ?? "";
+      if (!reconcileToken || !getRestAccessToken()?.trim()) {
+        return;
+      }
+
+      chatStormSource("reconcile", { reason, userId: userId ?? null });
       const run = (async () => {
       chatDebugLog("reconcile:start", { reason, userId: userId ?? null });
       if (!userId) return;
       try {
-        const session = stableSessionRef.current;
-        if (!session?.access_token) {
-          chatDebugLog("reconcile:skip:no-token", { reason });
+        const reconcileSession = stableSessionRef.current;
+        const reconcileTokenInner = reconcileSession?.access_token?.trim() ?? "";
+        if (!reconcileTokenInner || !getRestAccessToken()?.trim()) {
           return;
         }
         const rest = getSupabaseRestWithSession();
         if (!rest) return;
+        bumpEnigmaCounter("reconcileStartCount");
+        if (refreshInFlightRef.current) {
+          reportEnigmaIllegalState("reconcileStartedRpcWhileRefreshInflight", {
+            reason,
+            userId,
+          });
+        }
         const res = await rest.rpc("list_my_chats", {
           p_limit: 200,
         });
@@ -837,9 +1019,6 @@ export function ChatUnreadProvider({
           }
           return sortByLastMessageDesc(merged);
         });
-
-        void refreshChats({ silent: true });
-        busRef.current?.post({ type: "chat-refresh" });
       } catch (error) {
         chatDebugLog("reconcile:unexpected-error", { reason });
         console.error("chat unread reconcile unexpected", error);
@@ -850,12 +1029,17 @@ export function ChatUnreadProvider({
       });
       return reconcileInFlightRef.current;
     },
-    [refreshChats, userId],
+    [userId],
   );
 
   const scheduleRefresh = useCallback(
     (delayMs = 120, opts?: { silent?: boolean }) => {
       if (typeof window === "undefined") return;
+      const sessionOk = Boolean(stableSessionRef.current?.access_token?.trim());
+      const restOk = Boolean(getRestAccessToken()?.trim());
+      if (!sessionOk || !restOk) {
+        return;
+      }
 
       if (statusRef.current.refreshTimer) {
         window.clearTimeout(statusRef.current.refreshTimer);
@@ -863,15 +1047,20 @@ export function ChatUnreadProvider({
 
       statusRef.current.refreshTimer = window.setTimeout(() => {
         statusRef.current.refreshTimer = null;
-        void refreshChats(opts);
+        void refreshChatsRef.current?.(opts);
       }, delayMs);
     },
-    [refreshChats],
+    [],
   );
 
   const scheduleReconcile = useCallback(
     (reason: string, delayMs = UNREAD_RECONCILE_DEBOUNCE_MS) => {
       if (typeof window === "undefined") return;
+      const sessionOk = Boolean(stableSessionRef.current?.access_token?.trim());
+      const restOk = Boolean(getRestAccessToken()?.trim());
+      if (!sessionOk || !restOk) {
+        return;
+      }
       const now = Date.now();
       const sinceLast = now - lastReconcileScheduledAtRef.current;
       const effectiveDelay = Math.max(
@@ -887,10 +1076,10 @@ export function ChatUnreadProvider({
       statusRef.current.reconcileTimer = window.setTimeout(() => {
         statusRef.current.reconcileTimer = null;
         lastReconcileScheduledAtRef.current = Date.now();
-        void reconcileUnreadSnapshot(reason);
+        void reconcileUnreadSnapshotRef.current?.(reason);
       }, effectiveDelay);
     },
-    [reconcileUnreadSnapshot],
+    [],
   );
 
   const rememberRealtimeEvent = useCallback((key: string): boolean => {
@@ -909,51 +1098,55 @@ export function ChatUnreadProvider({
     busRef.current?.post(event);
   }, []);
 
-  const triggerRealtimeRecover = useCallback(
+  const scheduleForegroundSilentListRefresh = useCallback(
     (reason: string) => {
-      chatStormSource("reconnect", { reason, userId: userId ?? null });
       if (!authReadyRef.current && userId) {
-        chatDebugLog("realtime:recover:blocked:auth-not-stabilized", { reason, userId });
+        chatDebugLog("chat:foreground-refresh:blocked:auth-not-stabilized", {
+          reason,
+          userId,
+        });
         return;
       }
-      if (realtimeDisabledRef.current) {
-        chatDebugLog("realtime:recover:skip-disabled", { reason });
-        return;
-      }
-      if (!authLifecycleReadyRef.current) {
-        chatDebugLog("realtime:recover:blocked:auth-not-ready", { reason });
+      const sessionOk = Boolean(stableSessionRef.current?.access_token?.trim());
+      const restOk = Boolean(getRestAccessToken()?.trim());
+      if (!sessionOk || !restOk) {
         return;
       }
       const now = Date.now();
-      if (now - lastRecoverAtRef.current < 600) {
-        chatDebugLog("realtime:recover:debounced", { reason });
+      if (
+        now - lastForegroundSilentRefreshAtRef.current <
+        FOREGROUND_SILENT_REFRESH_DEBOUNCE_MS
+      ) {
+        chatDebugLog("chat:foreground-refresh:debounced", { reason });
         return;
       }
-      lastRecoverAtRef.current = now;
-      chatDebugLog("realtime:recover", { reason });
-      setReconnectSeq((n) => n + 1);
-      scheduleRefresh(40, { silent: true });
-      scheduleReconcile(reason, 120);
+      lastForegroundSilentRefreshAtRef.current = now;
+      chatDebugLog("chat:foreground-refresh", { reason, userId: userId ?? null });
+      scheduleRefreshRef.current(400, { silent: true });
     },
-    [scheduleReconcile, scheduleRefresh, userId],
+    [userId],
   );
 
-  const refreshChatsRef = useRef(refreshChats);
-  const scheduleRefreshRef = useRef(scheduleRefresh);
-  const scheduleReconcileRef = useRef(scheduleReconcile);
+  refreshChatsRef.current = refreshChats;
+  reconcileUnreadSnapshotRef.current = reconcileUnreadSnapshot;
+  scheduleRefreshRef.current = scheduleRefresh;
+  scheduleReconcileRef.current = scheduleReconcile;
+
   const rememberRealtimeEventRef = useRef(rememberRealtimeEvent);
   const broadcastRef = useRef(broadcast);
-
-  useEffect(() => {
-    refreshChatsRef.current = refreshChats;
-    scheduleRefreshRef.current = scheduleRefresh;
-    scheduleReconcileRef.current = scheduleReconcile;
-    rememberRealtimeEventRef.current = rememberRealtimeEvent;
-    broadcastRef.current = broadcast;
-  }, [broadcast, rememberRealtimeEvent, refreshChats, scheduleReconcile, scheduleRefresh]);
+  rememberRealtimeEventRef.current = rememberRealtimeEvent;
+  broadcastRef.current = broadcast;
 
   const upsertPresence = useCallback(async () => {
-    chatStormSource("presence", { userId: userId ?? null });
+    if (typeof window !== "undefined" && isAuthCircuitOpen()) return;
+    if (!stableSessionRef.current?.access_token?.trim()) {
+      return;
+    }
+    const stormNow = Date.now();
+    if (stormNow - lastPresenceStormLogAtRef.current >= PRESENCE_STORM_LOG_MIN_INTERVAL_MS) {
+      chatStormSource("presence", { userId: userId ?? null });
+      lastPresenceStormLogAtRef.current = stormNow;
+    }
     if (!authReadyRef.current && userId) {
       chatDebugLog("presence:blocked:auth-not-stabilized", { userId });
       return;
@@ -968,20 +1161,47 @@ export function ChatUnreadProvider({
     try {
       const nowIso = new Date().toISOString();
 
-      const rest = getSupabaseRestWithSession();
-      if (!rest) return;
+      const listCh = statusRef.current.listChannel;
+      if (
+        realtimeListChannelReadyRef.current &&
+        listCh &&
+        stableSessionRef.current?.access_token?.trim()
+      ) {
+        try {
+          await listCh.track({
+            online_at: nowIso,
+            user_id: normalizedUserId,
+          });
+        } catch {
+          /* noop — never cascade recover/auth */
+        }
+      }
+
+      const bundleNow = Date.now();
+      if (
+        bundleNow - lastRestPresenceBundleAtRef.current <
+        REST_PRESENCE_BUNDLE_INTERVAL_MS ||
+        !getRestAccessToken()?.trim()
+      ) {
+        return;
+      }
+      lastRestPresenceBundleAtRef.current = bundleNow;
+
       const presenceSession = stableSessionRef.current;
       if (!presenceSession?.access_token) {
         if (!logOnceRef.current.presenceNoToken) {
           logOnceRef.current.presenceNoToken = true;
           if (process.env.NODE_ENV === "development") {
             console.warn(
-              "[online_users] нет access_token, heartbeat пропущен (один раз за сессию)",
+              "[online_users] нет access_token, запрос пропущен (один раз за сессию)",
             );
           }
         }
         return;
       }
+
+      const rest = getSupabaseRestWithSession();
+      if (!rest) return;
 
       try {
         const { error: upsertError } = await (rest.from("online_users") as any).upsert(
@@ -1090,14 +1310,14 @@ export function ChatUnreadProvider({
           return;
         }
 
-        await refreshChats({ silent: true });
+        await refreshChatsRef.current?.({ silent: true });
         broadcast({ type: "chat-read", chatId });
       } catch (e) {
         console.error("mark_chat_read unexpected", e);
         setError("Не удалось отметить чат как прочитанный");
       }
     },
-    [broadcast, refreshChats, userId],
+    [broadcast, userId],
   );
 
   const getChatRow = useCallback(
@@ -1111,16 +1331,16 @@ export function ChatUnreadProvider({
 
     const unsubscribe = bus.subscribe((event) => {
       if (event.type === "chat-refresh") {
-        scheduleRefresh(80, { silent: true });
+        scheduleRefreshRef.current(80, { silent: true });
         return;
       }
       if (event.type === "chat-read") {
-        scheduleRefresh(80, { silent: true });
+        scheduleRefreshRef.current(80, { silent: true });
         return;
       }
       if (event.type === "chat-active") {
         if (event.chatId === statusRef.current.activeChatId) return;
-        scheduleRefresh(120, { silent: true });
+        scheduleRefreshRef.current(120, { silent: true });
       }
     });
 
@@ -1129,9 +1349,10 @@ export function ChatUnreadProvider({
       bus.close();
       busRef.current = null;
     };
-  }, [scheduleRefresh]);
+  }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && isAuthCircuitOpen()) return;
     if (loading || !authResolved) return;
     if (!authLifecycleReady) {
       chatDebugLog("realtime:init:blocked:auth-not-ready", { userId: userId ?? null });
@@ -1159,85 +1380,34 @@ export function ChatUnreadProvider({
       return;
     }
     if (bootstrapCompletedRef.current) {
-      chatDebugLog("realtime:init:skip-duplicate-bootstrap", { userId });
+      return;
+    }
+    const access = stableSessionRef.current?.access_token?.trim() ?? "";
+    if (!access || !getRestAccessToken()?.trim()) {
       return;
     }
     bootstrapCompletedRef.current = true;
-    void refreshChats();
-    scheduleReconcile("initial-launch", 220);
-  }, [authLifecycleReady, authResolved, authStabilizedState, loading, refreshChats, scheduleReconcile, userId]);
+    void refreshChatsRef.current?.();
+    scheduleReconcileRef.current("initial-launch", 220);
+  }, [
+    authLifecycleReady,
+    authResolved,
+    authStabilizedState,
+    loading,
+    userId,
+  ]);
 
   useEffect(() => {
-    if (authChangeListenerAttachedRef.current) {
-      chatDebugLog("auth-listener:skip-duplicate-attach");
-      return;
-    }
-    authChangeListenerAttachedRef.current = true;
-    chatDebugLog("auth-listener:attach");
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      chatStormSource("auth-listener", { event, userId: userId ?? null });
-      if (
-        event === "INITIAL_SESSION" ||
-        event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED" ||
-        event === "TOKEN_REFRESH_REJECTED"
-      ) {
-        if (userId && !authReadyRef.current) {
-          chatDebugLog("auth-listener:skip-before-stable", { event, userId });
-          return;
-        }
-        if (realtimeDisabledRef.current) {
-          scheduleRefresh(80, { silent: true });
-          return;
-        }
-        setReconnectSeq((n) => n + 1);
-        scheduleRefresh(40, { silent: true });
-        scheduleReconcile(`auth:${event.toLowerCase()}`, 140);
-      }
-      if (event === "SIGNED_OUT") {
-        if (!realtimeDisabledRef.current) {
-          setReconnectSeq((n) => n + 1);
-        }
-        setRealtimeReadyState(false);
-        setRealtimeMode("disabled");
-      }
-    });
-    return () => {
-      data.subscription.unsubscribe();
-      authChangeListenerAttachedRef.current = false;
-      chatDebugLog("auth-listener:detach");
-    };
-  }, [scheduleReconcile, scheduleRefresh, userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    if (!authLifecycleReady) {
-      chatDebugLog("realtime:subscribe:blocked:auth-not-ready", { userId });
-      return;
-    }
-    if (!authStabilizedState) {
-      chatDebugLog("realtime:subscribe:blocked:auth-not-stabilized", { userId });
-      return;
-    }
-    chatStormSource("realtime-subscribe", { userId });
-    if (realtimeDisabledRef.current) {
-      if (!hasLoggedRealtimeDisabledRef.current) {
-        hasLoggedRealtimeDisabledRef.current = true;
-        chatRealtimeLog("warn", "disabled", {
-          reason: "guard:already-disabled",
-          userId,
-          failures: maxRealtimeFailuresRef.current,
-          mode: realtimeModeRef.current,
-        });
-      }
-      setRealtimeReadyState(false);
-      if (realtimeModeRef.current !== "polling") {
-        setRealtimeMode("polling");
-      }
-      return;
-    }
-
     let cancelled = false;
+    let waitTimer: number | null = null;
+    let waitAttempts = 0;
+
+    const clearWait = () => {
+      if (typeof window !== "undefined" && waitTimer !== null) {
+        window.clearTimeout(waitTimer);
+        waitTimer = null;
+      }
+    };
 
     const clearReconnect = () => {
       if (typeof window !== "undefined" && statusRef.current.reconnectTimer) {
@@ -1248,9 +1418,89 @@ export function ChatUnreadProvider({
 
     const clearChannel = () => {
       if (statusRef.current.listChannel) {
+        console.warn("[LIST_CHANNEL_CLEANUP]", { userId: userId ?? null });
+      }
+      realtimeListConnectionStateRef.current = "idle";
+      realtimeListSubscribedForUserRef.current = null;
+      realtimeListChannelReadyRef.current = false;
+      if (statusRef.current.listChannel) {
         void supabase.removeChannel(statusRef.current.listChannel);
         statusRef.current.listChannel = null;
       }
+    };
+
+    const tearDownListRealtime = () => {
+      clearWait();
+      realtimeConnectOwnerRef.current += 1;
+      clearReconnect();
+      clearChannel();
+      setRealtimeReadyState(false);
+    };
+
+    if (!userId) {
+      tearDownListRealtime();
+      return;
+    }
+
+    if (typeof window !== "undefined" && isAuthCircuitOpen()) {
+      tearDownListRealtime();
+      return;
+    }
+
+    const connectOwner = ++realtimeConnectOwnerRef.current;
+    probeChatRealtimeEffectStrictDuplicate(userId);
+
+    const tryBootstrap = () => {
+      clearWait();
+      if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+
+      const tokenReady = Boolean(stableSessionRef.current?.access_token?.trim());
+      const readyGate =
+        authLifecycleReadyRef.current && authStabilizedRef.current && tokenReady;
+
+      if (!readyGate) {
+        waitAttempts += 1;
+        if (waitAttempts > 120) {
+          chatDebugLog("realtime:subscribe:gave-up-wait", {
+            userId,
+            waitAttempts,
+          });
+          return;
+        }
+        waitTimer = window.setTimeout(tryBootstrap, 100);
+        return;
+      }
+
+      const nextUidStr = String(userId ?? "").trim();
+      if (
+        realtimeBootstrapPathPrevUidRef.current === nextUidStr &&
+        realtimeListConnectionStateRef.current === "subscribed" &&
+        statusRef.current.listChannel &&
+        realtimeListSubscribedForUserRef.current === nextUidStr
+      ) {
+        /* Same-user auth churn path: list channel already JOINED */
+        return;
+      }
+      realtimeBootstrapPathPrevUidRef.current = nextUidStr;
+
+      if (realtimeDisabledRef.current) {
+        if (!hasLoggedRealtimeDisabledRef.current) {
+          hasLoggedRealtimeDisabledRef.current = true;
+          chatRealtimeLog("warn", "disabled", {
+            reason: "guard:already-disabled",
+            userId,
+            failures: maxRealtimeFailuresRef.current,
+            mode: realtimeModeRef.current,
+          });
+        }
+        setRealtimeReadyState(false);
+        if (realtimeModeRef.current !== "polling") {
+          setRealtimeMode("polling");
+        }
+        return;
+      }
+
+      connect();
     };
 
     const payloadContainsRejectedSubscription = (payload: unknown) => {
@@ -1291,7 +1541,7 @@ export function ChatUnreadProvider({
       statusRef.current.reconnectTimer = window.setTimeout(() => {
         statusRef.current.reconnectTimer = null;
         if (!cancelled) {
-          connect();
+          connect({ force: true });
         }
       }, delayMs);
     };
@@ -1337,179 +1587,240 @@ export function ChatUnreadProvider({
       scheduleRetry(reason);
     };
 
-    const connect = () => {
-      if (cancelled || realtimeDisabledRef.current) return;
+    const connect = (opts?: { force?: boolean }) => {
+      if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+      if (realtimeDisabledRef.current) return;
+
+      const force = Boolean(opts?.force);
+      if (
+        !force &&
+        realtimeListConnectionStateRef.current === "subscribed" &&
+        statusRef.current.listChannel &&
+        realtimeListSubscribedForUserRef.current === userId
+      ) {
+        bumpEnigmaCounter("reconnectSuppressedSubscribedCount");
+        return;
+      }
+
       clearReconnect();
+
+      const myGen = ++subscribeGenerationRef.current;
+      realtimeListConnectionStateRef.current = "connecting";
+      bumpEnigmaCounter("realtimeConnectAttemptCount");
+
+      const GCTX = globalThis as typeof globalThis & {
+        __ENIGMA_LIST_CREATE_LAST__?: { userId: string; t: number };
+      };
+      const nowCr = Date.now();
+      const lcLast = GCTX.__ENIGMA_LIST_CREATE_LAST__;
+      if (
+        !force &&
+        lcLast &&
+        lcLast.userId === String(userId) &&
+        nowCr - lcLast.t < 800
+      ) {
+        reportEnigmaIllegalState("rapid-list-channel-create-no-force", {
+          userId,
+          deltaMs: nowCr - lcLast.t,
+        });
+      }
+      GCTX.__ENIGMA_LIST_CREATE_LAST__ = { userId: String(userId), t: nowCr };
+
       clearChannel();
+
+      chatStormSource("realtime-subscribe", { userId });
+      console.warn("[LIST_CHANNEL_CREATE]", { userId });
       setRealtimeMode("realtime");
       chatRealtimeLog("info", "subscribe", {
         userId,
         failures: maxRealtimeFailuresRef.current,
       });
 
-      const channel = supabase.channel("chat-list-" + userId).on(
-        "system" as any,
-        { event: "error" } as any,
-        (payload: unknown) => {
-          const status =
-            payload && typeof payload === "object"
-              ? String((payload as { status?: unknown }).status ?? "")
-              : "";
-          if (status.toLowerCase() === "ok") return;
-          registerFailure("system:error", payload);
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const msg = payload.new as Record<string, unknown>;
-          const messageId = String(msg.id ?? "").trim();
-          const messageChatId = String(msg.chat_id ?? "").trim();
-          if (!messageChatId) return;
-          if (
-            isUuid(messageId) &&
-            rememberRealtimeEventRef.current(`insert:${messageId}`)
-          )
-            return;
-          chatDebugLog("realtime:messages:insert", {
-            chatId: messageChatId,
-            messageId: isUuid(messageId) ? messageId : null,
-            senderId: String(msg.sender_id ?? "") || null,
-          });
-
-          const messageText = String(msg.text ?? "");
-          const messageCreatedAt = String(
-            msg.created_at ?? new Date().toISOString(),
-          );
-          const messageSenderId = msg.sender_id
-            ? String(msg.sender_id)
-            : null;
-          const messageImageUrl = msg.image_url
-            ? String(msg.image_url)
-            : null;
-          const messageVoiceUrl = msg.voice_url
-            ? String(msg.voice_url)
-            : null;
-
-          const fromMe =
-            Boolean(userId) && String(msg.sender_id ?? "") === String(userId);
-
-          const currentChatId = statusRef.current.activeChatId;
-          const isOpenChat = isChatForegroundForId(messageChatId, currentChatId);
-
-          setRows((prev) => {
-            const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
-
-            if (!exists) {
-              void refreshChatsRef.current({ silent: true });
-              return prev;
-            }
-
-            return prev
-              .map((chat) =>
-                rowMatchesChatId(chat, messageChatId)
-                  ? {
-                      ...chat,
-                      last_message_text: messageText,
-                      last_message_at: messageCreatedAt,
-                      last_message_created_at: messageCreatedAt,
-                      last_message_sender_id: messageSenderId,
-                      last_message_image_url: messageImageUrl,
-                      last_message_voice_url: messageVoiceUrl,
-                      // Instant badge UX: bump locally, then reconcile with server refresh.
-                      unread_count:
-                        !fromMe && !isOpenChat
-                          ? Math.max(0, Number(chat.unread_count || 0)) + 1
-                          : Math.max(0, Number(chat.unread_count || 0)),
-                    }
-                  : chat,
-              )
-              .sort((a, b) => {
-                const tb = new Date(listSortKey(b)).getTime();
-                const ta = new Date(listSortKey(a)).getTime();
-                if (tb !== ta) return tb - ta;
-                return b.chat_id.localeCompare(a.chat_id);
-              });
-          });
-          // Always reconcile with server unread counters after insert.
-          if (!fromMe) {
-            scheduleRefreshRef.current(isOpenChat ? 90 : 220, { silent: true });
-            broadcastRef.current({ type: "chat-refresh" });
-            chatDebugLog("realtime:messages:insert:reconcile", {
+      const channel = supabase
+        .channel(`chat-list-${userId}`, {
+          config: { presence: { key: userId } },
+        } as Parameters<typeof supabase.channel>[1])
+        .on(
+          "system" as any,
+          { event: "error" } as any,
+          (payload: unknown) => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            const st =
+              payload && typeof payload === "object"
+                ? String((payload as { status?: unknown }).status ?? "")
+                : "";
+            if (st.toLowerCase() === "ok") return;
+            registerFailure("system:error", payload);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+          },
+          (payload) => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            const msg = payload.new as Record<string, unknown>;
+            const messageId = String(msg.id ?? "").trim();
+            const messageChatId = String(msg.chat_id ?? "").trim();
+            if (!messageChatId) return;
+            if (
+              isUuid(messageId) &&
+              rememberRealtimeEventRef.current(`insert:${messageId}`)
+            )
+              return;
+            chatDebugLog("realtime:messages:insert", {
               chatId: messageChatId,
-              isOpenChat,
+              messageId: isUuid(messageId) ? messageId : null,
+              senderId: String(msg.sender_id ?? "") || null,
             });
-          }
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const msg = payload.new as Record<string, unknown>;
-          const messageId = String(msg.id ?? "").trim();
-          const messageChatId = String(msg.chat_id ?? "").trim();
-          if (!messageChatId) return;
-          if (
-            isUuid(messageId) &&
-            rememberRealtimeEventRef.current(`update:${messageId}`)
-          )
-            return;
-          scheduleRefreshRef.current(70, { silent: true });
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const oldMsg = payload.old as Record<string, unknown>;
-          const messageId = String(oldMsg.id ?? "").trim();
-          const messageChatId = String(oldMsg.chat_id ?? "").trim();
-          if (!messageChatId) return;
-          if (
-            isUuid(messageId) &&
-            rememberRealtimeEventRef.current(`delete:${messageId}`)
-          )
-            return;
-          scheduleRefreshRef.current(70, { silent: true });
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "chats",
-          filter: `buyer_id=eq.${userId}`,
-        },
-        () => {
-          scheduleRefreshRef.current(70, { silent: true });
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "chats",
-          filter: `seller_id=eq.${userId}`,
-        },
-        () => {
-          scheduleRefreshRef.current(70, { silent: true });
-        },
-      );
+
+            const messageText = String(msg.text ?? "");
+            const messageCreatedAt = String(
+              msg.created_at ?? new Date().toISOString(),
+            );
+            const messageSenderId = msg.sender_id
+              ? String(msg.sender_id)
+              : null;
+            const messageImageUrl = msg.image_url
+              ? String(msg.image_url)
+              : null;
+            const messageVoiceUrl = msg.voice_url
+              ? String(msg.voice_url)
+              : null;
+
+            const fromMe =
+              Boolean(userId) && String(msg.sender_id ?? "") === String(userId);
+
+            const currentChatId = statusRef.current.activeChatId;
+            const isOpenChat = isChatForegroundForId(messageChatId, currentChatId);
+
+            setRows((prev) => {
+              const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
+
+              if (!exists) {
+                void refreshChatsRef.current?.({ silent: true });
+                return prev;
+              }
+
+              return prev
+                .map((chat) =>
+                  rowMatchesChatId(chat, messageChatId)
+                    ? {
+                        ...chat,
+                        last_message_text: messageText,
+                        last_message_at: messageCreatedAt,
+                        last_message_created_at: messageCreatedAt,
+                        last_message_sender_id: messageSenderId,
+                        last_message_image_url: messageImageUrl,
+                        last_message_voice_url: messageVoiceUrl,
+                        // Instant badge UX: bump locally, then reconcile with server refresh.
+                        unread_count:
+                          !fromMe && !isOpenChat
+                            ? Math.max(0, Number(chat.unread_count || 0)) + 1
+                            : Math.max(0, Number(chat.unread_count || 0)),
+                      }
+                    : chat,
+                )
+                .sort((a, b) => {
+                  const tb = new Date(listSortKey(b)).getTime();
+                  const ta = new Date(listSortKey(a)).getTime();
+                  if (tb !== ta) return tb - ta;
+                  return b.chat_id.localeCompare(a.chat_id);
+                });
+            });
+            // Always reconcile with server unread counters after insert.
+            if (!fromMe) {
+              scheduleRefreshRef.current(isOpenChat ? 90 : 220, { silent: true });
+              chatDebugLog("realtime:messages:insert:reconcile", {
+                chatId: messageChatId,
+                isOpenChat,
+              });
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+          },
+          (payload) => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            const msg = payload.new as Record<string, unknown>;
+            const messageId = String(msg.id ?? "").trim();
+            const messageChatId = String(msg.chat_id ?? "").trim();
+            if (!messageChatId) return;
+            if (
+              isUuid(messageId) &&
+              rememberRealtimeEventRef.current(`update:${messageId}`)
+            )
+              return;
+            scheduleRefreshRef.current(70, { silent: true });
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+          },
+          (payload) => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            const oldMsg = payload.old as Record<string, unknown>;
+            const messageId = String(oldMsg.id ?? "").trim();
+            const messageChatId = String(oldMsg.chat_id ?? "").trim();
+            if (!messageChatId) return;
+            if (
+              isUuid(messageId) &&
+              rememberRealtimeEventRef.current(`delete:${messageId}`)
+            )
+              return;
+            scheduleRefreshRef.current(70, { silent: true });
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "chats",
+            filter: `buyer_id=eq.${userId}`,
+          },
+          () => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            scheduleRefreshRef.current(70, { silent: true });
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "chats",
+            filter: `seller_id=eq.${userId}`,
+          },
+          () => {
+            if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+            if (myGen !== subscribeGenerationRef.current) return;
+            scheduleRefreshRef.current(70, { silent: true });
+          },
+        );
 
       statusRef.current.listChannel = channel;
 
       channel.subscribe((status) => {
+        if (cancelled || connectOwner !== realtimeConnectOwnerRef.current) return;
+        if (myGen !== subscribeGenerationRef.current) return;
         if (realtimeDisabledRef.current) return;
         chatDebugLog("realtime:channel:status", {
           status,
@@ -1521,13 +1832,25 @@ export function ChatUnreadProvider({
           return;
         }
         if (status === "SUBSCRIBED") {
+          console.warn("[LIST_CHANNEL_SUBSCRIBED]", { userId });
+          bumpEnigmaCounter("realtimeSubscribedCount");
           maxRealtimeFailuresRef.current = 0;
           realtimeDisabledRef.current = false;
           setRealtimeDisabledState(false);
           setRealtimeReadyState(true);
           setRealtimeMode("realtime");
-          scheduleRefreshRef.current(50, { silent: true });
-          scheduleReconcileRef.current("realtime-subscribed", 160);
+          realtimeListChannelReadyRef.current = true;
+          realtimeListConnectionStateRef.current = "subscribed";
+          realtimeListSubscribedForUserRef.current = userId;
+          void channel
+            .track({
+              online_at: new Date().toISOString(),
+              user_id: userId,
+            })
+            .catch(() => {
+              /* noop */
+            });
+          scheduleRefreshRef.current(220, { silent: true });
           return;
         }
 
@@ -1541,57 +1864,17 @@ export function ChatUnreadProvider({
       });
     };
 
-    connect();
+    tryBootstrap();
 
     return () => {
       cancelled = true;
+      clearWait();
+      realtimeConnectOwnerRef.current += 1;
       clearReconnect();
       clearChannel();
       setRealtimeReadyState(false);
     };
-  }, [
-    authLifecycleReady,
-    authStabilizedState,
-    reconnectSeq,
-    userId,
-  ]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!authLifecycleReady) return;
-    if (userId && !authStabilizedState) return;
-    let cancelled = false;
-    let removeListener: (() => void) | null = null;
-    void (async () => {
-      try {
-        const [{ Capacitor }, { App }] = await Promise.all([
-          import("@capacitor/core"),
-          import("@capacitor/app"),
-        ]);
-        if (cancelled || !Capacitor.isNativePlatform()) return;
-        const handle = await App.addListener("appStateChange", ({ isActive }) => {
-          chatDebugLog("capacitor:appStateChange", { isActive });
-          if (!isActive) return;
-          void upsertPresence();
-          triggerRealtimeRecover("capacitor-resume");
-          chatDebugLog("capacitor:resume");
-        });
-        if (cancelled) {
-          await handle.remove();
-          return;
-        }
-        removeListener = () => {
-          void handle.remove();
-        };
-      } catch {
-        // noop: web build without native runtime
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (removeListener) removeListener();
-    };
-  }, [authLifecycleReady, authStabilizedState, triggerRealtimeRecover, upsertPresence, userId]);
+  }, [userId]);
 
   useEffect(() => {
     if (
@@ -1599,7 +1882,8 @@ export function ChatUnreadProvider({
       !authLifecycleReady ||
       !authStabilizedState ||
       typeof window === "undefined" ||
-      typeof document === "undefined"
+      typeof document === "undefined" ||
+      isAuthCircuitOpen()
     )
       return;
 
@@ -1612,18 +1896,18 @@ export function ChatUnreadProvider({
     const onVisibility = () => {
       ping();
       if (document.visibilityState === "visible") {
-        triggerRealtimeRecover("visibility-visible");
+        scheduleForegroundSilentListRefresh("visibility-visible");
       }
     };
 
     const onFocus = () => {
       ping();
-      triggerRealtimeRecover("window-focus");
+      scheduleForegroundSilentListRefresh("window-focus");
     };
 
     const onOnline = () => {
       ping();
-      triggerRealtimeRecover("network-online");
+      scheduleForegroundSilentListRefresh("network-online");
     };
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -1643,31 +1927,45 @@ export function ChatUnreadProvider({
         presenceIntervalRef.current = null;
       }
     };
-  }, [authLifecycleReady, authStabilizedState, triggerRealtimeRecover, upsertPresence, userId]);
+  }, [authLifecycleReady, authStabilizedState, scheduleForegroundSilentListRefresh, upsertPresence, userId]);
 
   useEffect(() => {
-    if (!userId || !authLifecycleReady || !authStabilizedState || typeof window === "undefined") return;
+    if (
+      !userId ||
+      !authLifecycleReady ||
+      !authStabilizedState ||
+      typeof window === "undefined" ||
+      isAuthCircuitOpen()
+    )
+      return;
     const pollMs =
       realtimeMode === "realtime" ? CHAT_REFRESH_POLL_MS : FALLBACK_POLL_MS;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
-      void refreshChatsRef.current({ silent: true });
+      void refreshChatsRef.current?.({ silent: true });
     }, pollMs);
     return () => window.clearInterval(timer);
   }, [authLifecycleReady, authStabilizedState, realtimeMode, userId]);
 
   useEffect(() => {
-    if (!userId || !authLifecycleReady || !authStabilizedState || typeof window === "undefined") return;
+    if (
+      !userId ||
+      !authLifecycleReady ||
+      !authStabilizedState ||
+      typeof window === "undefined" ||
+      isAuthCircuitOpen()
+    )
+      return;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
-      scheduleReconcile("periodic-drift-check", 0);
+      scheduleReconcileRef.current("periodic-drift-check", 0);
     }, UNREAD_RECONCILE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [authLifecycleReady, authStabilizedState, scheduleReconcile, userId]);
+  }, [authLifecycleReady, authStabilizedState, userId]);
 
   useEffect(() => {
     return () => {
@@ -1694,6 +1992,30 @@ export function ChatUnreadProvider({
         statusRef.current.listChannel = null;
       }
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    getEnigmaDebugCounters();
+    const id = window.setInterval(() => {
+      const c = getEnigmaDebugCounters();
+      const conn = realtimeListConnectionStateRef.current;
+      const payload = {
+        counters: { ...c },
+        subscribed: conn === "subscribed",
+        reconnecting:
+          conn === "connecting" || statusRef.current.reconnectTimer !== null,
+        hasListChannel: Boolean(statusRef.current.listChannel),
+        userId: userIdRef.current,
+        authLifecycleReady: authLifecycleReadyRef.current,
+        hasSessionToken: Boolean(stableSessionRef.current?.access_token?.trim()),
+        hasRestToken: Boolean(getRestAccessToken()?.trim()),
+        subscribeGeneration: subscribeGenerationRef.current,
+        connectOwner: realtimeConnectOwnerRef.current,
+      };
+      console.warn(`[ENIGMA_RUNTIME_STATE] ${JSON.stringify(payload)}`);
+    }, 15_000);
+    return () => window.clearInterval(id);
   }, []);
 
   const totalUnread = useMemo(() => computeTotalUnread(rows), [rows]);
