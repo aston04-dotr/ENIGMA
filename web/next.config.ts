@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 import path from "path";
 
+const isLocalCapBundle = process.env.CAP_LOCAL_BUNDLE === "1";
+
 const nextConfig: NextConfig = {
   /** Монорепо: не поднимать lockfile с родительской папки Desktop как корень трейсинга. */
   outputFileTracingRoot: path.join(process.cwd()),
@@ -13,7 +15,16 @@ const nextConfig: NextConfig = {
       "dev",
   },
   reactStrictMode: true,
+  ...(isLocalCapBundle
+    ? {
+        output: "export" as const,
+        trailingSlash: true,
+        // Ignore .ts route handlers/middleware in local static bundle build.
+        pageExtensions: ["tsx", "jsx"],
+      }
+    : {}),
   images: {
+    ...(isLocalCapBundle ? { unoptimized: true } : {}),
     remotePatterns: [
       { protocol: "https", hostname: "**", pathname: "/**" },
       { protocol: "http", hostname: "**", pathname: "/**" },

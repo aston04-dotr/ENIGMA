@@ -18,6 +18,7 @@ import { registerRapidListingCreated } from "@/lib/trust";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
+import { listingPath } from "@/lib/mobileRuntime";
 import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { logRlsIfBlocked } from "@/lib/postgrestErrors";
 import { parseNonNegativePrice } from "@/lib/validate";
@@ -1316,7 +1317,7 @@ export function CreateListingForm() {
       resetCreateFormState();
       setShowPhoneWarning(false);
       await refreshProfile();
-      router.push(`/listing/${lid}`);
+      router.push(listingPath(lid));
     } catch (e: unknown) {
       const message = parseUnknownError(e);
       console.error("FETCH ERROR", message);

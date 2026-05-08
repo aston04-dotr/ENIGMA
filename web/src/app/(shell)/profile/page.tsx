@@ -11,6 +11,7 @@ import { renewListingPublication } from "@/lib/listingRenewal";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { deleteAccount } from "@/lib/deleteAccount";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
+import { listingEditPath } from "@/lib/mobileRuntime";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
@@ -675,7 +676,7 @@ export default function ProfilePage() {
                       ) : null}
                       <div className="flex gap-2">
                         <Link
-                          href={`/listing/edit/${safeListing.id}`}
+                          href={listingEditPath(String(safeListing.id))}
                           className="flex min-h-[42px] flex-1 items-center justify-center rounded-[12px] border border-line/50 bg-elevated px-3 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
                         >
                           Редактировать

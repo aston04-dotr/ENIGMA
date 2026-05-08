@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorUi } from "@/components/ErrorUi";
 import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
+import { chatPath } from "@/lib/mobileRuntime";
 import { normalizeChatParticipantName } from "@/lib/guestIdentity";
 import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import Link from "next/link";
@@ -273,7 +274,7 @@ export default function ChatsPage() {
             <li key={row.chat_id}>
               <button
                 type="button"
-                onClick={() => router.push(`/chat/${row.chat_id}`)}
+                onClick={() => router.push(chatPath(row.chat_id))}
                 className="pressable flex w-full items-center gap-4 rounded-card border border-line bg-elevated p-4 text-left shadow-soft transition-shadow duration-ui hover:border-accent/25"
               >
                 <ChatListingThumb

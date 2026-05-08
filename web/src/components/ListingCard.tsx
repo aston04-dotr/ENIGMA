@@ -23,6 +23,7 @@ import {
 import { reportListingTrustPenalty } from "@/lib/trust";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
+import { listingEditPath, listingPath } from "@/lib/mobileRuntime";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -159,7 +160,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
       {
         id: "edit",
         label: "Редактировать",
-        onSelect: () => router.push(`/listing/edit/${id}`),
+        onSelect: () => router.push(listingEditPath(id)),
       },
       {
         id: "delete",
@@ -192,19 +193,19 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
 
   function boostHref(): string {
     if (!viewerId || !lid) return "/login";
-    if (!isOwn) return `/listing/${lid}`;
+    if (!isOwn) return listingPath(lid);
     return `/payment?${webBoostPaymentQuery(lid, viewerId)}`;
   }
 
   function vipHref(): string {
     if (!viewerId || !lid) return "/login";
-    if (!isOwn) return `/listing/${lid}`;
+    if (!isOwn) return listingPath(lid);
     return `/payment?${webVipPaymentQuery(lid, viewerId)}`;
   }
 
   function topHref(): string {
     if (!viewerId || !lid) return "/login";
-    if (!isOwn) return `/listing/${lid}`;
+    if (!isOwn) return listingPath(lid);
     return `/payment?${webTopPaymentQuery(lid, viewerId)}`;
   }
 
@@ -275,7 +276,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
           </div>
         )}
         <Link
-          href={`/listing/${lid}`}
+          href={listingPath(lid)}
           prefetch
           className="absolute inset-0 z-10"
           aria-label={itemTitle}
@@ -334,7 +335,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
         </div>
       </div>
       <Link
-        href={`/listing/${lid}`}
+        href={listingPath(lid)}
         prefetch
         className="block"
         onClick={() => {

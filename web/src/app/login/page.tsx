@@ -14,6 +14,7 @@ import {
   getSessionGuarded,
   hardResetSupabaseAuthState,
 } from "@/lib/supabase";
+import { chatPath } from "@/lib/mobileRuntime";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -116,7 +117,7 @@ export default function LoginPage() {
             listingId: pendingChatIntent.listingId,
           });
           if (chatRes.ok && chatRes.id) {
-            router.replace(`/chat/${chatRes.id}`);
+            router.replace(chatPath(chatRes.id));
             return;
           }
         }

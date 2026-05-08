@@ -3,14 +3,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "online.enigma.app",
   appName: "Enigma",
-  webDir: "capacitor-www",
-  server: {
-    // Production model: native shell + hosted Next.js app.
-    url: process.env.CAP_SERVER_URL || "https://enigma-app.online",
-    cleartext: false,
-    androidScheme: "https",
-    allowNavigation: ["enigma-app.online", "*.supabase.co", "*.supabase.in"],
-  },
+  // Local bundled UI from Next static export (`out/`).
+  webDir: "out",
   ios: {
     scheme: "enigma",
   },
