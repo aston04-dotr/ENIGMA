@@ -10,6 +10,18 @@ const { url, anonKey, configured } = getSupabasePublicConfig();
 const AUTH_STORAGE_KEY = "enigma.supabase.auth.v1";
 const AUTH_PROMISE_TIMEOUT_MS = 12_000;
 
+function isNativeCapacitorRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
+    .Capacitor;
+  try {
+    if (cap?.isNativePlatform?.()) return true;
+  } catch {
+    // noop
+  }
+  return false;
+}
+
 type CookieItem = { name: string; value: string };
 type BrowserCookieOptions = {
   domain?: string;
@@ -97,7 +109,7 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: !isNativeCapacitorRuntime(),
     storageKey: AUTH_STORAGE_KEY,
     multiTab: false,
   },

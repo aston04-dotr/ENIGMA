@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,10 @@ import { signInWithMagicLink } from "@/lib/auth";
 
 const RESEND_SECONDS = 60;
 const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
+const VERIFY_TIMEOUT_MS = 15_000;
+const SESSION_RETRY_COUNT = 3;
+const SESSION_RETRY_DELAY_MS = 500;
+const NAVIGATION_SETTLE_DELAY_MS = 400;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -38,6 +42,10 @@ export default function VerifyPage() {
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const isSubmittingRef = useRef(false);
+
+  const delay = (ms: number) =>
+    new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -77,6 +85,11 @@ export default function VerifyPage() {
 
   const onSubmit = async () => {
     if (code.length !== 8 || !email) return;
+    if (isSubmittingRef.current) {
+      console.warn("[auth-verify] submit skipped: already in-flight");
+      return;
+    }
+    isSubmittingRef.current = true;
     setLoading(true);
     setError("");
     const startedAt = Date.now();
@@ -89,13 +102,18 @@ export default function VerifyPage() {
           token: code,
           type: "email",
         }),
-        AUTH_FINALIZE_TIMEOUT_MS,
+        VERIFY_TIMEOUT_MS,
         "verifyOtp",
       );
+      console.debug("[auth-verify] otp verify:resolved", {
+        hasSessionFromVerify: Boolean(verifyData?.session?.user),
+      });
       if (verifyError) {
+        console.error("[auth-verify] otp verify:error", verifyError);
         setError(verifyError.message || "Неверный или устаревший код");
         return;
       }
+      console.debug("[auth-verify] otp verify:success");
       if (verifyData?.session?.access_token && verifyData?.session?.refresh_token) {
         await withTimeout(
           supabase.auth.setSession({
@@ -108,16 +126,36 @@ export default function VerifyPage() {
       }
 
       localStorage.removeItem("auth_email");
-      // Wait for session hydration to avoid route flicker/collapse right after OTP.
-      const { session: hydrated } = await withTimeout(
-        getSessionGuarded("verify-otp-success", { allowRefresh: true }),
-        AUTH_FINALIZE_TIMEOUT_MS,
-        "verifyOtp:hydrateSession",
-      );
+      let hydrated: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
+      for (let attempt = 1; attempt <= SESSION_RETRY_COUNT; attempt += 1) {
+        const sessionRes = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_FINALIZE_TIMEOUT_MS,
+          `verifyOtp:getSession:attempt:${attempt}`,
+        );
+        hydrated = sessionRes.data.session ?? null;
+        console.debug("[auth-verify] otp verify:session-check", {
+          attempt,
+          hasSession: Boolean(hydrated?.user),
+        });
+        if (hydrated?.user) break;
+        await delay(SESSION_RETRY_DELAY_MS);
+      }
+
+      if (!hydrated?.user) {
+        const guarded = await withTimeout(
+          getSessionGuarded("verify-otp-success", { allowRefresh: true }),
+          AUTH_FINALIZE_TIMEOUT_MS,
+          "verifyOtp:hydrateSession:guarded",
+        );
+        hydrated = guarded.session ?? null;
+      }
+
       if (!hydrated?.user) {
         setError("Сессия не подтвердилась. Повторите вход.");
         return;
       }
+      await delay(NAVIGATION_SETTLE_DELAY_MS);
       console.debug("[auth-verify] otp verify:success", {
         elapsedMs: Date.now() - startedAt,
       });
@@ -127,6 +165,7 @@ export default function VerifyPage() {
       console.error("[auth-verify] otp verify:failed", error);
       setError("Не удалось завершить вход. Проверьте интернет и попробуйте снова.");
     } finally {
+      isSubmittingRef.current = false;
       setLoading(false);
     }
   };

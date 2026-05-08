@@ -354,6 +354,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onRecover = () => {
+      const p = String(window.location.pathname || "");
+      if (
+        p === "/login" ||
+        p.startsWith("/auth/verify") ||
+        p.startsWith("/auth/confirm") ||
+        p.startsWith("/auth/callback")
+      ) {
+        return;
+      }
       if (loading) return;
       if (!authResolved) return;
       if (session?.user) return;
