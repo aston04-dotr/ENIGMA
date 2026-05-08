@@ -49,6 +49,9 @@ const RECONNECT_MAX_ATTEMPTS = 6;
 const REALTIME_EVENT_TTL_MS = 15_000;
 const UNREAD_RECONCILE_DEBOUNCE_MS = 160;
 const UNREAD_RECONCILE_POLL_MS = 35_000;
+const REALTIME_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
+const REALTIME_FAILURE_LIMIT = 5;
+const FALLBACK_POLL_MS = 25_000;
 const DEV_CHAT_DEBUG = process.env.NODE_ENV === "development";
 
 function chatDebugLog(event: string, payload?: Record<string, unknown>) {
@@ -58,6 +61,30 @@ function chatDebugLog(event: string, payload?: Record<string, unknown>) {
     return;
   }
   console.debug(`[chat-unread][dev] ${event}`);
+}
+
+function chatRealtimeLog(
+  level: "info" | "warn" | "error",
+  event: "subscribe" | "error" | "retry" | "disabled",
+  payload?: Record<string, unknown>,
+) {
+  const serialized = (() => {
+    try {
+      return JSON.stringify(payload ?? {}, null, 2);
+    } catch {
+      return "{}";
+    }
+  })();
+  const message = `[chat-realtime] ${event}`;
+  if (level === "error") {
+    console.error(message, serialized);
+    return;
+  }
+  if (level === "warn") {
+    console.warn(message, serialized);
+    return;
+  }
+  console.info(message, serialized);
 }
 
 function getErrorStatus(error: unknown): number {
@@ -377,6 +404,7 @@ export function ChatUnreadProvider({
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
   const [reconnectSeq, setReconnectSeq] = useState(0);
+  const [realtimeDisabledState, setRealtimeDisabledState] = useState(false);
   const processedRealtimeEventsRef = useRef<Map<string, number>>(new Map());
 
   const statusRef = useRef<{
@@ -398,10 +426,16 @@ export function ChatUnreadProvider({
   const authLifecycleReadyRef = useRef(authLifecycleReady);
   const lastRecoverAtRef = useRef(0);
   const authChangeListenerAttachedRef = useRef(false);
+  const realtimeDisabledRef = useRef(false);
+  const maxRealtimeFailuresRef = useRef(0);
 
   useEffect(() => {
     authLifecycleReadyRef.current = authLifecycleReady;
   }, [authLifecycleReady]);
+
+  useEffect(() => {
+    realtimeDisabledRef.current = realtimeDisabledState;
+  }, [realtimeDisabledState]);
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
@@ -425,6 +459,9 @@ export function ChatUnreadProvider({
     chatListAuthRetryRef.current = 0;
     setHydratedState(false);
     setRealtimeReadyState(false);
+    maxRealtimeFailuresRef.current = 0;
+    realtimeDisabledRef.current = false;
+    setRealtimeDisabledState(false);
   }, [userId]);
 
   useEffect(() => {
@@ -814,6 +851,20 @@ export function ChatUnreadProvider({
     [scheduleReconcile, scheduleRefresh],
   );
 
+  const refreshChatsRef = useRef(refreshChats);
+  const scheduleRefreshRef = useRef(scheduleRefresh);
+  const scheduleReconcileRef = useRef(scheduleReconcile);
+  const rememberRealtimeEventRef = useRef(rememberRealtimeEvent);
+  const broadcastRef = useRef(broadcast);
+
+  useEffect(() => {
+    refreshChatsRef.current = refreshChats;
+    scheduleRefreshRef.current = scheduleRefresh;
+    scheduleReconcileRef.current = scheduleReconcile;
+    rememberRealtimeEventRef.current = rememberRealtimeEvent;
+    broadcastRef.current = broadcast;
+  }, [broadcast, rememberRealtimeEvent, refreshChats, scheduleReconcile, scheduleRefresh]);
+
   const upsertPresence = useCallback(async () => {
     const normalizedUserId = String(userId ?? "").trim();
     if (!normalizedUserId || !isUuid(normalizedUserId) || typeof document === "undefined") {
@@ -1050,6 +1101,15 @@ export function ChatUnreadProvider({
       chatDebugLog("realtime:subscribe:blocked:auth-not-ready", { userId });
       return;
     }
+    if (realtimeDisabledRef.current) {
+      chatRealtimeLog("warn", "disabled", {
+        reason: "guard:already-disabled",
+        userId,
+        failures: maxRealtimeFailuresRef.current,
+      });
+      setRealtimeReadyState(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -1060,14 +1120,93 @@ export function ChatUnreadProvider({
       }
     };
 
-    const connect = () => {
-      if (cancelled) return;
-      clearReconnect();
-
+    const clearChannel = () => {
       if (statusRef.current.listChannel) {
         void supabase.removeChannel(statusRef.current.listChannel);
         statusRef.current.listChannel = null;
       }
+    };
+
+    const payloadContainsRejectedSubscription = (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return false;
+      const p = payload as Record<string, unknown>;
+      const text = JSON.stringify(
+        {
+          message: p.message ?? null,
+          reason: p.reason ?? null,
+          details: p.details ?? null,
+          status: p.status ?? null,
+        },
+        null,
+        2,
+      ).toLowerCase();
+      return text.includes("unable to subscribe to changes with given parameters");
+    };
+
+    const scheduleRetry = (reason: string) => {
+      if (cancelled || realtimeDisabledRef.current || typeof window === "undefined") return;
+      clearReconnect();
+      const failureIndex = Math.max(0, maxRealtimeFailuresRef.current - 1);
+      const delayMs =
+        REALTIME_RETRY_DELAYS_MS[
+          Math.min(failureIndex, REALTIME_RETRY_DELAYS_MS.length - 1)
+        ];
+      chatRealtimeLog("warn", "retry", {
+        reason,
+        userId,
+        failures: maxRealtimeFailuresRef.current,
+        delayMs,
+      });
+      statusRef.current.reconnectTimer = window.setTimeout(() => {
+        statusRef.current.reconnectTimer = null;
+        if (!cancelled) {
+          connect();
+        }
+      }, delayMs);
+    };
+
+    const disableRealtime = (reason: string, payload?: unknown) => {
+      clearReconnect();
+      clearChannel();
+      realtimeDisabledRef.current = true;
+      setRealtimeDisabledState(true);
+      setRealtimeReadyState(false);
+      chatRealtimeLog("error", "disabled", {
+        reason,
+        userId,
+        failures: maxRealtimeFailuresRef.current,
+        payload: payload ?? null,
+      });
+    };
+
+    const registerFailure = (reason: string, payload?: unknown) => {
+      maxRealtimeFailuresRef.current += 1;
+      setRealtimeReadyState(false);
+      clearChannel();
+      chatRealtimeLog("error", "error", {
+        reason,
+        userId,
+        failures: maxRealtimeFailuresRef.current,
+        payload: payload ?? null,
+      });
+      if (
+        payloadContainsRejectedSubscription(payload) ||
+        maxRealtimeFailuresRef.current > REALTIME_FAILURE_LIMIT
+      ) {
+        disableRealtime(reason, payload);
+        return;
+      }
+      scheduleRetry(reason);
+    };
+
+    const connect = () => {
+      if (cancelled || realtimeDisabledRef.current) return;
+      clearReconnect();
+      clearChannel();
+      chatRealtimeLog("info", "subscribe", {
+        userId,
+        failures: maxRealtimeFailuresRef.current,
+      });
 
       const channel = supabase.channel("chat-list-" + userId).on(
         "system" as any,
@@ -1078,10 +1217,7 @@ export function ChatUnreadProvider({
               ? String((payload as { status?: unknown }).status ?? "")
               : "";
           if (status.toLowerCase() === "ok") return;
-          console.error(
-            "chat-list realtime system error",
-            JSON.stringify(payload ?? {}, null, 2),
-          );
+          registerFailure("system:error", payload);
         },
       ).on(
         "postgres_changes",
@@ -1095,7 +1231,11 @@ export function ChatUnreadProvider({
           const messageId = String(msg.id ?? "").trim();
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
-          if (isUuid(messageId) && rememberRealtimeEvent(`insert:${messageId}`)) return;
+          if (
+            isUuid(messageId) &&
+            rememberRealtimeEventRef.current(`insert:${messageId}`)
+          )
+            return;
           chatDebugLog("realtime:messages:insert", {
             chatId: messageChatId,
             messageId: isUuid(messageId) ? messageId : null,
@@ -1126,7 +1266,7 @@ export function ChatUnreadProvider({
             const exists = prev.find((c) => rowMatchesChatId(c, messageChatId));
 
             if (!exists) {
-              void refreshChats({ silent: true });
+              void refreshChatsRef.current({ silent: true });
               return prev;
             }
 
@@ -1158,8 +1298,8 @@ export function ChatUnreadProvider({
           });
           // Always reconcile with server unread counters after insert.
           if (!fromMe) {
-            scheduleRefresh(isOpenChat ? 90 : 220, { silent: true });
-            broadcast({ type: "chat-refresh" });
+            scheduleRefreshRef.current(isOpenChat ? 90 : 220, { silent: true });
+            broadcastRef.current({ type: "chat-refresh" });
             chatDebugLog("realtime:messages:insert:reconcile", {
               chatId: messageChatId,
               isOpenChat,
@@ -1178,8 +1318,12 @@ export function ChatUnreadProvider({
           const messageId = String(msg.id ?? "").trim();
           const messageChatId = String(msg.chat_id ?? "").trim();
           if (!messageChatId) return;
-          if (isUuid(messageId) && rememberRealtimeEvent(`update:${messageId}`)) return;
-          scheduleRefresh(70, { silent: true });
+          if (
+            isUuid(messageId) &&
+            rememberRealtimeEventRef.current(`update:${messageId}`)
+          )
+            return;
+          scheduleRefreshRef.current(70, { silent: true });
         },
       ).on(
         "postgres_changes",
@@ -1193,8 +1337,12 @@ export function ChatUnreadProvider({
           const messageId = String(oldMsg.id ?? "").trim();
           const messageChatId = String(oldMsg.chat_id ?? "").trim();
           if (!messageChatId) return;
-          if (isUuid(messageId) && rememberRealtimeEvent(`delete:${messageId}`)) return;
-          scheduleRefresh(70, { silent: true });
+          if (
+            isUuid(messageId) &&
+            rememberRealtimeEventRef.current(`delete:${messageId}`)
+          )
+            return;
+          scheduleRefreshRef.current(70, { silent: true });
         },
       ).on(
         "postgres_changes",
@@ -1205,7 +1353,7 @@ export function ChatUnreadProvider({
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          scheduleRefresh(70, { silent: true });
+          scheduleRefreshRef.current(70, { silent: true });
         },
       ).on(
         "postgres_changes",
@@ -1216,7 +1364,7 @@ export function ChatUnreadProvider({
           filter: `buyer_id=eq.${userId}`,
         },
         () => {
-          scheduleRefresh(70, { silent: true });
+          scheduleRefreshRef.current(70, { silent: true });
         },
       ).on(
         "postgres_changes",
@@ -1227,7 +1375,7 @@ export function ChatUnreadProvider({
           filter: `seller_id=eq.${userId}`,
         },
         () => {
-          scheduleRefresh(70, { silent: true });
+          scheduleRefreshRef.current(70, { silent: true });
         },
       );
 
@@ -1244,10 +1392,12 @@ export function ChatUnreadProvider({
           return;
         }
         if (status === "SUBSCRIBED") {
-          statusRef.current.reconnectAttempt = 0;
+          maxRealtimeFailuresRef.current = 0;
+          realtimeDisabledRef.current = false;
+          setRealtimeDisabledState(false);
           setRealtimeReadyState(true);
-          scheduleRefresh(50, { silent: true });
-          scheduleReconcile("realtime-subscribed", 160);
+          scheduleRefreshRef.current(50, { silent: true });
+          scheduleReconcileRef.current("realtime-subscribed", 160);
           return;
         }
 
@@ -1256,22 +1406,7 @@ export function ChatUnreadProvider({
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
-          setRealtimeReadyState(false);
-          const attempt = Math.min(
-            statusRef.current.reconnectAttempt + 1,
-            RECONNECT_MAX_ATTEMPTS,
-          );
-          statusRef.current.reconnectAttempt = attempt;
-
-          clearReconnect();
-          if (typeof window !== "undefined") {
-            statusRef.current.reconnectTimer = window.setTimeout(
-              () => {
-                if (!cancelled) connect();
-              },
-              RECONNECT_BASE_MS * 2 ** (attempt - 1),
-            );
-          }
+          registerFailure(`status:${status}`);
         }
       });
     };
@@ -1281,18 +1416,12 @@ export function ChatUnreadProvider({
     return () => {
       cancelled = true;
       clearReconnect();
-      if (statusRef.current.listChannel) {
-        void supabase.removeChannel(statusRef.current.listChannel);
-        statusRef.current.listChannel = null;
-      }
+      clearChannel();
       setRealtimeReadyState(false);
     };
   }, [
     authLifecycleReady,
     reconnectSeq,
-    rememberRealtimeEvent,
-    scheduleReconcile,
-    scheduleRefresh,
     userId,
   ]);
 
@@ -1385,14 +1514,15 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     if (!userId || !authLifecycleReady || typeof window === "undefined") return;
+    const pollMs = realtimeDisabledState ? FALLBACK_POLL_MS : CHAT_REFRESH_POLL_MS;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
-      void refreshChats({ silent: true });
-    }, CHAT_REFRESH_POLL_MS);
+      void refreshChatsRef.current({ silent: true });
+    }, pollMs);
     return () => window.clearInterval(timer);
-  }, [authLifecycleReady, refreshChats, userId]);
+  }, [authLifecycleReady, realtimeDisabledState, userId]);
 
   useEffect(() => {
     if (!userId || !authLifecycleReady || typeof window === "undefined") return;
