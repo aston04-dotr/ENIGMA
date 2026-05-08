@@ -14,6 +14,7 @@ import {
   getSessionGuarded,
   supabase,
 } from "@/lib/supabase";
+import { isLocalMobileBundleRuntime } from "@/lib/mobileRuntime";
 import { getOrCreateGuestIdentity } from "@/lib/guestIdentity";
 import { mergeGuestStateAfterSignIn } from "@/lib/guestUpgrade";
 
@@ -86,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const authResolvedRef = useRef(authResolved);
   const sessionUserRef = useRef<User | null>(user);
   const retryBootstrapRef = useRef<((opts?: { fromUser?: boolean; fromOnline?: boolean }) => void) | null>(null);
+  const mobileRuntimeRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -135,6 +137,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           settledSession = retry.session ?? null;
         }
         applySession(settledSession);
+        if (mobileRuntimeRef.current) {
+          console.log("[mobile-session] hydrate_done", {
+            reason,
+            hasSession: Boolean(settledSession?.user),
+          });
+        }
         console.debug("[auth] hydrate done", {
           reason,
           elapsedMs: Date.now() - startedAt,
@@ -253,6 +261,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      mobileRuntimeRef.current = isLocalMobileBundleRuntime();
+    }
+  }, []);
+
+  useEffect(() => {
     if (session?.user) {
       hadSessionRef.current = true;
     }
@@ -320,6 +334,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: subData } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (!mounted) return;
+      if (mobileRuntimeRef.current) {
+        console.log("[mobile-session] auth_event", {
+          event,
+          hasSession: Boolean(nextSession?.user),
+        });
+      }
       if (signedOutTimerRef.current && typeof window !== "undefined") {
         window.clearTimeout(signedOutTimerRef.current);
         signedOutTimerRef.current = null;

@@ -36,7 +36,13 @@ export function PushNotificationsBootstrap() {
     const toAppPath = (rawUrl: string): string | null => {
       try {
         const parsed = new URL(rawUrl);
-        const path = `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+        // Support custom scheme deeplinks, e.g. enigma://auth/confirm -> /auth/confirm
+        const customSchemeHostPrefix =
+          parsed.protocol === "enigma:" && parsed.host
+            ? `/${parsed.host}`
+            : "";
+        const path =
+          `${customSchemeHostPrefix}${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
         return path;
       } catch {
         return null;

@@ -1,5 +1,5 @@
 import { isLocalMobileBundleRuntime } from "./mobileRuntime";
-import { getSupabasePublicConfig } from "./runtimeConfig";
+import { getRedirectSiteOrigin, getSiteOrigin, getSupabasePublicConfig } from "./runtimeConfig";
 import { isSupabaseConfigured, supabase } from "./supabase";
 
 function maskEmailForLog(email: string) {
@@ -30,6 +30,27 @@ export async function signIn(email: string) {
     supabaseConfigured: configured && isSupabaseConfigured,
     supabaseHost,
   });
+  const mobileRedirectTo =
+    process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO_MOBILE?.trim() ||
+    "enigma://auth/confirm";
+  const emailRedirectTo = preferDirectOtp
+    ? mobileRedirectTo
+    : process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO?.trim() ||
+      `${getRedirectSiteOrigin()}/auth/confirm`;
+  console.log("[auth] magic_link:redirect_config", {
+    mode: preferDirectOtp ? "direct_supabase" : "api_route",
+    email: label,
+    emailRedirectTo,
+    siteOrigin: getSiteOrigin(),
+    runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
+  });
+  if (preferDirectOtp) {
+    console.log("[mobile-auth] otp_send_config", {
+      email: label,
+      emailRedirectTo,
+      runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
+    });
+  }
 
   const controller =
     typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -41,10 +62,16 @@ export async function signIn(email: string) {
         email: trimmed,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo,
         },
       });
       if (error) {
         const status = Number((error as { status?: unknown; code?: unknown }).status ?? 0);
+        console.error("[mobile-otp] send_error", {
+          email: label,
+          status,
+          message: error.message ?? "otp_failed",
+        });
         console.error("[auth] magic_link:response_error", {
           mode: "direct_supabase",
           email: label,
@@ -55,6 +82,10 @@ export async function signIn(email: string) {
       }
       console.log("[auth] magic_link:response_ok", {
         mode: "direct_supabase",
+        email: label,
+        hasUser: Boolean(data?.user?.id),
+      });
+      console.log("[mobile-otp] send_ok", {
         email: label,
         hasUser: Boolean(data?.user?.id),
       });
@@ -79,7 +110,7 @@ export async function signIn(email: string) {
     const res = await fetch("/api/auth/magic-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: trimmed }),
+      body: JSON.stringify({ email: trimmed, emailRedirectTo }),
       signal: controller?.signal,
     });
 

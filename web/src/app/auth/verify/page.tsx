@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionGuarded } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
+import { isLocalMobileBundleRuntime } from "@/lib/mobileRuntime";
 
 const RESEND_SECONDS = 60;
 const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
@@ -44,12 +45,14 @@ export default function VerifyPage() {
   const [ready, setReady] = useState(false);
   const isSubmittingRef = useRef(false);
   const hasNavigatedRef = useRef(false);
+  const isMobileRuntimeRef = useRef(false);
 
   const delay = (ms: number) =>
     new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    isMobileRuntimeRef.current = isLocalMobileBundleRuntime();
 
     const queryEmail = searchParams.get("email")?.trim().toLowerCase() ?? "";
     const queryCode = (searchParams.get("code") ?? "")
@@ -96,6 +99,12 @@ export default function VerifyPage() {
     const startedAt = Date.now();
 
     try {
+      if (isMobileRuntimeRef.current) {
+        console.log("[mobile-otp] verify_start", {
+          email: email ? "***" : "",
+          codeLen: code.length,
+        });
+      }
       console.debug("[auth-verify] otp verify:start", { email, codeLen: code.length });
       const { data: verifyData, error: verifyError } = await withTimeout(
         supabase.auth.verifyOtp({
@@ -110,6 +119,17 @@ export default function VerifyPage() {
         hasSessionFromVerify: Boolean(verifyData?.session?.user),
       });
       if (verifyError) {
+        if (isMobileRuntimeRef.current) {
+          const status = Number(
+            (verifyError as { status?: unknown; code?: unknown }).status ??
+              (verifyError as { status?: unknown; code?: unknown }).code ??
+              0,
+          );
+          console.error("[mobile-otp] verify_error", {
+            status,
+            message: verifyError.message ?? "verify_failed",
+          });
+        }
         console.error("[auth-verify] otp verify:error", verifyError);
         setError(verifyError.message || "Неверный или устаревший код");
         return;
@@ -135,6 +155,12 @@ export default function VerifyPage() {
           `verifyOtp:getSession:attempt:${attempt}`,
         );
         hydrated = sessionRes.data.session ?? null;
+        if (isMobileRuntimeRef.current) {
+          console.log("[mobile-session] otp_verify_session_check", {
+            attempt,
+            hasSession: Boolean(hydrated?.user),
+          });
+        }
         console.debug("[auth-verify] otp verify:session-check", {
           attempt,
           hasSession: Boolean(hydrated?.user),
@@ -153,6 +179,9 @@ export default function VerifyPage() {
       }
 
       if (!hydrated?.user) {
+        if (isMobileRuntimeRef.current) {
+          console.error("[mobile-session] otp_verify_session_missing");
+        }
         setError("Сессия не подтвердилась. Повторите вход.");
         return;
       }
@@ -165,6 +194,9 @@ export default function VerifyPage() {
         return;
       }
       hasNavigatedRef.current = true;
+      if (isMobileRuntimeRef.current) {
+        console.log("[mobile-otp] verify_ok_navigate_profile");
+      }
       router.replace("/profile");
       router.refresh();
     } catch (error) {
@@ -181,12 +213,23 @@ export default function VerifyPage() {
     setResendLoading(true);
     setError("");
 
+    if (isMobileRuntimeRef.current) {
+      console.log("[mobile-otp] resend_start", { email: email ? "***" : "" });
+    }
     const { error: resendError } = await signInWithMagicLink(email);
 
     setResendLoading(false);
     if (resendError) {
+      if (isMobileRuntimeRef.current) {
+        console.error("[mobile-otp] resend_error", {
+          message: resendError.message ?? "resend_failed",
+        });
+      }
       setError(resendError.message || "Не удалось отправить код снова");
       return;
+    }
+    if (isMobileRuntimeRef.current) {
+      console.log("[mobile-otp] resend_ok");
     }
 
     setSecondsLeft(RESEND_SECONDS);
