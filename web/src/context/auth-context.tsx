@@ -11,9 +11,7 @@ import React, {
   useState,
 } from "react";
 import {
-  disableAuthRefresh,
   getSessionGuarded,
-  hardResetSupabaseAuthState,
   supabase,
 } from "@/lib/supabase";
 import { getOrCreateGuestIdentity } from "@/lib/guestIdentity";
@@ -47,32 +45,7 @@ type AuthCtx = {
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
-let authListenerRegistrations = 0;
-
-function getErrorStatus(error: unknown): number {
-  const status = Number(
-    (error as { status?: unknown; code?: unknown } | null)?.status ??
-      (error as { status?: unknown; code?: unknown } | null)?.code ??
-      0,
-  );
-  return Number.isFinite(status) ? status : 0;
-}
-
-function isRefreshAuthFailure(error: unknown): boolean {
-  const status = getErrorStatus(error);
-  return status === 400 || status === 401;
-}
-
-function isStaleRefreshTokenError(error: unknown): boolean {
-  const msg = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
-  return msg.includes("already used") || msg.includes("invalid refresh token");
-}
-
-function tokenSuffix(value: string | null | undefined): string {
-  const token = String(value ?? "").trim();
-  if (!token) return "";
-  return token.slice(-8);
-}
+const SIGNED_OUT_STABILIZE_MS = 280;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -82,168 +55,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authResolved, setAuthResolved] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [ready, setReady] = useState(true);
-  const [bootstrapKey, setBootstrapKey] = useState(0);
   const profileRequestIdRef = useRef(0);
-  const loadingRef = useRef(loading);
-  const isSessionFetchInFlightRef = useRef(false);
-  const bootstrapRetryInFlightRef = useRef(false);
-  const authEventDebounceRef = useRef<{ event: string; at: number }>({ event: "", at: 0 });
-  const refreshRejectedRef = useRef(false);
-  const hardSignOutInFlightRef = useRef(false);
-  const lastSessionSignatureRef = useRef<string>("");
-  const recoverTimerRef = useRef<number | null>(null);
-  const authFailureCountRef = useRef(0);
-  const sessionRef = useRef<Session | null>(null);
+  const hydrateInFlightRef = useRef<Promise<Session | null> | null>(null);
+  const signedOutTimerRef = useRef<number | null>(null);
+  const mergedGuestForUserRef = useRef<string | null>(null);
+  const hadSessionRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
   const [needsName] = useState(false);
   const [needsProfileSetup] = useState(false);
 
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
-
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
-
-  const hardSignOut = useCallback(
-    async (opts: { reason: string; redirectTo?: string; markRefreshRejected?: boolean }) => {
-      if (hardSignOutInFlightRef.current) return;
-      hardSignOutInFlightRef.current = true;
-      if (opts.markRefreshRejected) {
-        refreshRejectedRef.current = true;
-        disableAuthRefresh(opts.reason);
-      }
-      console.warn("[auth] hard sign-out:", opts.reason);
-      setSession(null);
-      setUser(null);
+  const applySession = useCallback((next: Session | null) => {
+    setSession(next);
+    setUser(next?.user ?? null);
+    if (!next?.user) {
       setProfile(null);
       setProfileLoading(false);
-      setAuthResolved(true);
-      setLoading(false);
-      setReady(true);
-      await hardResetSupabaseAuthState(opts.reason);
-      try {
-        await supabase.auth.signOut({ scope: "global" });
-      } catch {
-        // noop
-      }
-      if (typeof window !== "undefined") {
-        try {
-          document.cookie = "enigma_signed_out=1; path=/; max-age=30; SameSite=Lax";
-        } catch {
-          // noop
-        }
-        window.location.href = opts.redirectTo ?? "/login?signed_out=1";
-      }
-    },
-    [],
-  );
-
-  const scheduleSoftRecovery = useCallback((reason: string, baseDelayMs = 900) => {
-    if (typeof window === "undefined") return;
-    authFailureCountRef.current += 1;
-    const retryDelay = Math.min(8_000, baseDelayMs + authFailureCountRef.current * 450);
-    console.warn("[auth] soft recovery scheduled", { reason, retryDelay });
-    setReady(false);
-    setLoading(true);
-    setAuthResolved(false);
-    if (recoverTimerRef.current) {
-      window.clearTimeout(recoverTimerRef.current);
-      recoverTimerRef.current = null;
+      mergedGuestForUserRef.current = null;
     }
-    recoverTimerRef.current = window.setTimeout(() => {
-      recoverTimerRef.current = null;
-      setBootstrapKey((k) => k + 1);
-    }, retryDelay);
+    setAuthResolved(true);
+    setLoading(false);
+    setReady(true);
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!loading) return;
-    const timeout = window.setTimeout(() => {
-      if (loadingRef.current) {
-        if (isSessionFetchInFlightRef.current) return;
-        if (bootstrapRetryInFlightRef.current) return;
-
-        bootstrapRetryInFlightRef.current = true;
-        isSessionFetchInFlightRef.current = true;
-        void supabase.auth
-          .getSession()
-          .then(async ({ data, error }) => {
-            if (error && isRefreshAuthFailure(error)) {
-              scheduleSoftRecovery(
-                isStaleRefreshTokenError(error)
-                  ? "bootstrap-timeout stale refresh token"
-                  : "bootstrap-timeout getSession 400/401",
-              );
-              return;
-            }
-            let effectiveSession = data.session ?? null;
-            if (!effectiveSession) {
-              const guarded = await getSessionGuarded("auth-bootstrap-timeout", {
-                allowRefresh: true,
-              });
-              if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-                scheduleSoftRecovery(
-                  isStaleRefreshTokenError(guarded.error)
-                    ? "bootstrap-timeout guarded stale refresh token"
-                    : "bootstrap-timeout guarded getSession 400/401",
-                );
-                return;
-              }
-              effectiveSession = guarded.session;
-            }
-            if (effectiveSession?.user) {
-              setSession(effectiveSession);
-              setUser(effectiveSession.user);
-              setAuthResolved(true);
-              setLoading(false);
-              setReady(true);
-              return;
-            }
-
-            const cookie = typeof document !== "undefined" ? document.cookie : "";
-            const hasSupabaseCookie =
-              cookie.includes("sb-") || cookie.includes("supabase-auth-token");
-            if (hasSupabaseCookie) {
-              if (refreshRejectedRef.current) {
-                return;
-              }
-              setBootstrapKey((k) => k + 1);
-              return;
-            }
-
-            console.warn("Session sync timeout; no active session found");
-            setAuthResolved(true);
-            setLoading(false);
-            setReady(true);
-          })
-          .catch((err) => {
-            if (isRefreshAuthFailure(err)) {
-              scheduleSoftRecovery("bootstrap-timeout getSession catch 400/401");
-              return;
-            }
-            console.warn("Session sync timeout check failed", err);
-            setAuthResolved(true);
-            setLoading(false);
-            setReady(true);
-          })
-          .finally(() => {
-            isSessionFetchInFlightRef.current = false;
-            bootstrapRetryInFlightRef.current = false;
-          });
+  const hydrateSession = useCallback(
+    async (reason: string, allowRefresh = true): Promise<Session | null> => {
+      if (hydrateInFlightRef.current) {
+        return hydrateInFlightRef.current;
       }
-    }, 6500);
-    return () => window.clearTimeout(timeout);
-  }, [loading]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    console.log("COOKIE SESSION CHECK", document.cookie);
-  }, []);
+      const run = (async () => {
+        const { session: guardedSession } = await getSessionGuarded(
+          `auth-hydrate:${reason}`,
+          { allowRefresh },
+        );
+        applySession(guardedSession ?? null);
+        return guardedSession ?? null;
+      })().finally(() => {
+        hydrateInFlightRef.current = null;
+      });
+      hydrateInFlightRef.current = run;
+      return run;
+    },
+    [applySession],
+  );
 
   const ensureProfileExists = useCallback(
     async (userId: string, email?: string | null) => {
@@ -336,6 +191,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (session?.user) {
+      hadSessionRef.current = true;
+    }
+  }, [session?.user]);
+
+  useEffect(() => {
     if (!authResolved || loading) {
       return;
     }
@@ -355,243 +216,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    const settledRef = { current: false };
-    let initialSessionResolved = false;
+    setAuthResolved(false);
+    setReady(false);
 
-    const applySession = (next: Session | null) => {
-      authFailureCountRef.current = 0;
-      if (recoverTimerRef.current && typeof window !== "undefined") {
-        window.clearTimeout(recoverTimerRef.current);
-        recoverTimerRef.current = null;
-      }
-      const signature = next
-        ? `${next.user?.id ?? "no-user"}:${tokenSuffix(next.refresh_token)}:${tokenSuffix(next.access_token)}`
-        : "null";
-      if (signature !== lastSessionSignatureRef.current) {
-        console.log("[auth] session replacement", {
-          prev: lastSessionSignatureRef.current || "none",
-          next: signature,
-        });
-        lastSessionSignatureRef.current = signature;
-      }
-      setSession(next);
-      setUser(next?.user ?? null);
-      setAuthResolved(true);
-      setLoading(false);
-      setReady(true);
-    };
+    void hydrateSession("mount", true);
 
-    const signedOutGuardMs = 3000;
-
-    const { data: subData } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    const { data: subData } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (!mounted) return;
-      if (refreshRejectedRef.current && event !== "SIGNED_OUT") return;
-      const now = Date.now();
-      if (
-        authEventDebounceRef.current.event === event &&
-        now - authEventDebounceRef.current.at < 350
-      ) {
-        return;
+      if (signedOutTimerRef.current && typeof window !== "undefined") {
+        window.clearTimeout(signedOutTimerRef.current);
+        signedOutTimerRef.current = null;
       }
-      authEventDebounceRef.current = { event, at: now };
-      if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.log("[auth] event", event, {
-          uid: nextSession?.user?.id ?? null,
-          refreshSuffix: tokenSuffix(nextSession?.refresh_token),
-          accessSuffix: tokenSuffix(nextSession?.access_token),
-        });
+
+      if (
+        event === "INITIAL_SESSION" ||
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "USER_UPDATED"
+      ) {
+        applySession(nextSession ?? null);
+        const mergedUserId = nextSession?.user?.id ?? null;
+        if (
+          event === "SIGNED_IN" &&
+          mergedUserId &&
+          mergedGuestForUserRef.current !== mergedUserId
+        ) {
+          mergedGuestForUserRef.current = mergedUserId;
+          void mergeGuestStateAfterSignIn(mergedUserId);
+        }
+        return;
       }
 
       if (event === "TOKEN_REFRESH_REJECTED") {
-        scheduleSoftRecovery("TOKEN_REFRESH_REJECTED event");
+        await hydrateSession("token-refresh-rejected", false);
         return;
       }
 
-      if (event === "INITIAL_SESSION") {
-        initialSessionResolved = true;
-        settledRef.current = true;
-        applySession(nextSession ?? null);
-        return;
+      if (event === "SIGNED_OUT" && typeof window !== "undefined") {
+        signedOutTimerRef.current = window.setTimeout(() => {
+          signedOutTimerRef.current = null;
+          void hydrateSession("signed-out-stabilize", true);
+        }, SIGNED_OUT_STABILIZE_MS);
       }
-
-      if (event === "SIGNED_IN") {
-        if (isSessionFetchInFlightRef.current) return;
-        initialSessionResolved = true;
-        void (async () => {
-          isSessionFetchInFlightRef.current = true;
-          try {
-            const guarded = await getSessionGuarded("auth-signed-in", {
-              allowRefresh: true,
-            });
-            if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-              scheduleSoftRecovery("SIGNED_IN getSession 400/401");
-              return;
-            }
-            if (!mounted) return;
-            settledRef.current = true;
-            applySession(guarded.session ?? nextSession ?? null);
-            if (guarded.session?.user?.id) {
-              void mergeGuestStateAfterSignIn(guarded.session.user.id);
-            }
-          } catch (err) {
-            if (isRefreshAuthFailure(err)) {
-              scheduleSoftRecovery("SIGNED_IN getSession catch 400/401");
-              return;
-            }
-            console.warn("[auth] SIGNED_IN getSession failed", err);
-            if (!mounted) return;
-            settledRef.current = true;
-            applySession(nextSession ?? null);
-            if (nextSession?.user?.id) {
-              void mergeGuestStateAfterSignIn(nextSession.user.id);
-            }
-          } finally {
-            isSessionFetchInFlightRef.current = false;
-          }
-        })();
-        return;
-      }
-
-      if (event === "SIGNED_OUT") {
-        if (isSessionFetchInFlightRef.current) return;
-        if (!initialSessionResolved) {
-          return;
-        }
-        void (async () => {
-          isSessionFetchInFlightRef.current = true;
-          try {
-            await new Promise((r) => setTimeout(r, signedOutGuardMs));
-            const guarded = await getSessionGuarded("auth-signed-out", {
-              allowRefresh: true,
-            });
-            if (guarded.error && isRefreshAuthFailure(guarded.error)) {
-              scheduleSoftRecovery("SIGNED_OUT guard getSession 400/401");
-              return;
-            }
-            if (!mounted) return;
-            if (typeof document !== "undefined") {
-              console.log("COOKIE SESSION CHECK", document.cookie);
-            }
-            if (guarded.session?.user) {
-              applySession(guarded.session);
-              return;
-            }
-            const hasSupabaseCookie =
-              typeof document !== "undefined" &&
-              (document.cookie.includes("sb-") ||
-                document.cookie.includes("supabase-auth-token"));
-            if (hasSupabaseCookie) {
-              await new Promise((r) => setTimeout(r, 1200));
-              const retry = await getSessionGuarded("auth-signed-out-retry", {
-                allowRefresh: true,
-              });
-              if (retry.error && isRefreshAuthFailure(retry.error)) {
-                scheduleSoftRecovery("SIGNED_OUT guard getSession retry 400/401");
-                return;
-              }
-              if (!mounted) return;
-              if (retry.session?.user) {
-                applySession(retry.session);
-                return;
-              }
-            }
-            settledRef.current = true;
-            if (sessionRef.current?.user) {
-              scheduleSoftRecovery("SIGNED_OUT transient null session");
-              return;
-            }
-            applySession(null);
-            setProfile(null);
-            setProfileLoading(false);
-          } catch (err) {
-            if (isRefreshAuthFailure(err)) {
-              scheduleSoftRecovery("SIGNED_OUT guard getSession catch 400/401");
-              return;
-            }
-            console.warn("[auth] SIGNED_OUT getSession failed", err);
-            if (!mounted) return;
-            settledRef.current = true;
-            applySession(null);
-            setProfile(null);
-            setProfileLoading(false);
-          } finally {
-            isSessionFetchInFlightRef.current = false;
-          }
-        })();
-        return;
-      }
-      settledRef.current = true;
-      applySession(nextSession ?? null);
     });
-    authListenerRegistrations += 1;
-    console.log("[auth] listener registered", {
-      count: authListenerRegistrations,
-      bootstrapKey,
-    });
-
-    // Фолбэк: если INITIAL_SESSION задержался, делаем мягкий check один раз.
-    const bootstrapTimer = window.setTimeout(() => {
-      if (!mounted || settledRef.current) return;
-      isSessionFetchInFlightRef.current = true;
-      void getSessionGuarded("auth-bootstrap-fallback", {
-        allowRefresh: true,
-      })
-        .then(({ session, error }) => {
-          if (error && isRefreshAuthFailure(error)) {
-            scheduleSoftRecovery("bootstrap fallback getSession 400/401");
-            return;
-          }
-          if (!mounted || settledRef.current) return;
-          applySession(session ?? null);
-        })
-        .catch((err) => {
-          if (isRefreshAuthFailure(err)) {
-            scheduleSoftRecovery("bootstrap fallback getSession catch 400/401");
-            return;
-          }
-          console.warn("[auth] getSession bootstrap fallback", err);
-          if (!mounted || settledRef.current) return;
-          applySession(null);
-        })
-        .finally(() => {
-          isSessionFetchInFlightRef.current = false;
-        });
-    }, 900);
 
     return () => {
       mounted = false;
-      window.clearTimeout(bootstrapTimer);
-      if (recoverTimerRef.current) {
-        window.clearTimeout(recoverTimerRef.current);
-        recoverTimerRef.current = null;
+      if (signedOutTimerRef.current && typeof window !== "undefined") {
+        window.clearTimeout(signedOutTimerRef.current);
+        signedOutTimerRef.current = null;
       }
       subData.subscription.unsubscribe();
-      authListenerRegistrations = Math.max(0, authListenerRegistrations - 1);
-      console.log("[auth] listener unregistered", {
-        count: authListenerRegistrations,
-        bootstrapKey,
-      });
     };
-  }, [bootstrapKey, scheduleSoftRecovery]);
+  }, [applySession, hydrateSession]);
 
   const retryBootstrap = useCallback(
-    (opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
+    async (opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
       void opts;
-      setReady(false);
-      setLoading(true);
-      setAuthResolved(false);
-      setBootstrapKey((k) => k + 1);
+      await hydrateSession("manual-retry", true);
     },
-    [],
+    [hydrateSession],
   );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onRecover = () => {
-      if (loadingRef.current) return;
-      if (sessionRef.current?.user) return;
-      retryBootstrap({ fromOnline: true });
+      if (loading) return;
+      if (!authResolved) return;
+      if (session?.user) return;
+      if (!hadSessionRef.current) return;
+      void retryBootstrap({ fromOnline: true });
     };
     window.addEventListener("online", onRecover);
     window.addEventListener("pageshow", onRecover);
@@ -601,12 +295,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("pageshow", onRecover);
       window.removeEventListener("focus", onRecover);
     };
-  }, [retryBootstrap]);
+  }, [authResolved, loading, retryBootstrap, session?.user]);
 
   const signOut = useCallback(async () => {
-    refreshRejectedRef.current = false;
-    await hardSignOut({ reason: "manual signOut", redirectTo: "/login?signed_out=1" });
-  }, [hardSignOut]);
+    applySession(null);
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+    } catch (error) {
+      console.warn("[auth] signOut failed", error);
+    }
+  }, [applySession]);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {

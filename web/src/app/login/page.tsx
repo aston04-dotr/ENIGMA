@@ -13,7 +13,6 @@ import { trackEvent } from "@/lib/analytics";
 import {
   getSessionGuarded,
   hardResetSupabaseAuthState,
-  supabase,
 } from "@/lib/supabase";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -54,16 +53,16 @@ export default function LoginPage() {
         const search = new URLSearchParams(window.location.search);
         const reason = String(search.get("reason") ?? "");
         const forceCleanup = reason === "refresh_failed" || reason === "stale_refresh_token";
-        const { session, error } = await getSessionGuarded("login-initial-cleanup", {
+        const { session } = await getSessionGuarded("login-initial-cleanup", {
           allowRefresh: false,
         });
         if (cancelled) return;
         if (session?.user && !forceCleanup) return;
-        if (forceCleanup || error) {
+        if (forceCleanup) {
           await hardResetSupabaseAuthState("login-page-initial-cleanup");
         }
       } catch {
-        await hardResetSupabaseAuthState("login-page-initial-cleanup-catch");
+        // Keep login stable: do not wipe auth state on transient read failures.
       }
     })();
     return () => {
@@ -152,7 +151,6 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    await hardResetSupabaseAuthState("before-new-login-attempt");
     const { error } = await signInWithMagicLink(em);
     setLoading(false);
     if (error) {

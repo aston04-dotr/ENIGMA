@@ -228,11 +228,6 @@ export default function ProfilePage() {
         : archiveProfileListings;
 
   useEffect(() => {
-    if (!authResolved || loading) return;
-    if (!session) router.replace("/login");
-  }, [session, router, authResolved, loading]);
-
-  useEffect(() => {
     setNameInput(profile?.name ?? "");
   }, [profile?.name]);
 
@@ -441,26 +436,43 @@ export default function ProfilePage() {
       setNameMessage("Сессия обновляется. Подождите пару секунд и нажмите снова.");
       return;
     }
-    console.log("UPSERT USER ID:", uid);
     setNameSaving(true);
     setNameMessage(null);
-    let error: { message?: string } | null = null;
+    const nextName = nameInput.trim() || null;
+    const now = new Date().toISOString();
+    let error: { message?: string; code?: string } | null = null;
+    let updated: { id: string; name: string | null } | null = null;
     try {
-      const res = await supabase.from("profiles").upsert(
-        {
-          id: uid,
-          name: nameInput.trim() || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      );
-      error = res.error as { message?: string } | null;
+      const res = await supabase
+        .from("profiles")
+        .update({
+          name: nextName,
+          updated_at: now,
+        })
+        .eq("id", uid)
+        .select("id, name")
+        .maybeSingle();
+      updated = (res.data as { id: string; name: string | null } | null) ?? null;
+      error = res.error as { message?: string; code?: string } | null;
     } catch (unexpected) {
       console.error("[profile] name:save:unexpected", unexpected);
       setNameSaving(false);
       setNameMessage("Ошибка сети. Проверьте интернет и попробуйте снова.");
       return;
     }
+
+    if (!error && !updated) {
+      const upsertRes = await supabase.from("profiles").upsert(
+        {
+          id: uid,
+          name: nextName,
+          updated_at: now,
+        },
+        { onConflict: "id" },
+      );
+      error = upsertRes.error as { message?: string; code?: string } | null;
+    }
+
     setNameSaving(false);
     if (error) {
       setNameMessage(error.message || "Не удалось сохранить имя");

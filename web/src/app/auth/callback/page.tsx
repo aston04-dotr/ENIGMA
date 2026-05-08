@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getSessionGuarded } from "@/lib/supabase";
 
 /**
  * Совместимость со старыми redirect URL вида /auth/callback.
@@ -34,6 +35,7 @@ export default function CallbackPage() {
         return;
       }
 
+      await getSessionGuarded("auth-callback-success", { allowRefresh: true });
       router.replace("/");
       router.refresh();
     };

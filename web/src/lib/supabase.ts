@@ -137,7 +137,7 @@ export const isSupabaseConfigured = configured;
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let refreshCooldownUntilMs = 0;
-let refreshDisabled = false;
+let refreshDisabledUntilMs = 0;
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -238,9 +238,13 @@ function clearSupabaseCookies(): void {
 }
 
 export function disableAuthRefresh(reason: string): void {
-  refreshDisabled = true;
-  refreshCooldownUntilMs = Date.now() + 60_000;
-  authLog("warn", "refresh disabled", { reason, cooldownUntilMs: refreshCooldownUntilMs });
+  refreshDisabledUntilMs = Date.now() + 60_000;
+  refreshCooldownUntilMs = Math.max(refreshCooldownUntilMs, refreshDisabledUntilMs);
+  authLog("warn", "refresh temporarily disabled", {
+    reason,
+    disabledUntilMs: refreshDisabledUntilMs,
+    cooldownUntilMs: refreshCooldownUntilMs,
+  });
 }
 
 export async function hardResetSupabaseAuthState(reason: string): Promise<void> {
@@ -268,11 +272,14 @@ function extractStack(): string | null {
 }
 
 async function runGuardedRefresh(reason: string): Promise<void> {
-  if (refreshDisabled) {
-    authLog("warn", "refresh skipped: globally disabled", { reason });
+  const now = Date.now();
+  if (now < refreshDisabledUntilMs) {
+    authLog("warn", "refresh skipped: disabled window active", {
+      reason,
+      disabledLeftMs: refreshDisabledUntilMs - now,
+    });
     return;
   }
-  const now = Date.now();
   if (now < refreshCooldownUntilMs) {
     authLog("warn", "refresh skipped by cooldown", {
       reason,

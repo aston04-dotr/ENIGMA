@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getSessionGuarded } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
 
 const RESEND_SECONDS = 60;
@@ -72,7 +73,10 @@ export default function VerifyPage() {
     }
 
     localStorage.removeItem("auth_email");
-    window.location.href = "/profile";
+    // Wait for session hydration to avoid route flicker/collapse right after OTP.
+    await getSessionGuarded("verify-otp-success", { allowRefresh: true });
+    router.replace("/profile");
+    router.refresh();
   };
 
   const onResend = async () => {

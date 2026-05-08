@@ -5,12 +5,15 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getSessionGuarded } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 type Phase = "loading" | "success" | "error";
 
 export default function AuthConfirmPage() {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const didRunRef = useRef(false);
 
@@ -60,14 +63,13 @@ export default function AuthConfirmPage() {
       }
 
       setPhase("success");
-
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 1000);
+      await getSessionGuarded("auth-confirm-success", { allowRefresh: true });
+      router.replace("/");
+      router.refresh();
     };
 
     void run();
-  }, []);
+  }, [router]);
 
   return (
     <div
