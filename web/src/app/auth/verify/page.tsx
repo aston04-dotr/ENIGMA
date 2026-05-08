@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import { getSessionGuarded } from "@/lib/supabase";
+import { debugAuthPersistenceSnapshot, getSessionGuarded, supabase } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
 import { isLocalMobileBundleRuntime } from "@/lib/mobileRuntime";
 
@@ -118,6 +117,7 @@ export default function VerifyPage() {
       console.debug("[auth-verify] otp verify:resolved", {
         hasSessionFromVerify: Boolean(verifyData?.session?.user),
       });
+      await debugAuthPersistenceSnapshot("verify:after-verifyOtp");
       if (verifyError) {
         if (isMobileRuntimeRef.current) {
           const status = Number(
@@ -144,6 +144,7 @@ export default function VerifyPage() {
           AUTH_FINALIZE_TIMEOUT_MS,
           "verifyOtp:setSession",
         );
+        await debugAuthPersistenceSnapshot("verify:after-setSession");
       }
 
       localStorage.removeItem("auth_email");
@@ -166,6 +167,7 @@ export default function VerifyPage() {
           hasSession: Boolean(hydrated?.user),
         });
         if (hydrated?.user) break;
+        await debugAuthPersistenceSnapshot(`verify:after-getSession-attempt:${attempt}`);
         await delay(SESSION_RETRY_DELAY_MS);
       }
 
@@ -176,6 +178,7 @@ export default function VerifyPage() {
           "verifyOtp:hydrateSession:guarded",
         );
         hydrated = guarded.session ?? null;
+        await debugAuthPersistenceSnapshot("verify:after-guarded-session");
       }
 
       if (!hydrated?.user) {

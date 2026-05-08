@@ -11,6 +11,7 @@ import React, {
   useState,
 } from "react";
 import {
+  debugAuthPersistenceSnapshot,
   getSessionGuarded,
   supabase,
 } from "@/lib/supabase";
@@ -339,6 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           event,
           hasSession: Boolean(nextSession?.user),
         });
+        void debugAuthPersistenceSnapshot(`auth-context:event:${event}`);
       }
       if (signedOutTimerRef.current && typeof window !== "undefined") {
         window.clearTimeout(signedOutTimerRef.current);

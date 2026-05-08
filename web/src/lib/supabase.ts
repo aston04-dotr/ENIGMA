@@ -212,6 +212,76 @@ function tokenSuffix(value: string | null | undefined): string {
   return token.slice(-8);
 }
 
+function listStorageKeys(storage: Storage): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (!key) continue;
+    keys.push(key);
+  }
+  return keys;
+}
+
+function listAuthRelatedStorageKeys(storage: Storage): string[] {
+  return listStorageKeys(storage).filter((key) => {
+    const normalized = key.toLowerCase();
+    return (
+      normalized.startsWith("sb-") ||
+      normalized.includes("supabase") ||
+      normalized.includes(AUTH_STORAGE_KEY.toLowerCase())
+    );
+  });
+}
+
+function listAuthRelatedCookieNames(): string[] {
+  if (typeof document === "undefined") return [];
+  return document.cookie
+    .split(";")
+    .map((entry) => entry.trim().split("=")[0] ?? "")
+    .filter(Boolean)
+    .filter((name) => {
+      const normalized = name.toLowerCase();
+      return normalized.startsWith("sb-") || normalized.includes("supabase");
+    });
+}
+
+export async function debugAuthPersistenceSnapshot(label: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  let sessionData: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
+  let sessionError: string | null = null;
+  try {
+    const result = await withTimeout(
+      supabase.auth.getSession(),
+      AUTH_PROMISE_TIMEOUT_MS,
+      `debugAuthPersistenceSnapshot:${label}`,
+    );
+    sessionData = result.data.session ?? null;
+  } catch (error) {
+    sessionError = error instanceof Error ? error.message : String(error ?? "unknown");
+  }
+
+  console.log(
+    "[auth-persist] snapshot",
+    JSON.stringify(
+      {
+        label,
+        runtimeOrigin: window.location.origin,
+        protocol: window.location.protocol,
+        hasSession: Boolean(sessionData?.user),
+        accessTokenSuffix: tokenSuffix(sessionData?.access_token),
+        refreshTokenSuffix: tokenSuffix(sessionData?.refresh_token),
+        sessionError,
+        expectedStorageKey: AUTH_STORAGE_KEY,
+        localStorageAuthKeys: listAuthRelatedStorageKeys(window.localStorage),
+        sessionStorageAuthKeys: listAuthRelatedStorageKeys(window.sessionStorage),
+        cookieAuthKeys: listAuthRelatedCookieNames(),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
