@@ -22,6 +22,29 @@ function isNativeCapacitorRuntime(): boolean {
   return false;
 }
 
+if (typeof window !== "undefined") {
+  const runtime = isNativeCapacitorRuntime() ? "native" : "web";
+  if (!configured) {
+    console.error("[auth-config] missing_public_supabase_env", {
+      runtime,
+      hasUrl: Boolean(url),
+      hasAnonKey: Boolean(anonKey),
+    });
+  } else if (process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" || process.env.NODE_ENV === "development") {
+    let host = "";
+    try {
+      host = new URL(url).host;
+    } catch {
+      host = "";
+    }
+    console.debug("[auth-config] supabase_public_env_loaded", {
+      runtime,
+      host,
+      anonKeySuffix: anonKey.slice(-8),
+    });
+  }
+}
+
 type CookieItem = { name: string; value: string };
 type BrowserCookieOptions = {
   domain?: string;
