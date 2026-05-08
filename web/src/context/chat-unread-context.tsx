@@ -405,6 +405,9 @@ export function ChatUnreadProvider({
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
   const [reconnectSeq, setReconnectSeq] = useState(0);
   const [realtimeDisabledState, setRealtimeDisabledState] = useState(false);
+  const [realtimeMode, setRealtimeMode] = useState<"realtime" | "polling" | "disabled">(
+    "disabled",
+  );
   const processedRealtimeEventsRef = useRef<Map<string, number>>(new Map());
 
   const statusRef = useRef<{
@@ -428,6 +431,8 @@ export function ChatUnreadProvider({
   const authChangeListenerAttachedRef = useRef(false);
   const realtimeDisabledRef = useRef(false);
   const maxRealtimeFailuresRef = useRef(0);
+  const hasLoggedRealtimeDisabledRef = useRef(false);
+  const realtimeModeRef = useRef<"realtime" | "polling" | "disabled">(realtimeMode);
 
   useEffect(() => {
     authLifecycleReadyRef.current = authLifecycleReady;
@@ -436,6 +441,10 @@ export function ChatUnreadProvider({
   useEffect(() => {
     realtimeDisabledRef.current = realtimeDisabledState;
   }, [realtimeDisabledState]);
+
+  useEffect(() => {
+    realtimeModeRef.current = realtimeMode;
+  }, [realtimeMode]);
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
@@ -461,7 +470,9 @@ export function ChatUnreadProvider({
     setRealtimeReadyState(false);
     maxRealtimeFailuresRef.current = 0;
     realtimeDisabledRef.current = false;
+    hasLoggedRealtimeDisabledRef.current = false;
     setRealtimeDisabledState(false);
+    setRealtimeMode(userId ? "realtime" : "disabled");
   }, [userId]);
 
   useEffect(() => {
@@ -833,6 +844,10 @@ export function ChatUnreadProvider({
 
   const triggerRealtimeRecover = useCallback(
     (reason: string) => {
+      if (realtimeDisabledRef.current) {
+        chatDebugLog("realtime:recover:skip-disabled", { reason });
+        return;
+      }
       if (!authLifecycleReadyRef.current) {
         chatDebugLog("realtime:recover:blocked:auth-not-ready", { reason });
         return;
@@ -1056,6 +1071,7 @@ export function ChatUnreadProvider({
       setLoadingState(false);
       setHydratedState(true);
       setRealtimeReadyState(false);
+      setRealtimeMode("disabled");
       setActiveChatIdState(null);
       statusRef.current.activeChatId = null;
       return;
@@ -1079,13 +1095,20 @@ export function ChatUnreadProvider({
         event === "TOKEN_REFRESHED" ||
         event === "TOKEN_REFRESH_REJECTED"
       ) {
+        if (realtimeDisabledRef.current) {
+          scheduleRefresh(80, { silent: true });
+          return;
+        }
         setReconnectSeq((n) => n + 1);
         scheduleRefresh(40, { silent: true });
         scheduleReconcile(`auth:${event.toLowerCase()}`, 140);
       }
       if (event === "SIGNED_OUT") {
-        setReconnectSeq((n) => n + 1);
+        if (!realtimeDisabledRef.current) {
+          setReconnectSeq((n) => n + 1);
+        }
         setRealtimeReadyState(false);
+        setRealtimeMode("disabled");
       }
     });
     return () => {
@@ -1102,12 +1125,19 @@ export function ChatUnreadProvider({
       return;
     }
     if (realtimeDisabledRef.current) {
-      chatRealtimeLog("warn", "disabled", {
-        reason: "guard:already-disabled",
-        userId,
-        failures: maxRealtimeFailuresRef.current,
-      });
+      if (!hasLoggedRealtimeDisabledRef.current) {
+        hasLoggedRealtimeDisabledRef.current = true;
+        chatRealtimeLog("warn", "disabled", {
+          reason: "guard:already-disabled",
+          userId,
+          failures: maxRealtimeFailuresRef.current,
+          mode: realtimeModeRef.current,
+        });
+      }
       setRealtimeReadyState(false);
+      if (realtimeModeRef.current !== "polling") {
+        setRealtimeMode("polling");
+      }
       return;
     }
 
@@ -1166,20 +1196,27 @@ export function ChatUnreadProvider({
     };
 
     const disableRealtime = (reason: string, payload?: unknown) => {
+      if (realtimeDisabledRef.current) return;
       clearReconnect();
       clearChannel();
       realtimeDisabledRef.current = true;
       setRealtimeDisabledState(true);
       setRealtimeReadyState(false);
-      chatRealtimeLog("error", "disabled", {
-        reason,
-        userId,
-        failures: maxRealtimeFailuresRef.current,
-        payload: payload ?? null,
-      });
+      setRealtimeMode("polling");
+      if (!hasLoggedRealtimeDisabledRef.current) {
+        hasLoggedRealtimeDisabledRef.current = true;
+        chatRealtimeLog("error", "disabled", {
+          reason,
+          userId,
+          failures: maxRealtimeFailuresRef.current,
+          payload: payload ?? null,
+          mode: "polling",
+        });
+      }
     };
 
     const registerFailure = (reason: string, payload?: unknown) => {
+      if (realtimeDisabledRef.current) return;
       maxRealtimeFailuresRef.current += 1;
       setRealtimeReadyState(false);
       clearChannel();
@@ -1203,6 +1240,7 @@ export function ChatUnreadProvider({
       if (cancelled || realtimeDisabledRef.current) return;
       clearReconnect();
       clearChannel();
+      setRealtimeMode("realtime");
       chatRealtimeLog("info", "subscribe", {
         userId,
         failures: maxRealtimeFailuresRef.current,
@@ -1371,6 +1409,7 @@ export function ChatUnreadProvider({
       statusRef.current.listChannel = channel;
 
       channel.subscribe((status) => {
+        if (realtimeDisabledRef.current) return;
         chatDebugLog("realtime:channel:status", {
           status,
           attempt: statusRef.current.reconnectAttempt,
@@ -1385,6 +1424,7 @@ export function ChatUnreadProvider({
           realtimeDisabledRef.current = false;
           setRealtimeDisabledState(false);
           setRealtimeReadyState(true);
+          setRealtimeMode("realtime");
           scheduleRefreshRef.current(50, { silent: true });
           scheduleReconcileRef.current("realtime-subscribed", 160);
           return;
@@ -1503,7 +1543,8 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     if (!userId || !authLifecycleReady || typeof window === "undefined") return;
-    const pollMs = realtimeDisabledState ? FALLBACK_POLL_MS : CHAT_REFRESH_POLL_MS;
+    const pollMs =
+      realtimeMode === "realtime" ? CHAT_REFRESH_POLL_MS : FALLBACK_POLL_MS;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -1511,7 +1552,7 @@ export function ChatUnreadProvider({
       void refreshChatsRef.current({ silent: true });
     }, pollMs);
     return () => window.clearInterval(timer);
-  }, [authLifecycleReady, realtimeDisabledState, userId]);
+  }, [authLifecycleReady, realtimeMode, userId]);
 
   useEffect(() => {
     if (!userId || !authLifecycleReady || typeof window === "undefined") return;
