@@ -15,7 +15,7 @@ function maskEmailForLog(email: string) {
 export async function signIn(email: string) {
   const trimmed = email.trim().toLowerCase();
   const label = maskEmailForLog(trimmed);
-  const preferDirectOtp = isLocalMobileBundleRuntime();
+  const isLocalMobileRuntime = isLocalMobileBundleRuntime();
   const { configured, url } = getSupabasePublicConfig();
   const supabaseHost = (() => {
     try {
@@ -36,24 +36,24 @@ export async function signIn(email: string) {
         window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }
       ).Capacitor?.isNativePlatform?.(),
     );
+  const preferDirectOtp = isNativePlatform || isLocalMobileRuntime;
   console.log("[auth] magic_link:request_started", {
     email: label,
-    mode: preferDirectOtp ? "direct_supabase" : "api_route",
+    mode: isNativePlatform ? "native_direct_supabase" : preferDirectOtp ? "direct_supabase" : "api_route",
     supabaseConfigured: configured && isSupabaseConfigured,
     supabaseHost,
   });
-  const mobileRedirectTo =
-    process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO_MOBILE?.trim() ||
-    "enigma://auth/confirm";
-  const emailRedirectTo = preferDirectOtp
-    ? mobileRedirectTo
+  const emailRedirectTo = isNativePlatform
+    ? "enigma://auth/confirm"
+    : preferDirectOtp
+    ? process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO_MOBILE?.trim() || "enigma://auth/confirm"
     : process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO?.trim() ||
       `${getRedirectSiteOrigin()}/auth/confirm`;
   console.log(
     "[auth] magic_link:redirect_config",
     JSON.stringify(
       {
-        mode: preferDirectOtp ? "direct_supabase" : "api_route",
+        mode: isNativePlatform ? "native_direct_supabase" : preferDirectOtp ? "direct_supabase" : "api_route",
         email: label,
         emailRedirectTo,
         generatedRedirectUrl: emailRedirectTo,
@@ -105,7 +105,7 @@ export async function signIn(email: string) {
           message: error.message ?? "otp_failed",
         });
         console.error("[auth] magic_link:response_error", {
-          mode: "direct_supabase",
+          mode: isNativePlatform ? "native_direct_supabase" : "direct_supabase",
           email: label,
           status,
           message: error.message ?? "otp_failed",
@@ -113,7 +113,7 @@ export async function signIn(email: string) {
         return { error: { message: error.message || "Не удалось отправить код" } };
       }
       console.log("[auth] magic_link:response_ok", {
-        mode: "direct_supabase",
+        mode: isNativePlatform ? "native_direct_supabase" : "direct_supabase",
         email: label,
         hasUser: Boolean(data?.user?.id),
       });
@@ -129,7 +129,7 @@ export async function signIn(email: string) {
     } catch (e) {
       const message = e instanceof Error ? e.message : "unexpected_error";
       console.error("[auth] magic_link:request_failed", {
-        mode: "direct_supabase",
+        mode: isNativePlatform ? "native_direct_supabase" : "direct_supabase",
         email: label,
         message,
       });

@@ -333,6 +333,22 @@ function extractStack(): string | null {
   }
 }
 
+function extractFullStack(): string {
+  try {
+    return new Error().stack ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unserializable]";
+  }
+}
+
 type RpcClient = {
   rpc: (...args: unknown[]) => unknown;
   __enigmaRpcDebugPatched?: boolean;
@@ -359,13 +375,18 @@ function instrumentRpcDebug(client: RpcClient, label: string): void {
     const hasThen = Boolean(result && typeof (result as { then?: unknown }).then === "function");
     const hasCatch = Boolean(result && typeof (result as { catch?: unknown }).catch === "function");
     if (!hasCatch) {
-      console.error("[rpc-debug] rpc returned non-catchable value", {
+      const payload = {
         label,
         args,
+        argsJson: safeStringify(args),
         hasThen,
         hasCatch,
         callsite,
-      });
+        fullCallsite: extractFullStack(),
+      };
+      console.error("[rpc-debug] rpc returned non-catchable value", payload);
+      // Ensure runtime remains catch-compatible while we investigate caller chain.
+      return Promise.resolve(result as never);
     }
     return result;
   };
