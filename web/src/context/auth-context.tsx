@@ -47,7 +47,6 @@ type AuthCtx = {
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
-const SIGNED_OUT_STABILIZE_MS = 280;
 const AUTH_STEP_TIMEOUT_MS = 10_000;
 const AUTH_WATCHDOG_MS = 15_000;
 
@@ -79,15 +78,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(true);
   const profileRequestIdRef = useRef(0);
   const hydrateInFlightRef = useRef<Promise<Session | null> | null>(null);
-  const signedOutTimerRef = useRef<number | null>(null);
   const mergedGuestForUserRef = useRef<string | null>(null);
-  const hadSessionRef = useRef(false);
   const authListenerAttachedRef = useRef(false);
-  const recoverListenersAttachedRef = useRef(false);
-  const loadingRef = useRef(loading);
-  const authResolvedRef = useRef(authResolved);
-  const sessionUserRef = useRef<User | null>(user);
-  const retryBootstrapRef = useRef<((opts?: { fromUser?: boolean; fromOnline?: boolean }) => void) | null>(null);
   const mobileRuntimeRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
@@ -268,24 +260,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (session?.user) {
-      hadSessionRef.current = true;
-    }
-  }, [session?.user]);
-
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
-
-  useEffect(() => {
-    authResolvedRef.current = authResolved;
-  }, [authResolved]);
-
-  useEffect(() => {
-    sessionUserRef.current = user;
-  }, [user]);
-
-  useEffect(() => {
     if (!authResolved || loading) {
       return;
     }
@@ -342,10 +316,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         void debugAuthPersistenceSnapshot(`auth-context:event:${event}`);
       }
-      if (signedOutTimerRef.current && typeof window !== "undefined") {
-        window.clearTimeout(signedOutTimerRef.current);
-        signedOutTimerRef.current = null;
-      }
 
       if (
         event === "INITIAL_SESSION" ||
@@ -367,24 +337,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "TOKEN_REFRESH_REJECTED") {
-        await hydrateSession("token-refresh-rejected", false);
+        applySession(nextSession ?? null);
         return;
       }
 
-      if (event === "SIGNED_OUT" && typeof window !== "undefined") {
-        signedOutTimerRef.current = window.setTimeout(() => {
-          signedOutTimerRef.current = null;
-          void hydrateSession("signed-out-stabilize", true);
-        }, SIGNED_OUT_STABILIZE_MS);
+      if (event === "SIGNED_OUT") {
+        applySession(null);
       }
     });
 
     return () => {
       mounted = false;
-      if (signedOutTimerRef.current && typeof window !== "undefined") {
-        window.clearTimeout(signedOutTimerRef.current);
-        signedOutTimerRef.current = null;
-      }
       subData.subscription.unsubscribe();
       authListenerAttachedRef.current = false;
       console.debug("[auth] listener detach");
@@ -394,50 +357,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const retryBootstrap = useCallback(
     async (opts?: { fromUser?: boolean; fromOnline?: boolean }) => {
       void opts;
-      await hydrateSession("manual-retry", true);
+      await hydrateSession("manual-retry", false);
     },
     [hydrateSession],
   );
-
-  useEffect(() => {
-    retryBootstrapRef.current = retryBootstrap;
-  }, [retryBootstrap]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (recoverListenersAttachedRef.current) {
-      console.debug("[auth] recover listeners already attached; skip duplicate");
-      return;
-    }
-    recoverListenersAttachedRef.current = true;
-    console.debug("[auth] recover listeners attach");
-    const onRecover = () => {
-      const p = String(window.location.pathname || "");
-      if (
-        p === "/login" ||
-        p.startsWith("/auth/verify") ||
-        p.startsWith("/auth/confirm") ||
-        p.startsWith("/auth/callback")
-      ) {
-        return;
-      }
-      if (loadingRef.current) return;
-      if (!authResolvedRef.current) return;
-      if (sessionUserRef.current) return;
-      if (!hadSessionRef.current) return;
-      void retryBootstrapRef.current?.({ fromOnline: true });
-    };
-    window.addEventListener("online", onRecover);
-    window.addEventListener("pageshow", onRecover);
-    window.addEventListener("focus", onRecover);
-    return () => {
-      window.removeEventListener("online", onRecover);
-      window.removeEventListener("pageshow", onRecover);
-      window.removeEventListener("focus", onRecover);
-      recoverListenersAttachedRef.current = false;
-      console.debug("[auth] recover listeners detach");
-    };
-  }, []);
 
   const signOut = useCallback(async () => {
     console.log(

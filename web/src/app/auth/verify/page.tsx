@@ -3,15 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { debugAuthPersistenceSnapshot, getSessionGuarded, supabase } from "@/lib/supabase";
+import { debugAuthPersistenceSnapshot, supabase } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
 import { isLocalMobileBundleRuntime } from "@/lib/mobileRuntime";
 
 const RESEND_SECONDS = 60;
 const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
 const VERIFY_TIMEOUT_MS = 15_000;
-const SESSION_RETRY_COUNT = 3;
-const SESSION_RETRY_DELAY_MS = 500;
+const SESSION_FALLBACK_RETRY_DELAY_MS = 400;
 const NAVIGATION_SETTLE_DELAY_MS = 400;
 
 async function withTimeout<T>(
@@ -149,37 +148,32 @@ export default function VerifyPage() {
 
       localStorage.removeItem("auth_email");
       let hydrated: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
-      for (let attempt = 1; attempt <= SESSION_RETRY_COUNT; attempt += 1) {
-        const sessionRes = await withTimeout(
+      const firstSessionRes = await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_FINALIZE_TIMEOUT_MS,
+        "verifyOtp:getSession:first",
+      );
+      hydrated = firstSessionRes.data.session ?? null;
+      if (!hydrated?.user) {
+        await debugAuthPersistenceSnapshot("verify:after-getSession:first-empty");
+        await delay(SESSION_FALLBACK_RETRY_DELAY_MS);
+        const retrySessionRes = await withTimeout(
           supabase.auth.getSession(),
           AUTH_FINALIZE_TIMEOUT_MS,
-          `verifyOtp:getSession:attempt:${attempt}`,
+          "verifyOtp:getSession:retry",
         );
-        hydrated = sessionRes.data.session ?? null;
-        if (isMobileRuntimeRef.current) {
-          console.log("[mobile-session] otp_verify_session_check", {
-            attempt,
-            hasSession: Boolean(hydrated?.user),
-          });
-        }
-        console.debug("[auth-verify] otp verify:session-check", {
-          attempt,
+        hydrated = retrySessionRes.data.session ?? null;
+      }
+      if (isMobileRuntimeRef.current) {
+        console.log("[mobile-session] otp_verify_session_check", {
           hasSession: Boolean(hydrated?.user),
+          flow: "single-shot+retry",
         });
-        if (hydrated?.user) break;
-        await debugAuthPersistenceSnapshot(`verify:after-getSession-attempt:${attempt}`);
-        await delay(SESSION_RETRY_DELAY_MS);
       }
-
-      if (!hydrated?.user) {
-        const guarded = await withTimeout(
-          getSessionGuarded("verify-otp-success", { allowRefresh: true }),
-          AUTH_FINALIZE_TIMEOUT_MS,
-          "verifyOtp:hydrateSession:guarded",
-        );
-        hydrated = guarded.session ?? null;
-        await debugAuthPersistenceSnapshot("verify:after-guarded-session");
-      }
+      console.debug("[auth-verify] otp verify:session-check", {
+        hasSession: Boolean(hydrated?.user),
+        flow: "single-shot+retry",
+      });
 
       if (!hydrated?.user) {
         if (isMobileRuntimeRef.current) {
