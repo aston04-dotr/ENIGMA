@@ -243,10 +243,14 @@ let refreshInFlight: Promise<void> | null = null;
 let sessionGuardInFlight: Promise<{ session: Session | null; error: unknown | null }> | null = null;
 let lastResolvedSessionResult: { session: Session | null; error: unknown | null } | null = null;
 let lastResolvedAt = 0;
+const sessionGuardCallTimestamps: number[] = [];
+const sessionGuardReasonStacks: string[] = [];
 let refreshCooldownUntilMs = 0;
 let refreshDisabledUntilMs = 0;
 let authTraceSeq = 0;
 const SESSION_GUARD_THROTTLE_MS = 1_200;
+const SESSION_GUARD_STORM_WINDOW_MS = 5_000;
+const SESSION_GUARD_STORM_LIMIT = 8;
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -717,11 +721,25 @@ export async function getSessionGuarded(
   reason = "unknown",
   opts?: { allowRefresh?: boolean; forceRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
+  const reasonStack = new Error().stack ?? "";
   console.warn(
     "[getSessionGuarded:reason]",
     reason,
-    new Error().stack,
+    reasonStack,
   );
+  const now = Date.now();
+  sessionGuardCallTimestamps.push(now);
+  sessionGuardReasonStacks.push(`[${new Date(now).toISOString()}] ${reason}\n${reasonStack}`);
+  while (
+    sessionGuardCallTimestamps.length > 0 &&
+    now - sessionGuardCallTimestamps[0]! > SESSION_GUARD_STORM_WINDOW_MS
+  ) {
+    sessionGuardCallTimestamps.shift();
+    sessionGuardReasonStacks.shift();
+  }
+  if (sessionGuardCallTimestamps.length > SESSION_GUARD_STORM_LIMIT) {
+    console.error("[AUTH_STORM_DETECTED]", sessionGuardReasonStacks.join("\n---\n"));
+  }
   authTrace("getSessionGuarded:call", {
     reason,
     allowRefresh: opts?.allowRefresh !== false,

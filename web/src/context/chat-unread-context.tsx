@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getSessionGuarded, getSupabaseRestWithSession, supabase } from "@/lib/supabase";
+import { getSupabaseRestWithSession, supabase } from "@/lib/supabase";
 import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
 import { useAuth } from "@/context/auth-context";
 import type { ChatListRow } from "@/lib/types";
@@ -42,18 +42,20 @@ const ChatUnreadContext = createContext<ChatUnreadContextValue | null>(null);
 
 const CHANNEL_NAME = "enigma-chat-sync";
 const STORAGE_KEY = "enigma:chat-sync";
-const PRESENCE_HEARTBEAT_MS = 25_000;
+const PRESENCE_HEARTBEAT_MS = 30_000;
 const CHAT_REFRESH_POLL_MS = 8_000;
-const RECONNECT_BASE_MS = 500;
-const RECONNECT_MAX_ATTEMPTS = 6;
 const REALTIME_EVENT_TTL_MS = 15_000;
-const UNREAD_RECONCILE_DEBOUNCE_MS = 160;
+const UNREAD_RECONCILE_DEBOUNCE_MS = 1_200;
 const UNREAD_RECONCILE_POLL_MS = 35_000;
 const REALTIME_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 const REALTIME_FAILURE_LIMIT = 5;
 const FALLBACK_POLL_MS = 25_000;
 const AUTH_STABILIZE_DELAY_MS = 800;
 const DEV_CHAT_DEBUG = process.env.NODE_ENV === "development";
+
+function chatStormSource(source: string, payload?: Record<string, unknown>) {
+  console.warn("[CHAT_STORM_SOURCE]", source, payload ?? {});
+}
 
 function chatDebugLog(event: string, payload?: Record<string, unknown>) {
   if (!DEV_CHAT_DEBUG) return;
@@ -88,31 +90,10 @@ function chatRealtimeLog(
   console.info(message, serialized);
 }
 
-function getErrorStatus(error: unknown): number {
-  const status = Number(
-    (error as { status?: unknown; code?: unknown } | null)?.status ??
-      (error as { status?: unknown; code?: unknown } | null)?.code ??
-      0,
-  );
-  return Number.isFinite(status) ? status : 0;
-}
-
-function isAuthFailure(error: unknown): boolean {
-  const status = getErrorStatus(error);
-  return status === 400 || status === 401;
-}
-
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
-}
-
-async function sessionHasAccessToken(): Promise<boolean> {
-  const { session } = await getSessionGuarded("chat-session-has-token", {
-    allowRefresh: false,
-  });
-  return Boolean(session?.access_token?.trim());
 }
 
 function normalizeChatRow(
@@ -385,12 +366,12 @@ export function ChatUnreadProvider({
 }) {
   const {
     user,
+    session,
     loading,
     authResolved,
     profileLoading,
     onboardingResolved,
     ready: authReady,
-    signOut,
   } = useAuth();
   const userId = user?.id ?? null;
   const authLifecycleReady =
@@ -436,11 +417,13 @@ export function ChatUnreadProvider({
   const hasLoggedRealtimeDisabledRef = useRef(false);
   const realtimeModeRef = useRef<"realtime" | "polling" | "disabled">(realtimeMode);
   const authStabilizedRef = useRef(false);
+  const authReadyRef = useRef(false);
+  const stableSessionRef = useRef<typeof session | null>(session ?? null);
+  const bootstrapCompletedRef = useRef(false);
   const authStabilizeTimerRef = useRef<number | null>(null);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
-  const refreshQueuedRef = useRef<{ silent?: boolean } | null>(null);
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
-  const bootstrapStartedForUserRef = useRef<string | null>(null);
+  const lastReconcileScheduledAtRef = useRef(0);
 
   useEffect(() => {
     authLifecycleReadyRef.current = authLifecycleReady;
@@ -456,7 +439,12 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     authStabilizedRef.current = authStabilizedState;
+    authReadyRef.current = authStabilizedState;
   }, [authStabilizedState]);
+
+  useEffect(() => {
+    stableSessionRef.current = session ?? null;
+  }, [session]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -466,19 +454,26 @@ export function ChatUnreadProvider({
     }
     if (!userId) {
       authStabilizedRef.current = true;
+      authReadyRef.current = true;
+      bootstrapCompletedRef.current = false;
       setAuthStabilizedState(true);
       return;
     }
     if (!authLifecycleReady) {
       authStabilizedRef.current = false;
+      authReadyRef.current = false;
+      bootstrapCompletedRef.current = false;
       setAuthStabilizedState(false);
       return;
     }
     authStabilizedRef.current = false;
+    authReadyRef.current = false;
+    bootstrapCompletedRef.current = false;
     setAuthStabilizedState(false);
     authStabilizeTimerRef.current = window.setTimeout(() => {
       authStabilizeTimerRef.current = null;
       authStabilizedRef.current = true;
+      authReadyRef.current = true;
       setAuthStabilizedState(true);
       chatDebugLog("auth:stabilized", { userId });
     }, AUTH_STABILIZE_DELAY_MS);
@@ -513,8 +508,7 @@ export function ChatUnreadProvider({
     setHydratedState(false);
     setRealtimeReadyState(false);
     maxRealtimeFailuresRef.current = 0;
-    bootstrapStartedForUserRef.current = null;
-    refreshQueuedRef.current = null;
+    bootstrapCompletedRef.current = false;
     refreshInFlightRef.current = null;
     reconcileInFlightRef.current = null;
     realtimeDisabledRef.current = false;
@@ -529,7 +523,11 @@ export function ChatUnreadProvider({
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
-      if (!authStabilizedRef.current && userId) {
+      chatStormSource("refreshChats", {
+        silent: Boolean(opts?.silent),
+        userId: userId ?? null,
+      });
+      if (!authReadyRef.current && userId) {
         chatDebugLog("refreshChats:blocked:auth-not-stabilized", {
           silent: Boolean(opts?.silent),
           userId,
@@ -537,11 +535,6 @@ export function ChatUnreadProvider({
         return;
       }
       if (refreshInFlightRef.current) {
-        if (!opts?.silent) {
-          refreshQueuedRef.current = { silent: false };
-        } else if (!refreshQueuedRef.current) {
-          refreshQueuedRef.current = { silent: true };
-        }
         chatDebugLog("refreshChats:join-inflight", {
           silent: Boolean(opts?.silent),
         });
@@ -572,14 +565,7 @@ export function ChatUnreadProvider({
       setError(null);
 
       try {
-        const { session, error } = await getSessionGuarded("chat-refresh-chats", {
-          allowRefresh: false,
-        });
-        if (error && isAuthFailure(error)) {
-          await signOut();
-          return;
-        }
-        const accessToken = session?.access_token ?? null;
+        const accessToken = stableSessionRef.current?.access_token ?? null;
         if (!accessToken) {
           if (!logOnceRef.current.listNoToken) {
             logOnceRef.current.listNoToken = true;
@@ -589,20 +575,8 @@ export function ChatUnreadProvider({
               );
             }
           }
-          if (
-            typeof window !== "undefined" &&
-            chatListAuthRetryRef.current < 5
-          ) {
-            chatListAuthRetryRef.current += 1;
-            const retryDelay = 450 * chatListAuthRetryRef.current;
-            window.setTimeout(() => {
-              void refreshChats({ silent: true });
-            }, retryDelay);
-          }
           if (!opts?.silent) setLoadingState(false);
-          chatDebugLog("refreshChats:skip:no-token", {
-            retry: chatListAuthRetryRef.current,
-          });
+          chatDebugLog("refreshChats:skip:no-token");
           return;
         }
         chatListAuthRetryRef.current = 0;
@@ -751,20 +725,16 @@ export function ChatUnreadProvider({
 
       refreshInFlightRef.current = run.finally(() => {
         refreshInFlightRef.current = null;
-        const queued = refreshQueuedRef.current;
-        refreshQueuedRef.current = null;
-        if (queued) {
-          void refreshChats(queued);
-        }
       });
       return refreshInFlightRef.current;
     },
-    [signOut, userId],
+    [userId],
   );
 
   const reconcileUnreadSnapshot = useCallback(
     async (reason: string) => {
-      if (!authStabilizedRef.current && userId) {
+      chatStormSource("reconcile", { reason, userId: userId ?? null });
+      if (!authReadyRef.current && userId) {
         chatDebugLog("reconcile:blocked:auth-not-stabilized", { reason, userId });
         return;
       }
@@ -776,13 +746,7 @@ export function ChatUnreadProvider({
       chatDebugLog("reconcile:start", { reason, userId: userId ?? null });
       if (!userId) return;
       try {
-        const { session, error } = await getSessionGuarded("chat-reconcile-unread", {
-          allowRefresh: true,
-        });
-        if (error && isAuthFailure(error)) {
-          await signOut();
-          return;
-        }
+        const session = stableSessionRef.current;
         if (!session?.access_token) {
           chatDebugLog("reconcile:skip:no-token", { reason });
           return;
@@ -886,7 +850,7 @@ export function ChatUnreadProvider({
       });
       return reconcileInFlightRef.current;
     },
-    [refreshChats, signOut, userId],
+    [refreshChats, userId],
   );
 
   const scheduleRefresh = useCallback(
@@ -908,13 +872,23 @@ export function ChatUnreadProvider({
   const scheduleReconcile = useCallback(
     (reason: string, delayMs = UNREAD_RECONCILE_DEBOUNCE_MS) => {
       if (typeof window === "undefined") return;
+      const now = Date.now();
+      const sinceLast = now - lastReconcileScheduledAtRef.current;
+      const effectiveDelay = Math.max(
+        UNREAD_RECONCILE_DEBOUNCE_MS,
+        delayMs,
+        sinceLast < UNREAD_RECONCILE_DEBOUNCE_MS
+          ? UNREAD_RECONCILE_DEBOUNCE_MS - sinceLast
+          : 0,
+      );
       if (statusRef.current.reconcileTimer) {
         window.clearTimeout(statusRef.current.reconcileTimer);
       }
       statusRef.current.reconcileTimer = window.setTimeout(() => {
         statusRef.current.reconcileTimer = null;
+        lastReconcileScheduledAtRef.current = Date.now();
         void reconcileUnreadSnapshot(reason);
-      }, delayMs);
+      }, effectiveDelay);
     },
     [reconcileUnreadSnapshot],
   );
@@ -937,7 +911,8 @@ export function ChatUnreadProvider({
 
   const triggerRealtimeRecover = useCallback(
     (reason: string) => {
-      if (!authStabilizedRef.current && userId) {
+      chatStormSource("reconnect", { reason, userId: userId ?? null });
+      if (!authReadyRef.current && userId) {
         chatDebugLog("realtime:recover:blocked:auth-not-stabilized", { reason, userId });
         return;
       }
@@ -978,7 +953,8 @@ export function ChatUnreadProvider({
   }, [broadcast, rememberRealtimeEvent, refreshChats, scheduleReconcile, scheduleRefresh]);
 
   const upsertPresence = useCallback(async () => {
-    if (!authStabilizedRef.current && userId) {
+    chatStormSource("presence", { userId: userId ?? null });
+    if (!authReadyRef.current && userId) {
       chatDebugLog("presence:blocked:auth-not-stabilized", { userId });
       return;
     }
@@ -994,10 +970,7 @@ export function ChatUnreadProvider({
 
       const rest = getSupabaseRestWithSession();
       if (!rest) return;
-      const { session: presenceSession } = await getSessionGuarded(
-        "chat-presence-upsert",
-        { allowRefresh: false },
-      );
+      const presenceSession = stableSessionRef.current;
       if (!presenceSession?.access_token) {
         if (!logOnceRef.current.presenceNoToken) {
           logOnceRef.current.presenceNoToken = true;
@@ -1036,7 +1009,7 @@ export function ChatUnreadProvider({
       }
 
       const pushSeenRes = await withPostgrestBackoff({
-        checkSession: sessionHasAccessToken,
+        checkSession: () => Boolean(stableSessionRef.current?.access_token?.trim()),
         checkHealth: isSupabaseReachable,
         logLabel: "push_tokens last_seen",
         run: (signal) =>
@@ -1070,16 +1043,15 @@ export function ChatUnreadProvider({
 
   const markChatRead = useCallback(
     async (chatId: string, upToMessageId?: string | null) => {
-      if (!authStabilizedRef.current && userId) {
+      chatStormSource("markRead", { chatId, userId: userId ?? null });
+      if (!authReadyRef.current && userId) {
         chatDebugLog("markRead:blocked:auth-not-stabilized", { chatId, userId });
         return;
       }
       if (!userId || !isUuid(chatId)) return;
 
       try {
-        const { session: markSession } = await getSessionGuarded("chat-mark-read", {
-          allowRefresh: false,
-        });
+        const markSession = stableSessionRef.current;
         if (!markSession?.access_token) {
           if (!logOnceRef.current.markNoToken) {
             logOnceRef.current.markNoToken = true;
@@ -1186,11 +1158,11 @@ export function ChatUnreadProvider({
       chatDebugLog("realtime:init:blocked:auth-not-stabilized", { userId });
       return;
     }
-    if (bootstrapStartedForUserRef.current === userId) {
+    if (bootstrapCompletedRef.current) {
       chatDebugLog("realtime:init:skip-duplicate-bootstrap", { userId });
       return;
     }
-    bootstrapStartedForUserRef.current = userId;
+    bootstrapCompletedRef.current = true;
     void refreshChats();
     scheduleReconcile("initial-launch", 220);
   }, [authLifecycleReady, authResolved, authStabilizedState, loading, refreshChats, scheduleReconcile, userId]);
@@ -1203,13 +1175,14 @@ export function ChatUnreadProvider({
     authChangeListenerAttachedRef.current = true;
     chatDebugLog("auth-listener:attach");
     const { data } = supabase.auth.onAuthStateChange((event) => {
+      chatStormSource("auth-listener", { event, userId: userId ?? null });
       if (
         event === "INITIAL_SESSION" ||
         event === "SIGNED_IN" ||
         event === "TOKEN_REFRESHED" ||
         event === "TOKEN_REFRESH_REJECTED"
       ) {
-        if (userId && !authStabilizedRef.current) {
+        if (userId && !authReadyRef.current) {
           chatDebugLog("auth-listener:skip-before-stable", { event, userId });
           return;
         }
@@ -1246,6 +1219,7 @@ export function ChatUnreadProvider({
       chatDebugLog("realtime:subscribe:blocked:auth-not-stabilized", { userId });
       return;
     }
+    chatStormSource("realtime-subscribe", { userId });
     if (realtimeDisabledRef.current) {
       if (!hasLoggedRealtimeDisabledRef.current) {
         hasLoggedRealtimeDisabledRef.current = true;
@@ -1297,6 +1271,11 @@ export function ChatUnreadProvider({
 
     const scheduleRetry = (reason: string) => {
       if (cancelled || realtimeDisabledRef.current || typeof window === "undefined") return;
+      chatStormSource("reconnect", {
+        reason,
+        mode: "schedule-retry",
+        userId,
+      });
       clearReconnect();
       const failureIndex = Math.max(0, maxRealtimeFailuresRef.current - 1);
       const delayMs =
