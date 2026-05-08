@@ -4,6 +4,29 @@ import { useEffect } from "react";
 
 const HYDRATION_RECOVERY_FLAG = "enigma:hydration-recovery-required";
 
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unserializable]";
+  }
+}
+
+function extractStack(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack || value.message || String(value);
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "stack" in value &&
+    typeof (value as { stack?: unknown }).stack === "string"
+  ) {
+    return (value as { stack: string }).stack;
+  }
+  return String(value ?? "");
+}
+
 /**
  * В production: ловим unhandledrejection / error, чтобы в консоли не оставались «тихие» сбои.
  */
@@ -24,11 +47,31 @@ export function GlobalErrorHandlers() {
     };
 
     const onRejection = (e: PromiseRejectionEvent) => {
-      console.error("UNHANDLED PROMISE", e.reason, e);
+      console.error(
+        "UNHANDLED PROMISE",
+        {
+          reason: e.reason,
+          reasonJson: safeStringify(e.reason),
+          stack: extractStack(e.reason),
+        },
+        e,
+      );
       markHydrationRecoveryNeeded(e.reason);
     };
     const onError = (e: ErrorEvent) => {
-      console.error("GLOBAL ERROR", e.error ?? e.message, e);
+      const err = e.error ?? e.message;
+      console.error(
+        "GLOBAL ERROR",
+        {
+          message: e.message,
+          filename: e.filename,
+          lineno: e.lineno,
+          colno: e.colno,
+          reasonJson: safeStringify(err),
+          stack: extractStack(err),
+        },
+        e,
+      );
       markHydrationRecoveryNeeded(e.error ?? e.message);
     };
     window.addEventListener("unhandledrejection", onRejection);

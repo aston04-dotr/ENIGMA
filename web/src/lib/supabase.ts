@@ -333,6 +333,48 @@ function extractStack(): string | null {
   }
 }
 
+type RpcClient = {
+  rpc: (...args: unknown[]) => unknown;
+  __enigmaRpcDebugPatched?: boolean;
+};
+
+function instrumentRpcDebug(client: RpcClient, label: string): void {
+  if (client.__enigmaRpcDebugPatched) return;
+  client.__enigmaRpcDebugPatched = true;
+  const originalRpc = client.rpc.bind(client);
+  client.rpc = (...args: unknown[]) => {
+    const callsite = extractStack();
+    let result: unknown;
+    try {
+      result = originalRpc(...args);
+    } catch (error) {
+      console.error("[rpc-debug] rpc threw synchronously", {
+        label,
+        args,
+        callsite,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    const hasThen = Boolean(result && typeof (result as { then?: unknown }).then === "function");
+    const hasCatch = Boolean(result && typeof (result as { catch?: unknown }).catch === "function");
+    if (!hasCatch) {
+      console.error("[rpc-debug] rpc returned non-catchable value", {
+        label,
+        args,
+        hasThen,
+        hasCatch,
+        callsite,
+      });
+    }
+    return result;
+  };
+}
+
+if (typeof window !== "undefined") {
+  instrumentRpcDebug(supabase as unknown as RpcClient, "browser-client");
+}
+
 async function runGuardedRefresh(reason: string): Promise<void> {
   const now = Date.now();
   if (now < refreshDisabledUntilMs) {
@@ -494,6 +536,7 @@ export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
         return session?.access_token ?? null;
       },
     });
+    instrumentRpcDebug(supabaseRestSingleton as unknown as RpcClient, "rest-with-session");
   }
   return supabaseRestSingleton;
 }
