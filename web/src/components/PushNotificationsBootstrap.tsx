@@ -74,6 +74,7 @@ export function PushNotificationsBootstrap() {
         };
 
         const appUrlOpenHandle = await App.addListener("appUrlOpen", ({ url }) => {
+          console.log("[deep-link]", url);
           const path = toAppPath(url);
           if (!path) return;
           router.replace(path);

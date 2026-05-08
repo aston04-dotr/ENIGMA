@@ -24,6 +24,18 @@ export async function signIn(email: string) {
       return "";
     }
   })();
+  const isCapacitorPresent =
+    typeof window !== "undefined" &&
+    Boolean(
+      (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor,
+    );
+  const isNativePlatform =
+    typeof window !== "undefined" &&
+    Boolean(
+      (
+        window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }
+      ).Capacitor?.isNativePlatform?.(),
+    );
   console.log("[auth] magic_link:request_started", {
     email: label,
     mode: preferDirectOtp ? "direct_supabase" : "api_route",
@@ -37,19 +49,39 @@ export async function signIn(email: string) {
     ? mobileRedirectTo
     : process.env.NEXT_PUBLIC_AUTH_EMAIL_REDIRECT_TO?.trim() ||
       `${getRedirectSiteOrigin()}/auth/confirm`;
-  console.log("[auth] magic_link:redirect_config", {
-    mode: preferDirectOtp ? "direct_supabase" : "api_route",
-    email: label,
-    emailRedirectTo,
-    siteOrigin: getSiteOrigin(),
-    runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
-  });
+  console.log(
+    "[auth] magic_link:redirect_config",
+    JSON.stringify(
+      {
+        mode: preferDirectOtp ? "direct_supabase" : "api_route",
+        email: label,
+        emailRedirectTo,
+        generatedRedirectUrl: emailRedirectTo,
+        siteOrigin: getSiteOrigin(),
+        runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
+        isCapacitorPresent,
+        isNativePlatform,
+      },
+      null,
+      2,
+    ),
+  );
   if (preferDirectOtp) {
-    console.log("[mobile-auth] otp_send_config", {
-      email: label,
-      emailRedirectTo,
-      runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
-    });
+    console.log(
+      "[mobile-auth] otp_send_config",
+      JSON.stringify(
+        {
+          email: label,
+          emailRedirectTo,
+          generatedRedirectUrl: emailRedirectTo,
+          runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
+          isCapacitorPresent,
+          isNativePlatform,
+        },
+        null,
+        2,
+      ),
+    );
   }
 
   const controller =
@@ -85,6 +117,10 @@ export async function signIn(email: string) {
         email: label,
         hasUser: Boolean(data?.user?.id),
       });
+      console.log(
+        "[mobile-otp] signInWithOtp:data",
+        JSON.stringify(data ?? null, null, 2),
+      );
       console.log("[mobile-otp] send_ok", {
         email: label,
         hasUser: Boolean(data?.user?.id),

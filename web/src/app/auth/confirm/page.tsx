@@ -40,6 +40,7 @@ export default function AuthConfirmPage() {
     if (typeof window === "undefined") return;
     if (didRunRef.current) return;
     didRunRef.current = true;
+    console.log("[auth-confirm] location", window.location.href);
 
     const run = async () => {
       try {
