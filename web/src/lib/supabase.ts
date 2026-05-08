@@ -8,6 +8,7 @@ import type { Session } from "@supabase/supabase-js";
 
 const { url, anonKey, configured } = getSupabasePublicConfig();
 const AUTH_STORAGE_KEY = "enigma.supabase.auth.v1";
+const AUTH_PROMISE_TIMEOUT_MS = 12_000;
 
 type CookieItem = { name: string; value: string };
 type BrowserCookieOptions = {
@@ -168,6 +169,24 @@ function tokenSuffix(value: string | null | undefined): string {
   return token.slice(-8);
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label}:timeout:${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 function getErrorStatus(error: unknown): number {
   const status = Number(
     (error as { status?: unknown; code?: unknown } | null)?.status ??
@@ -297,7 +316,11 @@ async function runGuardedRefresh(reason: string): Promise<void> {
   refreshInFlight = (async () => {
     const startedAt = Date.now();
     try {
-      const { error } = await supabase.auth.refreshSession();
+      const { error } = await withTimeout(
+        supabase.auth.refreshSession(),
+        AUTH_PROMISE_TIMEOUT_MS,
+        `refreshSession:${reason}`,
+      );
       if (error) {
         const status = getErrorStatus(error);
         if (status === 429) {
@@ -348,7 +371,14 @@ export async function getSessionGuarded(
   opts?: { allowRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
   const allowRefresh = opts?.allowRefresh !== false;
-  const first = await supabase.auth.getSession();
+  const first = await withTimeout(
+    supabase.auth.getSession(),
+    AUTH_PROMISE_TIMEOUT_MS,
+    `getSession:first:${reason}`,
+  ).catch((error) => ({
+    data: { session: null },
+    error,
+  }));
   const firstSession = first.data.session ?? null;
   if (firstSession) {
     authLog("debug", "session read (first)", {
@@ -362,7 +392,14 @@ export async function getSessionGuarded(
 
   await runGuardedRefresh(reason);
 
-  const second = await supabase.auth.getSession();
+  const second = await withTimeout(
+    supabase.auth.getSession(),
+    AUTH_PROMISE_TIMEOUT_MS,
+    `getSession:second:${reason}`,
+  ).catch((error) => ({
+    data: { session: null },
+    error,
+  }));
   const secondSession = second.data.session ?? null;
   if (secondSession) {
     authLog("debug", "session read (after refresh)", {

@@ -46,6 +46,26 @@ type AuthCtx = {
 
 const Ctx = createContext<AuthCtx | null>(null);
 const SIGNED_OUT_STABILIZE_MS = 280;
+const AUTH_STEP_TIMEOUT_MS = 10_000;
+const AUTH_WATCHDOG_MS = 15_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label}:timeout:${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -84,12 +104,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (hydrateInFlightRef.current) {
         return hydrateInFlightRef.current;
       }
+      const startedAt = Date.now();
       const run = (async () => {
-        const { session: guardedSession } = await getSessionGuarded(
+        const { session: guardedSession } = await withTimeout(
+          getSessionGuarded(`auth-hydrate:${reason}`, { allowRefresh }),
+          AUTH_STEP_TIMEOUT_MS,
           `auth-hydrate:${reason}`,
-          { allowRefresh },
-        );
+        ).catch((error) => {
+          console.warn("[auth] hydrate timeout/error", { reason, error });
+          return { session: null };
+        });
         applySession(guardedSession ?? null);
+        console.debug("[auth] hydrate done", {
+          reason,
+          elapsedMs: Date.now() - startedAt,
+          hasSession: Boolean(guardedSession?.user),
+        });
         return guardedSession ?? null;
       })().finally(() => {
         hydrateInFlightRef.current = null;
@@ -106,16 +136,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const guestIdentity = getOrCreateGuestIdentity();
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: userId,
-            email: email ?? null,
-            device_id: guestIdentity.fingerprint,
-          },
-          { onConflict: "id" },
-        );
+      const { error } = await withTimeout(
+        supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              email: email ?? null,
+              device_id: guestIdentity.fingerprint,
+            },
+            { onConflict: "id" },
+          ),
+        AUTH_STEP_TIMEOUT_MS,
+        "ensureProfileExists:upsert",
+      );
       if (error) {
         console.warn("profiles upsert", error);
       }
@@ -129,11 +163,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfileLoading(true);
 
       try {
-        let { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("id, phone, trust_score, updated_at, name")
-          .eq("id", userId)
-          .maybeSingle();
+        let { data: profileData, error: profileError } = await withTimeout(
+          supabase
+            .from("profiles")
+            .select("id, phone, trust_score, updated_at, name")
+            .eq("id", userId)
+            .maybeSingle(),
+          AUTH_STEP_TIMEOUT_MS,
+          "loadProfile:select",
+        );
 
         if (profileError) {
           console.warn("profiles select", profileError);
@@ -141,11 +179,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!profileData) {
           await ensureProfileExists(userId);
-          const retry = await supabase
-            .from("profiles")
-            .select("id, phone, trust_score, updated_at, name")
-            .eq("id", userId)
-            .maybeSingle();
+          const retry = await withTimeout(
+            supabase
+              .from("profiles")
+              .select("id, phone, trust_score, updated_at, name")
+              .eq("id", userId)
+              .maybeSingle(),
+            AUTH_STEP_TIMEOUT_MS,
+            "loadProfile:retry",
+          );
           profileData = retry.data;
           profileError = retry.error;
 
@@ -212,6 +254,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await loadProfile(uid);
     })();
   }, [authResolved, loading, user?.id, user?.email, ensureProfileExists, loadProfile]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!loading && authResolved) return;
+    const timer = window.setTimeout(() => {
+      if (!loading && authResolved) return;
+      console.error("[auth] watchdog forced release", {
+        loading,
+        authResolved,
+        hasSession: Boolean(session?.user),
+      });
+      setLoading(false);
+      setAuthResolved(true);
+      setReady(true);
+    }, AUTH_WATCHDOG_MS);
+    return () => window.clearTimeout(timer);
+  }, [authResolved, loading, session?.user]);
 
   useEffect(() => {
     let mounted = true;

@@ -8,6 +8,25 @@ import { getSessionGuarded } from "@/lib/supabase";
 import { signInWithMagicLink } from "@/lib/auth";
 
 const RESEND_SECONDS = 60;
+const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label}:timeout:${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) window.clearTimeout(timeoutHandle);
+  }
+}
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -60,23 +79,46 @@ export default function VerifyPage() {
     if (code.length !== 8 || !email) return;
     setLoading(true);
     setError("");
+    const startedAt = Date.now();
 
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email,
-      token: code,
-      type: "email",
-    });
-    if (verifyError) {
+    try {
+      console.debug("[auth-verify] otp verify:start", { email, codeLen: code.length });
+      const { error: verifyError } = await withTimeout(
+        supabase.auth.verifyOtp({
+          email,
+          token: code,
+          type: "email",
+        }),
+        AUTH_FINALIZE_TIMEOUT_MS,
+        "verifyOtp",
+      );
+      if (verifyError) {
+        setError(verifyError.message || "Неверный или устаревший код");
+        return;
+      }
+
+      localStorage.removeItem("auth_email");
+      // Wait for session hydration to avoid route flicker/collapse right after OTP.
+      const { session: hydrated } = await withTimeout(
+        getSessionGuarded("verify-otp-success", { allowRefresh: true }),
+        AUTH_FINALIZE_TIMEOUT_MS,
+        "verifyOtp:hydrateSession",
+      );
+      if (!hydrated?.user) {
+        setError("Сессия не подтвердилась. Повторите вход.");
+        return;
+      }
+      console.debug("[auth-verify] otp verify:success", {
+        elapsedMs: Date.now() - startedAt,
+      });
+      router.replace("/profile");
+      router.refresh();
+    } catch (error) {
+      console.error("[auth-verify] otp verify:failed", error);
+      setError("Не удалось завершить вход. Проверьте интернет и попробуйте снова.");
+    } finally {
       setLoading(false);
-      setError(verifyError.message || "Неверный или устаревший код");
-      return;
     }
-
-    localStorage.removeItem("auth_email");
-    // Wait for session hydration to avoid route flicker/collapse right after OTP.
-    await getSessionGuarded("verify-otp-success", { allowRefresh: true });
-    router.replace("/profile");
-    router.refresh();
   };
 
   const onResend = async () => {

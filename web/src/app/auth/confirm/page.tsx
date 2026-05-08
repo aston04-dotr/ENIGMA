@@ -11,6 +11,25 @@ import { getSessionGuarded } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 type Phase = "loading" | "success" | "error";
+const AUTH_FINALIZE_TIMEOUT_MS = 12_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label}:timeout:${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) window.clearTimeout(timeoutHandle);
+  }
+}
 
 export default function AuthConfirmPage() {
   const router = useRouter();
@@ -23,49 +42,76 @@ export default function AuthConfirmPage() {
     didRunRef.current = true;
 
     const run = async () => {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code")?.trim();
-      const otpTokenHash = url.searchParams.get("token_hash")?.trim();
-      const otpToken = url.searchParams.get("token")?.trim();
-      const otpType = url.searchParams.get("type")?.trim();
-      const emailParam = url.searchParams.get("email")?.trim();
+      try {
+        const startedAt = Date.now();
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code")?.trim();
+        const otpTokenHash = url.searchParams.get("token_hash")?.trim();
+        const otpToken = url.searchParams.get("token")?.trim();
+        const otpType = url.searchParams.get("type")?.trim();
+        const emailParam = url.searchParams.get("email")?.trim();
 
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
+        if (code) {
+          const { error } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(code),
+            AUTH_FINALIZE_TIMEOUT_MS,
+            "authConfirm:exchangeCodeForSession",
+          );
+          if (error) {
+            setPhase("error");
+            return;
+          }
+        } else if (otpTokenHash && otpType) {
+          const { error } = await withTimeout(
+            supabase.auth.verifyOtp({
+              token_hash: otpTokenHash,
+              type: otpType as EmailOtpType,
+            } as Parameters<typeof supabase.auth.verifyOtp>[0]),
+            AUTH_FINALIZE_TIMEOUT_MS,
+            "authConfirm:verifyOtp:tokenHash",
+          );
+
+          if (error) {
+            setPhase("error");
+            return;
+          }
+        } else if (otpToken && otpType) {
+          const { error } = await withTimeout(
+            supabase.auth.verifyOtp({
+              token: otpToken,
+              type: otpType as EmailOtpType,
+              ...(emailParam ? { email: emailParam } : {}),
+            } as Parameters<typeof supabase.auth.verifyOtp>[0]),
+            AUTH_FINALIZE_TIMEOUT_MS,
+            "authConfirm:verifyOtp:token",
+          );
+
+          if (error) {
+            setPhase("error");
+            return;
+          }
+        } else {
           setPhase("error");
           return;
         }
-      } else if (otpTokenHash && otpType) {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash: otpTokenHash,
-          type: otpType as EmailOtpType,
-        } as Parameters<typeof supabase.auth.verifyOtp>[0]);
 
-        if (error) {
+        setPhase("success");
+        const { session } = await withTimeout(
+          getSessionGuarded("auth-confirm-success", { allowRefresh: true }),
+          AUTH_FINALIZE_TIMEOUT_MS,
+          "authConfirm:hydrateSession",
+        );
+        if (!session?.user) {
           setPhase("error");
           return;
         }
-      } else if (otpToken && otpType) {
-        const { error } = await supabase.auth.verifyOtp({
-          token: otpToken,
-          type: otpType as EmailOtpType,
-          ...(emailParam ? { email: emailParam } : {}),
-        } as Parameters<typeof supabase.auth.verifyOtp>[0]);
-
-        if (error) {
-          setPhase("error");
-          return;
-        }
-      } else {
+        console.debug("[auth-confirm] success", { elapsedMs: Date.now() - startedAt });
+        router.replace("/");
+        router.refresh();
+      } catch (error) {
+        console.error("[auth-confirm] finalize failed", error);
         setPhase("error");
-        return;
       }
-
-      setPhase("success");
-      await getSessionGuarded("auth-confirm-success", { allowRefresh: true });
-      router.replace("/");
-      router.refresh();
     };
 
     void run();

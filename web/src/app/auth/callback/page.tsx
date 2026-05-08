@@ -20,24 +20,61 @@ export default function CallbackPage() {
     ranOnceRef.current = true;
 
     const run = async () => {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
+      const withTimeout = async <T,>(
+        promise: Promise<T>,
+        timeoutMs: number,
+        label: string,
+      ): Promise<T> => {
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+        const timeoutPromise = new Promise<T>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error(`${label}:timeout:${timeoutMs}ms`));
+          }, timeoutMs);
+        });
+        try {
+          return await Promise.race([promise, timeoutPromise]);
+        } finally {
+          if (timeoutHandle) window.clearTimeout(timeoutHandle);
+        }
+      };
 
-      if (!code) {
-        window.location.replace("/login?auth_error=invalid_link");
-        return;
+      try {
+        const startedAt = Date.now();
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+
+        if (!code) {
+          window.location.replace("/login?auth_error=invalid_link");
+          return;
+        }
+
+        const { error } = await withTimeout(
+          supabase.auth.exchangeCodeForSession(code),
+          12_000,
+          "authCallback:exchangeCodeForSession",
+        );
+        if (error) {
+          console.error("[callback] exchangeCodeForSession", error.message);
+          window.location.replace("/login?auth_error=exchange_failed");
+          return;
+        }
+
+        const { session } = await withTimeout(
+          getSessionGuarded("auth-callback-success", { allowRefresh: true }),
+          12_000,
+          "authCallback:hydrateSession",
+        );
+        if (!session?.user) {
+          window.location.replace("/login?auth_error=session_not_ready");
+          return;
+        }
+        console.debug("[auth-callback] success", { elapsedMs: Date.now() - startedAt });
+        router.replace("/");
+        router.refresh();
+      } catch (error) {
+        console.error("[auth-callback] finalize failed", error);
+        window.location.replace("/login?auth_error=callback_timeout");
       }
-
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
-      if (error) {
-        console.error("[callback] exchangeCodeForSession", error.message);
-        window.location.replace("/login?auth_error=exchange_failed");
-        return;
-      }
-
-      await getSessionGuarded("auth-callback-success", { allowRefresh: true });
-      router.replace("/");
-      router.refresh();
     };
 
     void run();
