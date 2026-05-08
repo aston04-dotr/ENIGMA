@@ -208,6 +208,11 @@ function instrumentSupabaseAuthLifecycle() {
           errorMessage: message || null,
           errorStatus: Number.isFinite(status) ? status : 0,
         });
+        if (method === "signOut") {
+          setRestAccessTokenFromSession(null);
+        } else if (resultRecord?.data?.session) {
+          setRestAccessTokenFromSession(resultRecord.data.session);
+        }
         if (message.includes("Auth session missing!")) {
           authTrace("auth-session-missing-source", {
             callId,
@@ -239,6 +244,11 @@ instrumentSupabaseAuthLifecycle();
 export const isSupabaseConfigured = configured;
 
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
+let restClientCreatedCount = 0;
+let restAccessTokenRef: string | null = null;
+let restTokenBootstrapped = false;
+let restTokenBootstrapInFlight: Promise<void> | null = null;
+let restAuthListenerAttached = false;
 let refreshInFlight: Promise<void> | null = null;
 let sessionGuardInFlight: Promise<{ session: Session | null; error: unknown | null }> | null = null;
 let lastResolvedSessionResult: { session: Session | null; error: unknown | null } | null = null;
@@ -251,6 +261,41 @@ let authTraceSeq = 0;
 const SESSION_GUARD_THROTTLE_MS = 1_200;
 const SESSION_GUARD_STORM_WINDOW_MS = 5_000;
 const SESSION_GUARD_STORM_LIMIT = 8;
+
+function setRestAccessTokenFromSession(session: Session | null): void {
+  restAccessTokenRef = session?.access_token ?? null;
+}
+
+function attachRestAuthTokenListener(): void {
+  if (typeof window === "undefined") return;
+  if (restAuthListenerAttached) return;
+  restAuthListenerAttached = true;
+  const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    setRestAccessTokenFromSession(nextSession ?? null);
+  });
+  void data;
+}
+
+async function ensureRestTokenBootstrapped(): Promise<void> {
+  if (restTokenBootstrapped) return;
+  if (restTokenBootstrapInFlight) return restTokenBootstrapInFlight;
+  restTokenBootstrapInFlight = (async () => {
+    try {
+      const { data } = await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_PROMISE_TIMEOUT_MS,
+        "rest-access-token:bootstrap",
+      );
+      setRestAccessTokenFromSession(data.session ?? null);
+    } catch {
+      setRestAccessTokenFromSession(null);
+    } finally {
+      restTokenBootstrapped = true;
+      restTokenBootstrapInFlight = null;
+    }
+  })();
+  return restTokenBootstrapInFlight;
+}
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -790,13 +835,32 @@ export async function getSessionGuarded(
 export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
   if (!url || !anonKey) return null;
   if (!supabaseRestSingleton) {
+    restClientCreatedCount += 1;
+    console.warn("[REST_CLIENT_CREATED]", {
+      count: restClientCreatedCount,
+    });
+    attachRestAuthTokenListener();
     supabaseRestSingleton = createClient<Database>(url, anonKey, {
-      /** Один shared GoTrue — `supabase`; здесь только чтение токена для PostgREST. */
+      global: {
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          const requestUrl =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+              ? input.toString()
+              : "url" in input
+              ? String(input.url)
+              : String(input);
+          console.warn("[REST_FETCH]", requestUrl);
+          return fetch(input, init);
+        },
+      },
+      /** Один shared GoTrue — `supabase`; здесь access token берём из кэша с one-shot bootstrap. */
       accessToken: async () => {
-        const { session } = await getSessionGuarded("rest-access-token", {
-          allowRefresh: false,
-        });
-        return session?.access_token ?? null;
+        console.error("[REST_AUTH_ACCESS_TOKEN]", new Error().stack);
+        if (restAccessTokenRef) return restAccessTokenRef;
+        await ensureRestTokenBootstrapped();
+        return restAccessTokenRef;
       },
     });
     instrumentRpcDebug(supabaseRestSingleton as unknown as RpcClient, "rest-with-session");
