@@ -82,6 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hadSessionRef = useRef(false);
   const authListenerAttachedRef = useRef(false);
   const recoverListenersAttachedRef = useRef(false);
+  const loadingRef = useRef(loading);
+  const authResolvedRef = useRef(authResolved);
+  const sessionUserRef = useRef<User | null>(user);
+  const retryBootstrapRef = useRef<((opts?: { fromUser?: boolean; fromOnline?: boolean }) => void) | null>(null);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -255,6 +259,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user]);
 
   useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    authResolvedRef.current = authResolved;
+  }, [authResolved]);
+
+  useEffect(() => {
+    sessionUserRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
     if (!authResolved || loading) {
       return;
     }
@@ -362,6 +378,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    retryBootstrapRef.current = retryBootstrap;
+  }, [retryBootstrap]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     if (recoverListenersAttachedRef.current) {
       console.debug("[auth] recover listeners already attached; skip duplicate");
@@ -379,11 +399,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ) {
         return;
       }
-      if (loading) return;
-      if (!authResolved) return;
-      if (session?.user) return;
+      if (loadingRef.current) return;
+      if (!authResolvedRef.current) return;
+      if (sessionUserRef.current) return;
       if (!hadSessionRef.current) return;
-      void retryBootstrap({ fromOnline: true });
+      void retryBootstrapRef.current?.({ fromOnline: true });
     };
     window.addEventListener("online", onRecover);
     window.addEventListener("pageshow", onRecover);
@@ -395,7 +415,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       recoverListenersAttachedRef.current = false;
       console.debug("[auth] recover listeners detach");
     };
-  }, [authResolved, loading, retryBootstrap, session?.user]);
+  }, []);
 
   const signOut = useCallback(async () => {
     applySession(null);

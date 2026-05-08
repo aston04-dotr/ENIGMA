@@ -165,15 +165,22 @@ function authLog(
 ) {
   if (!AUTH_VERBOSE && level === "debug") return;
   const data = payload ?? {};
+  const serialized = (() => {
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return String(data);
+    }
+  })();
   if (level === "warn") {
-    console.warn(`[auth-guard] ${message}`, data);
+    console.warn(`[auth-guard] ${message}`, serialized);
     return;
   }
   if (level === "error") {
-    console.error(`[auth-guard] ${message}`, data);
+    console.error(`[auth-guard] ${message}`, serialized);
     return;
   }
-  console.debug(`[auth-guard] ${message}`, data);
+  console.debug(`[auth-guard] ${message}`, serialized);
 }
 
 function tokenSuffix(value: string | null | undefined): string {

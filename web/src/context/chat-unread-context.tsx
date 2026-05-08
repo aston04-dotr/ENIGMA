@@ -1045,7 +1045,7 @@ export function ChatUnreadProvider({
   }, [scheduleReconcile, scheduleRefresh]);
 
   useEffect(() => {
-    if (!user || !userId) return;
+    if (!userId) return;
     if (!authLifecycleReady) {
       chatDebugLog("realtime:subscribe:blocked:auth-not-ready", { userId });
       return;
@@ -1078,7 +1078,10 @@ export function ChatUnreadProvider({
               ? String((payload as { status?: unknown }).status ?? "")
               : "";
           if (status.toLowerCase() === "ok") return;
-          console.error("chat-list realtime system error", payload);
+          console.error(
+            "chat-list realtime system error",
+            JSON.stringify(payload ?? {}, null, 2),
+          );
         },
       ).on(
         "postgres_changes",
@@ -1290,7 +1293,6 @@ export function ChatUnreadProvider({
     rememberRealtimeEvent,
     scheduleReconcile,
     scheduleRefresh,
-    user,
     userId,
   ]);
 
