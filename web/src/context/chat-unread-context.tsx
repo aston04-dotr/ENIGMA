@@ -52,6 +52,7 @@ const UNREAD_RECONCILE_POLL_MS = 35_000;
 const REALTIME_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 const REALTIME_FAILURE_LIMIT = 5;
 const FALLBACK_POLL_MS = 25_000;
+const AUTH_STABILIZE_DELAY_MS = 800;
 const DEV_CHAT_DEBUG = process.env.NODE_ENV === "development";
 
 function chatDebugLog(event: string, payload?: Record<string, unknown>) {
@@ -408,6 +409,7 @@ export function ChatUnreadProvider({
   const [realtimeMode, setRealtimeMode] = useState<"realtime" | "polling" | "disabled">(
     "disabled",
   );
+  const [authStabilizedState, setAuthStabilizedState] = useState(false);
   const processedRealtimeEventsRef = useRef<Map<string, number>>(new Map());
 
   const statusRef = useRef<{
@@ -433,6 +435,12 @@ export function ChatUnreadProvider({
   const maxRealtimeFailuresRef = useRef(0);
   const hasLoggedRealtimeDisabledRef = useRef(false);
   const realtimeModeRef = useRef<"realtime" | "polling" | "disabled">(realtimeMode);
+  const authStabilizedRef = useRef(false);
+  const authStabilizeTimerRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const refreshQueuedRef = useRef<{ silent?: boolean } | null>(null);
+  const reconcileInFlightRef = useRef<Promise<void> | null>(null);
+  const bootstrapStartedForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     authLifecycleReadyRef.current = authLifecycleReady;
@@ -445,6 +453,42 @@ export function ChatUnreadProvider({
   useEffect(() => {
     realtimeModeRef.current = realtimeMode;
   }, [realtimeMode]);
+
+  useEffect(() => {
+    authStabilizedRef.current = authStabilizedState;
+  }, [authStabilizedState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (authStabilizeTimerRef.current) {
+      window.clearTimeout(authStabilizeTimerRef.current);
+      authStabilizeTimerRef.current = null;
+    }
+    if (!userId) {
+      authStabilizedRef.current = true;
+      setAuthStabilizedState(true);
+      return;
+    }
+    if (!authLifecycleReady) {
+      authStabilizedRef.current = false;
+      setAuthStabilizedState(false);
+      return;
+    }
+    authStabilizedRef.current = false;
+    setAuthStabilizedState(false);
+    authStabilizeTimerRef.current = window.setTimeout(() => {
+      authStabilizeTimerRef.current = null;
+      authStabilizedRef.current = true;
+      setAuthStabilizedState(true);
+      chatDebugLog("auth:stabilized", { userId });
+    }, AUTH_STABILIZE_DELAY_MS);
+    return () => {
+      if (authStabilizeTimerRef.current) {
+        window.clearTimeout(authStabilizeTimerRef.current);
+        authStabilizeTimerRef.current = null;
+      }
+    };
+  }, [authLifecycleReady, userId]);
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
@@ -469,6 +513,10 @@ export function ChatUnreadProvider({
     setHydratedState(false);
     setRealtimeReadyState(false);
     maxRealtimeFailuresRef.current = 0;
+    bootstrapStartedForUserRef.current = null;
+    refreshQueuedRef.current = null;
+    refreshInFlightRef.current = null;
+    reconcileInFlightRef.current = null;
     realtimeDisabledRef.current = false;
     hasLoggedRealtimeDisabledRef.current = false;
     setRealtimeDisabledState(false);
@@ -481,6 +529,26 @@ export function ChatUnreadProvider({
 
   const refreshChats = useCallback(
     async (opts?: { silent?: boolean }) => {
+      if (!authStabilizedRef.current && userId) {
+        chatDebugLog("refreshChats:blocked:auth-not-stabilized", {
+          silent: Boolean(opts?.silent),
+          userId,
+        });
+        return;
+      }
+      if (refreshInFlightRef.current) {
+        if (!opts?.silent) {
+          refreshQueuedRef.current = { silent: false };
+        } else if (!refreshQueuedRef.current) {
+          refreshQueuedRef.current = { silent: true };
+        }
+        chatDebugLog("refreshChats:join-inflight", {
+          silent: Boolean(opts?.silent),
+        });
+        return refreshInFlightRef.current;
+      }
+
+      const run = (async () => {
       chatDebugLog("refreshChats:start", {
         silent: Boolean(opts?.silent),
         userId: userId ?? null,
@@ -679,12 +747,32 @@ export function ChatUnreadProvider({
       } finally {
         if (!opts?.silent) setLoadingState(false);
       }
+      })();
+
+      refreshInFlightRef.current = run.finally(() => {
+        refreshInFlightRef.current = null;
+        const queued = refreshQueuedRef.current;
+        refreshQueuedRef.current = null;
+        if (queued) {
+          void refreshChats(queued);
+        }
+      });
+      return refreshInFlightRef.current;
     },
     [signOut, userId],
   );
 
   const reconcileUnreadSnapshot = useCallback(
     async (reason: string) => {
+      if (!authStabilizedRef.current && userId) {
+        chatDebugLog("reconcile:blocked:auth-not-stabilized", { reason, userId });
+        return;
+      }
+      if (reconcileInFlightRef.current) {
+        chatDebugLog("reconcile:join-inflight", { reason, userId: userId ?? null });
+        return reconcileInFlightRef.current;
+      }
+      const run = (async () => {
       chatDebugLog("reconcile:start", { reason, userId: userId ?? null });
       if (!userId) return;
       try {
@@ -792,6 +880,11 @@ export function ChatUnreadProvider({
         chatDebugLog("reconcile:unexpected-error", { reason });
         console.error("chat unread reconcile unexpected", error);
       }
+      })();
+      reconcileInFlightRef.current = run.finally(() => {
+        reconcileInFlightRef.current = null;
+      });
+      return reconcileInFlightRef.current;
     },
     [refreshChats, signOut, userId],
   );
@@ -844,6 +937,10 @@ export function ChatUnreadProvider({
 
   const triggerRealtimeRecover = useCallback(
     (reason: string) => {
+      if (!authStabilizedRef.current && userId) {
+        chatDebugLog("realtime:recover:blocked:auth-not-stabilized", { reason, userId });
+        return;
+      }
       if (realtimeDisabledRef.current) {
         chatDebugLog("realtime:recover:skip-disabled", { reason });
         return;
@@ -863,7 +960,7 @@ export function ChatUnreadProvider({
       scheduleRefresh(40, { silent: true });
       scheduleReconcile(reason, 120);
     },
-    [scheduleReconcile, scheduleRefresh],
+    [scheduleReconcile, scheduleRefresh, userId],
   );
 
   const refreshChatsRef = useRef(refreshChats);
@@ -881,6 +978,10 @@ export function ChatUnreadProvider({
   }, [broadcast, rememberRealtimeEvent, refreshChats, scheduleReconcile, scheduleRefresh]);
 
   const upsertPresence = useCallback(async () => {
+    if (!authStabilizedRef.current && userId) {
+      chatDebugLog("presence:blocked:auth-not-stabilized", { userId });
+      return;
+    }
     const normalizedUserId = String(userId ?? "").trim();
     if (!normalizedUserId || !isUuid(normalizedUserId) || typeof document === "undefined") {
       return;
@@ -969,6 +1070,10 @@ export function ChatUnreadProvider({
 
   const markChatRead = useCallback(
     async (chatId: string, upToMessageId?: string | null) => {
+      if (!authStabilizedRef.current && userId) {
+        chatDebugLog("markRead:blocked:auth-not-stabilized", { chatId, userId });
+        return;
+      }
       if (!userId || !isUuid(chatId)) return;
 
       try {
@@ -1077,9 +1182,18 @@ export function ChatUnreadProvider({
       return;
     }
 
+    if (!authStabilizedState) {
+      chatDebugLog("realtime:init:blocked:auth-not-stabilized", { userId });
+      return;
+    }
+    if (bootstrapStartedForUserRef.current === userId) {
+      chatDebugLog("realtime:init:skip-duplicate-bootstrap", { userId });
+      return;
+    }
+    bootstrapStartedForUserRef.current = userId;
     void refreshChats();
     scheduleReconcile("initial-launch", 220);
-  }, [authLifecycleReady, authResolved, loading, refreshChats, scheduleReconcile, userId]);
+  }, [authLifecycleReady, authResolved, authStabilizedState, loading, refreshChats, scheduleReconcile, userId]);
 
   useEffect(() => {
     if (authChangeListenerAttachedRef.current) {
@@ -1095,6 +1209,10 @@ export function ChatUnreadProvider({
         event === "TOKEN_REFRESHED" ||
         event === "TOKEN_REFRESH_REJECTED"
       ) {
+        if (userId && !authStabilizedRef.current) {
+          chatDebugLog("auth-listener:skip-before-stable", { event, userId });
+          return;
+        }
         if (realtimeDisabledRef.current) {
           scheduleRefresh(80, { silent: true });
           return;
@@ -1116,12 +1234,16 @@ export function ChatUnreadProvider({
       authChangeListenerAttachedRef.current = false;
       chatDebugLog("auth-listener:detach");
     };
-  }, [scheduleReconcile, scheduleRefresh]);
+  }, [scheduleReconcile, scheduleRefresh, userId]);
 
   useEffect(() => {
     if (!userId) return;
     if (!authLifecycleReady) {
       chatDebugLog("realtime:subscribe:blocked:auth-not-ready", { userId });
+      return;
+    }
+    if (!authStabilizedState) {
+      chatDebugLog("realtime:subscribe:blocked:auth-not-stabilized", { userId });
       return;
     }
     if (realtimeDisabledRef.current) {
@@ -1450,6 +1572,7 @@ export function ChatUnreadProvider({
     };
   }, [
     authLifecycleReady,
+    authStabilizedState,
     reconnectSeq,
     userId,
   ]);
@@ -1457,6 +1580,7 @@ export function ChatUnreadProvider({
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!authLifecycleReady) return;
+    if (userId && !authStabilizedState) return;
     let cancelled = false;
     let removeListener: (() => void) | null = null;
     void (async () => {
@@ -1488,12 +1612,13 @@ export function ChatUnreadProvider({
       cancelled = true;
       if (removeListener) removeListener();
     };
-  }, [authLifecycleReady, triggerRealtimeRecover, upsertPresence]);
+  }, [authLifecycleReady, authStabilizedState, triggerRealtimeRecover, upsertPresence, userId]);
 
   useEffect(() => {
     if (
       !userId ||
       !authLifecycleReady ||
+      !authStabilizedState ||
       typeof window === "undefined" ||
       typeof document === "undefined"
     )
@@ -1539,10 +1664,10 @@ export function ChatUnreadProvider({
         presenceIntervalRef.current = null;
       }
     };
-  }, [authLifecycleReady, triggerRealtimeRecover, upsertPresence, userId]);
+  }, [authLifecycleReady, authStabilizedState, triggerRealtimeRecover, upsertPresence, userId]);
 
   useEffect(() => {
-    if (!userId || !authLifecycleReady || typeof window === "undefined") return;
+    if (!userId || !authLifecycleReady || !authStabilizedState || typeof window === "undefined") return;
     const pollMs =
       realtimeMode === "realtime" ? CHAT_REFRESH_POLL_MS : FALLBACK_POLL_MS;
     const timer = window.setInterval(() => {
@@ -1552,10 +1677,10 @@ export function ChatUnreadProvider({
       void refreshChatsRef.current({ silent: true });
     }, pollMs);
     return () => window.clearInterval(timer);
-  }, [authLifecycleReady, realtimeMode, userId]);
+  }, [authLifecycleReady, authStabilizedState, realtimeMode, userId]);
 
   useEffect(() => {
-    if (!userId || !authLifecycleReady || typeof window === "undefined") return;
+    if (!userId || !authLifecycleReady || !authStabilizedState || typeof window === "undefined") return;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -1563,11 +1688,15 @@ export function ChatUnreadProvider({
       scheduleReconcile("periodic-drift-check", 0);
     }, UNREAD_RECONCILE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [authLifecycleReady, scheduleReconcile, userId]);
+  }, [authLifecycleReady, authStabilizedState, scheduleReconcile, userId]);
 
   useEffect(() => {
     return () => {
       if (typeof window !== "undefined") {
+        if (authStabilizeTimerRef.current) {
+          window.clearTimeout(authStabilizeTimerRef.current);
+          authStabilizeTimerRef.current = null;
+        }
         if (statusRef.current.refreshTimer) {
           window.clearTimeout(statusRef.current.refreshTimer);
           statusRef.current.refreshTimer = null;

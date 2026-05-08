@@ -241,9 +241,12 @@ export const isSupabaseConfigured = configured;
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let sessionGuardInFlight: Promise<{ session: Session | null; error: unknown | null }> | null = null;
+let lastResolvedSessionResult: { session: Session | null; error: unknown | null } | null = null;
+let lastResolvedAt = 0;
 let refreshCooldownUntilMs = 0;
 let refreshDisabledUntilMs = 0;
 let authTraceSeq = 0;
+const SESSION_GUARD_THROTTLE_MS = 1_200;
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -665,7 +668,7 @@ async function runGuardedRefresh(reason: string): Promise<void> {
 
 async function getSessionGuardedInner(
   reason = "unknown",
-  opts?: { allowRefresh?: boolean },
+  opts?: { allowRefresh?: boolean; forceRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
   const allowRefresh = opts?.allowRefresh !== false;
   const first = await withTimeout(
@@ -712,26 +715,51 @@ async function getSessionGuardedInner(
 
 export async function getSessionGuarded(
   reason = "unknown",
-  opts?: { allowRefresh?: boolean },
+  opts?: { allowRefresh?: boolean; forceRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
+  console.warn(
+    "[getSessionGuarded:reason]",
+    reason,
+    new Error().stack,
+  );
   authTrace("getSessionGuarded:call", {
     reason,
     allowRefresh: opts?.allowRefresh !== false,
     callsite: getFullStack(),
   });
+  const forceRefresh = opts?.forceRefresh === true;
+  const explicitAllowRefreshTrue = opts?.allowRefresh === true;
+  if (
+    !forceRefresh &&
+    !explicitAllowRefreshTrue &&
+    lastResolvedSessionResult &&
+    Date.now() - lastResolvedAt < SESSION_GUARD_THROTTLE_MS
+  ) {
+    authTrace("getSessionGuarded:cache-hit", {
+      reason,
+      ageMs: Date.now() - lastResolvedAt,
+    });
+    return lastResolvedSessionResult;
+  }
   if (sessionGuardInFlight) {
     authLog("debug", "session guard joined", { reason });
     return sessionGuardInFlight;
   }
   authLog("debug", "session guard start", { reason });
   const startedAt = Date.now();
-  sessionGuardInFlight = getSessionGuardedInner(reason, opts).finally(() => {
-    authLog("debug", "session guard end", {
-      reason,
-      elapsedMs: Date.now() - startedAt,
+  sessionGuardInFlight = getSessionGuardedInner(reason, opts)
+    .then((result) => {
+      lastResolvedSessionResult = result;
+      lastResolvedAt = Date.now();
+      return result;
+    })
+    .finally(() => {
+      authLog("debug", "session guard end", {
+        reason,
+        elapsedMs: Date.now() - startedAt,
+      });
+      sessionGuardInFlight = null;
     });
-    sessionGuardInFlight = null;
-  });
   return sessionGuardInFlight;
 }
 
