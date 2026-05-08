@@ -80,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signedOutTimerRef = useRef<number | null>(null);
   const mergedGuestForUserRef = useRef<string | null>(null);
   const hadSessionRef = useRef(false);
+  const authListenerAttachedRef = useRef(false);
+  const recoverListenersAttachedRef = useRef(false);
 
   const [onboardingResolved] = useState(true);
   const [needsPhone] = useState(false);
@@ -287,6 +289,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [authResolved, loading, session?.user]);
 
   useEffect(() => {
+    if (authListenerAttachedRef.current) {
+      console.debug("[auth] listener already attached; skip duplicate attach");
+      return;
+    }
+    authListenerAttachedRef.current = true;
+    console.debug("[auth] listener attach");
     let mounted = true;
     setLoading(true);
     setAuthResolved(false);
@@ -340,6 +348,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signedOutTimerRef.current = null;
       }
       subData.subscription.unsubscribe();
+      authListenerAttachedRef.current = false;
+      console.debug("[auth] listener detach");
     };
   }, [applySession, hydrateSession]);
 
@@ -353,6 +363,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (recoverListenersAttachedRef.current) {
+      console.debug("[auth] recover listeners already attached; skip duplicate");
+      return;
+    }
+    recoverListenersAttachedRef.current = true;
+    console.debug("[auth] recover listeners attach");
     const onRecover = () => {
       const p = String(window.location.pathname || "");
       if (
@@ -376,6 +392,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("online", onRecover);
       window.removeEventListener("pageshow", onRecover);
       window.removeEventListener("focus", onRecover);
+      recoverListenersAttachedRef.current = false;
+      console.debug("[auth] recover listeners detach");
     };
   }, [authResolved, loading, retryBootstrap, session?.user]);
 

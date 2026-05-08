@@ -43,6 +43,7 @@ export default function VerifyPage() {
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const isSubmittingRef = useRef(false);
+  const hasNavigatedRef = useRef(false);
 
   const delay = (ms: number) =>
     new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -159,6 +160,11 @@ export default function VerifyPage() {
       console.debug("[auth-verify] otp verify:success", {
         elapsedMs: Date.now() - startedAt,
       });
+      if (hasNavigatedRef.current) {
+        console.warn("[auth-verify] navigation skipped: already navigated");
+        return;
+      }
+      hasNavigatedRef.current = true;
       router.replace("/profile");
       router.refresh();
     } catch (error) {

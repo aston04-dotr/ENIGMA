@@ -355,8 +355,20 @@ export function ChatUnreadProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, signOut } = useAuth();
+  const {
+    user,
+    loading,
+    authResolved,
+    profileLoading,
+    onboardingResolved,
+    ready: authReady,
+    signOut,
+  } = useAuth();
   const userId = user?.id ?? null;
+  const authLifecycleReady =
+    authResolved &&
+    !loading &&
+    (!userId || (!profileLoading && onboardingResolved && authReady));
 
   const [rows, setRows] = useState<ChatListRow[]>([]);
   const [loadingState, setLoadingState] = useState(false);
@@ -383,6 +395,13 @@ export function ChatUnreadProvider({
     activeChatId: null,
   });
   const rowsRef = useRef<ChatListRow[]>([]);
+  const authLifecycleReadyRef = useRef(authLifecycleReady);
+  const lastRecoverAtRef = useRef(0);
+  const authChangeListenerAttachedRef = useRef(false);
+
+  useEffect(() => {
+    authLifecycleReadyRef.current = authLifecycleReady;
+  }, [authLifecycleReady]);
 
   const busRef = useRef<ReturnType<typeof createCrossTabBus> | null>(null);
   const presenceInFlightRef = useRef(false);
@@ -418,6 +437,13 @@ export function ChatUnreadProvider({
         silent: Boolean(opts?.silent),
         userId: userId ?? null,
       });
+      if (!authLifecycleReadyRef.current) {
+        chatDebugLog("refreshChats:blocked:auth-not-ready", {
+          userId: userId ?? null,
+        });
+        if (!opts?.silent) setLoadingState(false);
+        return;
+      }
       if (!userId) {
         setRows([]);
         setError(null);
@@ -770,6 +796,16 @@ export function ChatUnreadProvider({
 
   const triggerRealtimeRecover = useCallback(
     (reason: string) => {
+      if (!authLifecycleReadyRef.current) {
+        chatDebugLog("realtime:recover:blocked:auth-not-ready", { reason });
+        return;
+      }
+      const now = Date.now();
+      if (now - lastRecoverAtRef.current < 600) {
+        chatDebugLog("realtime:recover:debounced", { reason });
+        return;
+      }
+      lastRecoverAtRef.current = now;
       chatDebugLog("realtime:recover", { reason });
       setReconnectSeq((n) => n + 1);
       scheduleRefresh(40, { silent: true });
@@ -953,7 +989,11 @@ export function ChatUnreadProvider({
   }, [scheduleRefresh]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !authResolved) return;
+    if (!authLifecycleReady) {
+      chatDebugLog("realtime:init:blocked:auth-not-ready", { userId: userId ?? null });
+      return;
+    }
 
     if (!userId) {
       if (typeof window !== "undefined" && statusRef.current.reconcileTimer) {
@@ -972,9 +1012,15 @@ export function ChatUnreadProvider({
 
     void refreshChats();
     scheduleReconcile("initial-launch", 220);
-  }, [loading, refreshChats, scheduleReconcile, userId]);
+  }, [authLifecycleReady, authResolved, loading, refreshChats, scheduleReconcile, userId]);
 
   useEffect(() => {
+    if (authChangeListenerAttachedRef.current) {
+      chatDebugLog("auth-listener:skip-duplicate-attach");
+      return;
+    }
+    authChangeListenerAttachedRef.current = true;
+    chatDebugLog("auth-listener:attach");
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (
         event === "INITIAL_SESSION" ||
@@ -991,11 +1037,19 @@ export function ChatUnreadProvider({
         setRealtimeReadyState(false);
       }
     });
-    return () => data.subscription.unsubscribe();
+    return () => {
+      data.subscription.unsubscribe();
+      authChangeListenerAttachedRef.current = false;
+      chatDebugLog("auth-listener:detach");
+    };
   }, [scheduleReconcile, scheduleRefresh]);
 
   useEffect(() => {
     if (!user || !userId) return;
+    if (!authLifecycleReady) {
+      chatDebugLog("realtime:subscribe:blocked:auth-not-ready", { userId });
+      return;
+    }
 
     let cancelled = false;
 
@@ -1181,6 +1235,11 @@ export function ChatUnreadProvider({
           status,
           attempt: statusRef.current.reconnectAttempt,
         });
+        if (!authLifecycleReadyRef.current) {
+          chatDebugLog("realtime:channel:status:ignore-auth-not-ready", { status });
+          setRealtimeReadyState(false);
+          return;
+        }
         if (status === "SUBSCRIBED") {
           statusRef.current.reconnectAttempt = 0;
           setRealtimeReadyState(true);
@@ -1226,6 +1285,7 @@ export function ChatUnreadProvider({
       setRealtimeReadyState(false);
     };
   }, [
+    authLifecycleReady,
     reconnectSeq,
     rememberRealtimeEvent,
     scheduleReconcile,
@@ -1236,6 +1296,7 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!authLifecycleReady) return;
     let cancelled = false;
     let removeListener: (() => void) | null = null;
     void (async () => {
@@ -1267,11 +1328,12 @@ export function ChatUnreadProvider({
       cancelled = true;
       if (removeListener) removeListener();
     };
-  }, [triggerRealtimeRecover, upsertPresence]);
+  }, [authLifecycleReady, triggerRealtimeRecover, upsertPresence]);
 
   useEffect(() => {
     if (
       !userId ||
+      !authLifecycleReady ||
       typeof window === "undefined" ||
       typeof document === "undefined"
     )
@@ -1317,10 +1379,10 @@ export function ChatUnreadProvider({
         presenceIntervalRef.current = null;
       }
     };
-  }, [triggerRealtimeRecover, upsertPresence, userId]);
+  }, [authLifecycleReady, triggerRealtimeRecover, upsertPresence, userId]);
 
   useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
+    if (!userId || !authLifecycleReady || typeof window === "undefined") return;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -1328,10 +1390,10 @@ export function ChatUnreadProvider({
       void refreshChats({ silent: true });
     }, CHAT_REFRESH_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refreshChats, userId]);
+  }, [authLifecycleReady, refreshChats, userId]);
 
   useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
+    if (!userId || !authLifecycleReady || typeof window === "undefined") return;
     const timer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -1339,7 +1401,7 @@ export function ChatUnreadProvider({
       scheduleReconcile("periodic-drift-check", 0);
     }, UNREAD_RECONCILE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [scheduleReconcile, userId]);
+  }, [authLifecycleReady, scheduleReconcile, userId]);
 
   useEffect(() => {
     return () => {

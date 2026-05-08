@@ -149,6 +149,7 @@ export const isSupabaseConfigured = configured;
 
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
 let refreshInFlight: Promise<void> | null = null;
+let sessionGuardInFlight: Promise<{ session: Session | null; error: unknown | null }> | null = null;
 let refreshCooldownUntilMs = 0;
 let refreshDisabledUntilMs = 0;
 
@@ -378,7 +379,7 @@ async function runGuardedRefresh(reason: string): Promise<void> {
   await refreshInFlight;
 }
 
-export async function getSessionGuarded(
+async function getSessionGuardedInner(
   reason = "unknown",
   opts?: { allowRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
@@ -423,6 +424,26 @@ export async function getSessionGuarded(
     await hardResetSupabaseAuthState("stale_refresh_token_after_refresh");
   }
   return { session: secondSession, error: second.error ?? null };
+}
+
+export async function getSessionGuarded(
+  reason = "unknown",
+  opts?: { allowRefresh?: boolean },
+): Promise<{ session: Session | null; error: unknown | null }> {
+  if (sessionGuardInFlight) {
+    authLog("debug", "session guard joined", { reason });
+    return sessionGuardInFlight;
+  }
+  authLog("debug", "session guard start", { reason });
+  const startedAt = Date.now();
+  sessionGuardInFlight = getSessionGuardedInner(reason, opts).finally(() => {
+    authLog("debug", "session guard end", {
+      reason,
+      elapsedMs: Date.now() - startedAt,
+    });
+    sessionGuardInFlight = null;
+  });
+  return sessionGuardInFlight;
 }
 
 /**
