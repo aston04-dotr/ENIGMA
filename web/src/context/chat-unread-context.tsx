@@ -1349,17 +1349,6 @@ export function ChatUnreadProvider({
         {
           event: "UPDATE",
           schema: "public",
-          table: "chat_members",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          scheduleRefreshRef.current(70, { silent: true });
-        },
-      ).on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
           table: "chats",
           filter: `buyer_id=eq.${userId}`,
         },
