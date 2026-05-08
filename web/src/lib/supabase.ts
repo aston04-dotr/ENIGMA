@@ -168,6 +168,74 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
   },
 });
 
+function instrumentSupabaseAuthLifecycle() {
+  if (typeof window === "undefined") return;
+  const authObj = supabase.auth as unknown as {
+    __enigmaAuthLifecyclePatched?: boolean;
+    getSession: () => Promise<{ data: { session: Session | null }; error: { message?: string; status?: number } | null }>;
+    refreshSession: () => Promise<{ data: { session: Session | null }; error: { message?: string; status?: number } | null }>;
+    signOut: (opts?: unknown) => Promise<{ error: { message?: string; status?: number } | null }>;
+    setSession: (session: unknown) => Promise<{ data: { session: Session | null }; error: { message?: string; status?: number } | null }>;
+  };
+  if (authObj.__enigmaAuthLifecyclePatched) return;
+  authObj.__enigmaAuthLifecyclePatched = true;
+
+  const wrap = <TArgs extends unknown[], TResult>(
+    method: "getSession" | "refreshSession" | "signOut" | "setSession",
+  ) => {
+    const original = (authObj[method] as (...args: TArgs) => Promise<TResult>).bind(authObj);
+    (authObj[method] as (...args: TArgs) => Promise<TResult>) = (async (...args: TArgs) => {
+      const callId = ++authTraceSeq;
+      const stack = getFullStack();
+      authTrace(`${method}:call`, {
+        callId,
+        args: sanitizeAuthMethodArgs(method, args),
+        callsite: stack,
+      });
+      try {
+        const result = await original(...args);
+        const resultRecord = result as unknown as {
+          data?: { session?: Session | null };
+          error?: { message?: string; status?: number } | null;
+        };
+        const message = String(resultRecord?.error?.message ?? "");
+        const status = Number(resultRecord?.error?.status ?? 0);
+        authTrace(`${method}:result`, {
+          callId,
+          hasSession: Boolean(resultRecord?.data?.session?.user),
+          accessTokenSuffix: tokenSuffix(resultRecord?.data?.session?.access_token),
+          refreshTokenSuffix: tokenSuffix(resultRecord?.data?.session?.refresh_token),
+          errorMessage: message || null,
+          errorStatus: Number.isFinite(status) ? status : 0,
+        });
+        if (message.includes("Auth session missing!")) {
+          authTrace("auth-session-missing-source", {
+            callId,
+            method,
+            stack,
+            args: sanitizeAuthMethodArgs(method, args),
+          });
+        }
+        return result;
+      } catch (error) {
+        authTrace(`${method}:throw`, {
+          callId,
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack ?? "" : stack,
+        });
+        throw error;
+      }
+    }) as (...args: TArgs) => Promise<TResult>;
+  };
+
+  wrap("getSession");
+  wrap("refreshSession");
+  wrap("signOut");
+  wrap("setSession");
+}
+
+instrumentSupabaseAuthLifecycle();
+
 export const isSupabaseConfigured = configured;
 
 let supabaseRestSingleton: SupabaseClient<Database> | null = null;
@@ -175,6 +243,7 @@ let refreshInFlight: Promise<void> | null = null;
 let sessionGuardInFlight: Promise<{ session: Session | null; error: unknown | null }> | null = null;
 let refreshCooldownUntilMs = 0;
 let refreshDisabledUntilMs = 0;
+let authTraceSeq = 0;
 
 const AUTH_VERBOSE =
   process.env.NEXT_PUBLIC_AUTH_VERBOSE === "1" ||
@@ -210,6 +279,45 @@ function tokenSuffix(value: string | null | undefined): string {
   const token = String(value ?? "").trim();
   if (!token) return "";
   return token.slice(-8);
+}
+
+function authTrace(event: string, payload?: Record<string, unknown>): void {
+  if (typeof window === "undefined") return;
+  try {
+    console.log(
+      "[auth-trace]",
+      JSON.stringify(
+        {
+          event,
+          ts: new Date().toISOString(),
+          ...payload,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    console.log("[auth-trace]", event);
+  }
+}
+
+function getFullStack(): string {
+  try {
+    return new Error().stack ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function sanitizeAuthMethodArgs(method: string, args: unknown[]): unknown {
+  if (method !== "setSession") return args;
+  const first = (args[0] ?? null) as { access_token?: string; refresh_token?: string } | null;
+  return [
+    {
+      accessTokenSuffix: tokenSuffix(first?.access_token),
+      refreshTokenSuffix: tokenSuffix(first?.refresh_token),
+    },
+  ];
 }
 
 function listStorageKeys(storage: Storage): string[] {
@@ -370,6 +478,10 @@ function clearSupabaseCookies(): void {
 }
 
 export function disableAuthRefresh(reason: string): void {
+  authTrace("disableAuthRefresh", {
+    reason,
+    callsite: getFullStack(),
+  });
   refreshDisabledUntilMs = Date.now() + 60_000;
   refreshCooldownUntilMs = Math.max(refreshCooldownUntilMs, refreshDisabledUntilMs);
   authLog("warn", "refresh temporarily disabled", {
@@ -380,6 +492,10 @@ export function disableAuthRefresh(reason: string): void {
 }
 
 export async function hardResetSupabaseAuthState(reason: string): Promise<void> {
+  authTrace("hardResetSupabaseAuthState:start", {
+    reason,
+    callsite: getFullStack(),
+  });
   disableAuthRefresh(reason);
   try {
     await supabase.auth.signOut({ scope: "local" });
@@ -391,6 +507,7 @@ export async function hardResetSupabaseAuthState(reason: string): Promise<void> 
   }
   clearAuthStorageByPrefix();
   clearSupabaseCookies();
+  authTrace("hardResetSupabaseAuthState:done", { reason });
 }
 
 function extractStack(): string | null {
@@ -467,6 +584,10 @@ if (typeof window !== "undefined") {
 }
 
 async function runGuardedRefresh(reason: string): Promise<void> {
+  authTrace("runGuardedRefresh:start", {
+    reason,
+    callsite: getFullStack(),
+  });
   const now = Date.now();
   if (now < refreshDisabledUntilMs) {
     authLog("warn", "refresh skipped: disabled window active", {
@@ -593,6 +714,11 @@ export async function getSessionGuarded(
   reason = "unknown",
   opts?: { allowRefresh?: boolean },
 ): Promise<{ session: Session | null; error: unknown | null }> {
+  authTrace("getSessionGuarded:call", {
+    reason,
+    allowRefresh: opts?.allowRefresh !== false,
+    callsite: getFullStack(),
+  });
   if (sessionGuardInFlight) {
     authLog("debug", "session guard joined", { reason });
     return sessionGuardInFlight;

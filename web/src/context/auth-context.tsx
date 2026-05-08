@@ -440,6 +440,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    console.log(
+      "[auth-trace]",
+      JSON.stringify(
+        {
+          event: "auth-context:signOut:call",
+          ts: new Date().toISOString(),
+          callsite: (() => {
+            try {
+              return new Error().stack ?? "";
+            } catch {
+              return "";
+            }
+          })(),
+        },
+        null,
+        2,
+      ),
+    );
     applySession(null);
     try {
       await supabase.auth.signOut({ scope: "global" });
