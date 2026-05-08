@@ -114,13 +114,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn("[auth] hydrate timeout/error", { reason, error });
           return { session: null };
         });
-        applySession(guardedSession ?? null);
+        let settledSession = guardedSession ?? null;
+        if (!settledSession && reason === "mount") {
+          // Capacitor can recreate activity during OTP finalize; give storage one more tick.
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          const retry = await withTimeout(
+            getSessionGuarded("auth-hydrate:mount-retry", { allowRefresh }),
+            AUTH_STEP_TIMEOUT_MS,
+            "auth-hydrate:mount-retry",
+          ).catch((error) => {
+            console.warn("[auth] hydrate mount-retry timeout/error", { error });
+            return { session: null };
+          });
+          settledSession = retry.session ?? null;
+        }
+        applySession(settledSession);
         console.debug("[auth] hydrate done", {
           reason,
           elapsedMs: Date.now() - startedAt,
-          hasSession: Boolean(guardedSession?.user),
+          hasSession: Boolean(settledSession?.user),
         });
-        return guardedSession ?? null;
+        return settledSession;
       })().finally(() => {
         hydrateInFlightRef.current = null;
       });

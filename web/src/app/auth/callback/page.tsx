@@ -44,19 +44,29 @@ export default function CallbackPage() {
         const code = url.searchParams.get("code");
 
         if (!code) {
-          window.location.replace("/login?auth_error=invalid_link");
+          router.replace("/login?auth_error=invalid_link");
           return;
         }
 
-        const { error } = await withTimeout(
+        const { data, error } = await withTimeout(
           supabase.auth.exchangeCodeForSession(code),
           12_000,
           "authCallback:exchangeCodeForSession",
         );
         if (error) {
           console.error("[callback] exchangeCodeForSession", error.message);
-          window.location.replace("/login?auth_error=exchange_failed");
+          router.replace("/login?auth_error=exchange_failed");
           return;
+        }
+        if (data?.session?.access_token && data?.session?.refresh_token) {
+          await withTimeout(
+            supabase.auth.setSession({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token,
+            }),
+            12_000,
+            "authCallback:exchangeCodeForSession:setSession",
+          );
         }
 
         const { session } = await withTimeout(
@@ -65,7 +75,7 @@ export default function CallbackPage() {
           "authCallback:hydrateSession",
         );
         if (!session?.user) {
-          window.location.replace("/login?auth_error=session_not_ready");
+          router.replace("/login?auth_error=session_not_ready");
           return;
         }
         console.debug("[auth-callback] success", { elapsedMs: Date.now() - startedAt });
@@ -73,7 +83,7 @@ export default function CallbackPage() {
         router.refresh();
       } catch (error) {
         console.error("[auth-callback] finalize failed", error);
-        window.location.replace("/login?auth_error=callback_timeout");
+        router.replace("/login?auth_error=callback_timeout");
       }
     };
 

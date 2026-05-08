@@ -52,7 +52,7 @@ export default function AuthConfirmPage() {
         const emailParam = url.searchParams.get("email")?.trim();
 
         if (code) {
-          const { error } = await withTimeout(
+          const { data, error } = await withTimeout(
             supabase.auth.exchangeCodeForSession(code),
             AUTH_FINALIZE_TIMEOUT_MS,
             "authConfirm:exchangeCodeForSession",
@@ -61,8 +61,18 @@ export default function AuthConfirmPage() {
             setPhase("error");
             return;
           }
+          if (data?.session?.access_token && data?.session?.refresh_token) {
+            await withTimeout(
+              supabase.auth.setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              }),
+              AUTH_FINALIZE_TIMEOUT_MS,
+              "authConfirm:exchangeCodeForSession:setSession",
+            );
+          }
         } else if (otpTokenHash && otpType) {
-          const { error } = await withTimeout(
+          const { data, error } = await withTimeout(
             supabase.auth.verifyOtp({
               token_hash: otpTokenHash,
               type: otpType as EmailOtpType,
@@ -75,8 +85,18 @@ export default function AuthConfirmPage() {
             setPhase("error");
             return;
           }
+          if (data?.session?.access_token && data?.session?.refresh_token) {
+            await withTimeout(
+              supabase.auth.setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              }),
+              AUTH_FINALIZE_TIMEOUT_MS,
+              "authConfirm:verifyOtp:tokenHash:setSession",
+            );
+          }
         } else if (otpToken && otpType) {
-          const { error } = await withTimeout(
+          const { data, error } = await withTimeout(
             supabase.auth.verifyOtp({
               token: otpToken,
               type: otpType as EmailOtpType,
@@ -89,6 +109,16 @@ export default function AuthConfirmPage() {
           if (error) {
             setPhase("error");
             return;
+          }
+          if (data?.session?.access_token && data?.session?.refresh_token) {
+            await withTimeout(
+              supabase.auth.setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              }),
+              AUTH_FINALIZE_TIMEOUT_MS,
+              "authConfirm:verifyOtp:token:setSession",
+            );
           }
         } else {
           setPhase("error");

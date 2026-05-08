@@ -83,7 +83,7 @@ export default function VerifyPage() {
 
     try {
       console.debug("[auth-verify] otp verify:start", { email, codeLen: code.length });
-      const { error: verifyError } = await withTimeout(
+      const { data: verifyData, error: verifyError } = await withTimeout(
         supabase.auth.verifyOtp({
           email,
           token: code,
@@ -95,6 +95,16 @@ export default function VerifyPage() {
       if (verifyError) {
         setError(verifyError.message || "Неверный или устаревший код");
         return;
+      }
+      if (verifyData?.session?.access_token && verifyData?.session?.refresh_token) {
+        await withTimeout(
+          supabase.auth.setSession({
+            access_token: verifyData.session.access_token,
+            refresh_token: verifyData.session.refresh_token,
+          }),
+          AUTH_FINALIZE_TIMEOUT_MS,
+          "verifyOtp:setSession",
+        );
       }
 
       localStorage.removeItem("auth_email");

@@ -2,6 +2,7 @@
 
 import { useChatUnread } from "@/context/chat-unread-context";
 import { Capacitor } from "@capacitor/core";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 const DEV_BADGE_DEBUG = process.env.NODE_ENV === "development";
@@ -16,6 +17,7 @@ function badgeDebugLog(event: string, payload?: Record<string, unknown>) {
 }
 
 export function PushNotificationsBootstrap() {
+  const router = useRouter();
   const { totalUnread } = useChatUnread();
   const totalUnreadRef = useRef(totalUnread);
 
@@ -68,7 +70,8 @@ export function PushNotificationsBootstrap() {
         const appUrlOpenHandle = await App.addListener("appUrlOpen", ({ url }) => {
           const path = toAppPath(url);
           if (!path) return;
-          window.location.assign(path);
+          router.replace(path);
+          router.refresh();
         });
         cleanup.push(() => appUrlOpenHandle.remove());
 
@@ -108,7 +111,8 @@ export function PushNotificationsBootstrap() {
             if (!maybeUrl) return;
             const path = toAppPath(maybeUrl);
             if (!path) return;
-            window.location.assign(path);
+            router.replace(path);
+            router.refresh();
           },
         );
         cleanup.push(() => pushActionHandle.remove());
@@ -153,7 +157,7 @@ export function PushNotificationsBootstrap() {
         }
       }
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
