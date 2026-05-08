@@ -18,9 +18,8 @@ function normalizeCookieOptions(
 
 async function updateSession(req: NextRequest) {
   const pathname = req.nextUrl.pathname.toLowerCase();
+  /** Keep cookie jar in sync everywhere (incl. /chat long sessions). Only skip paths that must not touch auth cookies. */
   if (
-    pathname === "/chat" ||
-    pathname.startsWith("/chat/") ||
     pathname.includes("logout") ||
     pathname === "/login" ||
     req.nextUrl.searchParams.has("signed_out") ||

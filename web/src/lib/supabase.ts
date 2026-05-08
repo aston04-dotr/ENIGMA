@@ -88,9 +88,11 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    /** PKCE / magic-link fragments on /auth/*; safe on other routes (Supabase only parses when present). */
     detectSessionInUrl: true,
     storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
-    multiTab: false,
+    /** Coordinate refresh-token rotation across tabs + browser/PWA instances on the same origin. */
+    multiTab: true,
   },
   cookies: {
     getAll() {

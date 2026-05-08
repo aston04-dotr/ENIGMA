@@ -20,7 +20,6 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { isAuthCircuitOpen } from "@/lib/authCircuitState";
 import {
-  handleRepeatedAuthListenerFault,
   hardSignOutAndRedirectToLogin,
   isFatalAuthSingletonEvent,
 } from "@/lib/authHardRecovery";
@@ -106,15 +105,6 @@ function ensureGlobalAuthListener() {
     if (isFatalAuthSingletonEvent(event, session)) {
       void hardSignOutAndRedirectToLogin(`fatal-auth-event:${evStr}`);
       return;
-    }
-
-    if (
-      session == null &&
-      evStr !== "SIGNED_OUT" &&
-      evStr !== "INITIAL_SESSION" &&
-      evStr !== "TOKEN_REFRESHED"
-    ) {
-      handleRepeatedAuthListenerFault(`unexpected-null-session:${evStr}`);
     }
 
     if (isAuthCircuitOpen() && event !== "SIGNED_OUT") {

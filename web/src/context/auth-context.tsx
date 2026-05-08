@@ -8,7 +8,6 @@ import {
   resetAuthFaultWindow,
   setHardAuthResetInFlight,
 } from "@/lib/authCircuitState";
-import { hardSignOutAndRedirectToLogin } from "@/lib/authHardRecovery";
 import { subscribeEnigmaAuthSingleton } from "@/lib/supabaseAuthSingleton";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
 
@@ -59,8 +58,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase.auth.getSession();
         if (!active || isAuthCircuitOpen()) return;
+        /**
+         * Transient getSession failures (offline, ITP, browser wake) must not purge storage.
+         * onAuthStateChange / auto refresh will recover; only clear loading state here.
+         */
         if (error) {
-          void hardSignOutAndRedirectToLogin(`auth-bootstrap:get-session:${error.message}`);
+          console.warn(
+            "[auth-bootstrap] getSession error (ignored for hard reset)",
+            error.message,
+          );
           return;
         }
         const next = data.session ?? null;
@@ -86,7 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const next = nextSession ?? null;
         setRestAccessToken(next);
         if (event === "TOKEN_REFRESHED") {
-          /** Do not setSession: avoids render churn; JWT still in REST cache + ChatUnread singleton ref. */
+          if (next?.user) {
+            setSession(next);
+            setUser(next.user);
+          }
           setLoading(false);
           return;
         }
