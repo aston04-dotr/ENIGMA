@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "546093762613",
+    "project_id": "enigma-3ab6f",
+    "storage_bucket": "enigma-3ab6f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:546093762613:android:1237d2f0fb4d946e9b497c",
+        "android_client_info": {
+          "package_name": "online.enigma.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUNSaCkIDKiBx6kefdtdjV2lQkCCAxpdw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

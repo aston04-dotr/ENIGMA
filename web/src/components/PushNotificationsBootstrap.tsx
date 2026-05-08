@@ -42,86 +42,104 @@ export function PushNotificationsBootstrap() {
     };
 
     void (async () => {
-      const [{ App }, { PushNotifications }, { Badge }] = await Promise.all([
-        import("@capacitor/app"),
-        import("@capacitor/push-notifications"),
-        import("@capawesome/capacitor-badge"),
-      ]);
-      if (disposed) return;
+      try {
+        const [{ App }, { PushNotifications }, { Badge }] = await Promise.all([
+          import("@capacitor/app"),
+          import("@capacitor/push-notifications"),
+          import("@capawesome/capacitor-badge"),
+        ]);
+        if (disposed) return;
 
-      setNativeBadgeCount = async (count: number) => {
-        const normalized = Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0);
-        try {
-          if (normalized <= 0) {
-            badgeDebugLog("Badge.clear()", { fromCount: count });
-            await Badge.clear();
-          } else {
-            badgeDebugLog("Badge.set()", { count: normalized });
-            await Badge.set({ count: normalized });
+        setNativeBadgeCount = async (count: number) => {
+          const normalized = Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0);
+          try {
+            if (normalized <= 0) {
+              badgeDebugLog("Badge.clear()", { fromCount: count });
+              await Badge.clear();
+            } else {
+              badgeDebugLog("Badge.set()", { count: normalized });
+              await Badge.set({ count: normalized });
+            }
+          } catch {
+            // noop
           }
-        } catch {
-          // noop
-        }
-      };
+        };
 
-      const appUrlOpenHandle = await App.addListener("appUrlOpen", ({ url }) => {
-        const path = toAppPath(url);
-        if (!path) return;
-        window.location.assign(path);
-      });
-      cleanup.push(() => appUrlOpenHandle.remove());
-
-      const appStateHandle = await App.addListener("appStateChange", ({ isActive }) => {
-        badgeDebugLog("appStateChange", { isActive, unread: totalUnreadRef.current });
-        document.documentElement.setAttribute(
-          "data-native-app-state",
-          isActive ? "active" : "background",
-        );
-        if (!isActive) return;
-        if (!setNativeBadgeCount) return;
-        void setNativeBadgeCount(totalUnreadRef.current);
-      });
-      cleanup.push(() => appStateHandle.remove());
-
-      const pushReceiveHandle = await PushNotifications.addListener(
-        "pushNotificationReceived",
-        async () => {
-          badgeDebugLog("pushNotificationReceived", { unread: totalUnreadRef.current });
-          // Badge is driven by server-authoritative totalUnread from chat context.
-          if (!setNativeBadgeCount) return;
-          await setNativeBadgeCount(totalUnreadRef.current);
-        },
-      );
-      cleanup.push(() => pushReceiveHandle.remove());
-
-      const pushActionHandle = await PushNotifications.addListener(
-        "pushNotificationActionPerformed",
-        async (event) => {
-          badgeDebugLog("pushNotificationActionPerformed", {
-            unread: totalUnreadRef.current,
-          });
-          if (setNativeBadgeCount) {
-            await setNativeBadgeCount(totalUnreadRef.current);
-          }
-          const maybeUrl = String(event.notification.data?.url ?? "").trim();
-          if (!maybeUrl) return;
-          const path = toAppPath(maybeUrl);
+        const appUrlOpenHandle = await App.addListener("appUrlOpen", ({ url }) => {
+          const path = toAppPath(url);
           if (!path) return;
           window.location.assign(path);
-        },
-      );
-      cleanup.push(() => pushActionHandle.remove());
+        });
+        cleanup.push(() => appUrlOpenHandle.remove());
 
-      const perm = await PushNotifications.requestPermissions();
-      if (perm.receive === "granted") {
-        await PushNotifications.register();
-      }
-      const badgePerm = await Badge.checkPermissions();
-      if (badgePerm.display !== "granted") {
-        await Badge.requestPermissions();
-      }
-      if (setNativeBadgeCount) {
-        await setNativeBadgeCount(totalUnreadRef.current);
+        const appStateHandle = await App.addListener("appStateChange", ({ isActive }) => {
+          badgeDebugLog("appStateChange", { isActive, unread: totalUnreadRef.current });
+          document.documentElement.setAttribute(
+            "data-native-app-state",
+            isActive ? "active" : "background",
+          );
+          if (!isActive) return;
+          if (!setNativeBadgeCount) return;
+          void setNativeBadgeCount(totalUnreadRef.current);
+        });
+        cleanup.push(() => appStateHandle.remove());
+
+        const pushReceiveHandle = await PushNotifications.addListener(
+          "pushNotificationReceived",
+          async () => {
+            badgeDebugLog("pushNotificationReceived", { unread: totalUnreadRef.current });
+            // Badge is driven by server-authoritative totalUnread from chat context.
+            if (!setNativeBadgeCount) return;
+            await setNativeBadgeCount(totalUnreadRef.current);
+          },
+        );
+        cleanup.push(() => pushReceiveHandle.remove());
+
+        const pushActionHandle = await PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          async (event) => {
+            badgeDebugLog("pushNotificationActionPerformed", {
+              unread: totalUnreadRef.current,
+            });
+            if (setNativeBadgeCount) {
+              await setNativeBadgeCount(totalUnreadRef.current);
+            }
+            const maybeUrl = String(event.notification.data?.url ?? "").trim();
+            if (!maybeUrl) return;
+            const path = toAppPath(maybeUrl);
+            if (!path) return;
+            window.location.assign(path);
+          },
+        );
+        cleanup.push(() => pushActionHandle.remove());
+
+        try {
+          const perm = await PushNotifications.requestPermissions();
+          if (perm.receive === "granted") {
+            await PushNotifications.register();
+          }
+        } catch (error) {
+          console.error("[push-bootstrap] request/register failed", error);
+        }
+
+        try {
+          const badgePerm = await Badge.checkPermissions();
+          if (badgePerm.display !== "granted") {
+            await Badge.requestPermissions();
+          }
+        } catch (error) {
+          console.error("[push-bootstrap] badge permissions failed", error);
+        }
+
+        if (setNativeBadgeCount) {
+          try {
+            await setNativeBadgeCount(totalUnreadRef.current);
+          } catch (error) {
+            console.error("[push-bootstrap] initial badge sync failed", error);
+          }
+        }
+      } catch (error) {
+        console.error("[push-bootstrap] native bootstrap failed", error);
       }
     })();
 
