@@ -55,17 +55,22 @@ npm run dev
 - `npm run dev` — dev (Turbopack)
 - `npm run build` / `npm run start` — продакшен
 
-## Production sync (`/root/enigma/web`)
+## Production sync (единственный prod-сервер)
+
+**Актуальный production:** домен `https://enigma-app.online`, IP **`91.186.216.112`**, HTTPS (Let’s Encrypt), Nginx reverse proxy, PM2 **`enigma-frontend`**, путь приложения **`/root/enigma/web`**.
+
+**Старый сервер `64.226.64.189` для production deploy больше не используется.**
 
 - Remote app path: `/root/enigma/web`
 - PM2 process: `enigma-frontend`
+- SSH: `ssh root@91.186.216.112`
 - Never overwrite/delete remote `.env` during sync
 
 Recommended flow:
 
 ```bash
 # 1) Pull remote env once (safe sync of keys to local reference)
-scp root@YOUR_SERVER:/root/enigma/web/.env ./web/.env.remote.backup
+scp root@91.186.216.112:/root/enigma/web/.env ./web/.env.remote.backup
 
 # 2) Sync code WITHOUT env files
 rsync -avz --delete \
@@ -74,16 +79,16 @@ rsync -avz --delete \
   --exclude '.env.*' \
   --exclude 'node_modules' \
   --exclude '.next' \
-  ./web/ root@YOUR_SERVER:/root/enigma/web/
+  ./web/ root@91.186.216.112:/root/enigma/web/
 
 # 3) Build and restart on server
-ssh root@YOUR_SERVER 'cd /root/enigma/web && npm run build && pm2 restart enigma-frontend'
+ssh root@91.186.216.112 'cd /root/enigma/web && npm run build && pm2 restart enigma-frontend'
 ```
 
 If nginx is used as reverse proxy to `localhost:3000`, reload it after app restart:
 
 ```bash
-ssh root@YOUR_SERVER 'sudo systemctl restart nginx && sudo systemctl status nginx --no-pager -l'
+ssh root@91.186.216.112 'sudo systemctl reload nginx && sudo systemctl status nginx --no-pager -l'
 ```
 
 ## Нативное приложение (Expo)
