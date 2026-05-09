@@ -741,29 +741,27 @@ export default function ProfilePage() {
               className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
                   ? "border-[rgba(122,206,255,0.32)] bg-[linear-gradient(152deg,rgba(24,40,72,0.94)_0%,rgba(14,20,36,0.98)_58%,rgba(8,12,22,1)_100%)] shadow-[0_0_28px_rgba(84,169,255,0.14)]"
-                  : "border-[rgba(29,118,232,0.42)] bg-[linear-gradient(180deg,#eaf4ff_0%,#ffffff_100%)] shadow-[0_10px_32px_rgba(29,118,232,0.12)] ring-1 ring-[rgba(29,118,232,0.14)]"
+                  : "border-[rgba(120,200,255,0.46)] bg-[linear-gradient(152deg,rgba(22,40,78,0.98)_0%,rgba(12,22,44,0.99)_55%,rgba(6,12,28,1)_100%)] shadow-[0_0_32px_rgba(84,169,255,0.24),0_10px_28px_rgba(29,118,232,0.14)] ring-1 ring-[rgba(120,200,255,0.22)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#b8dcff]" : "text-[#054a9e]"}`}>BOOST</span>
-                <span
-                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#8ecfff]/78" : "text-[#0b63d8]/88"}`}
-                >
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#b8dcff]">BOOST</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums text-[#8ecfff]/84">
                   активен
                 </span>
               </div>
-              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-white/44" : "text-slate-600"}`}>Больше показов</p>
+              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-white/48">Больше показов</p>
             </div>
             <div
               className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
                   ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.048),0_14px_40px_rgba(0,0,0,0.28)]"
-                  : "border-slate-500/42 bg-[linear-gradient(168deg,#d9e4f4_0%,#eef3fb_52%,#f9fbfe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] ring-1 ring-slate-500/22"
+                  : "border-[rgba(110,118,132,0.36)] bg-[linear-gradient(168deg,#d2d8e4_0%,#e6e9f1_42%,#f2f4f8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(45,52,68,0.09),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
                 <span
-                  className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#e2ebfb]" : "text-slate-900"}`}
+                  className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#e2ebfb]" : "text-slate-950"}`}
                 >
                   TOP
                 </span>
@@ -778,23 +776,23 @@ export default function ProfilePage() {
               </p>
             </div>
             <div
-              className={`rounded-[11px] border px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,212,148,0.14),inset_0_0_0_1px_rgba(84,169,255,0.06)] ${
+              className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
-                  ? "border-[rgba(240,206,138,0.34)] bg-[linear-gradient(168deg,#17130e_0%,#090b0d_52%,#09070b_100%)]"
-                  : "border-[rgba(212,168,94,0.42)] bg-[linear-gradient(172deg,#1e2a38_0%,#151d28_48%,#0b1018_100%)] ring-1 ring-[rgba(29,118,232,0.16)]"
+                  ? "border-[rgba(255,220,155,0.44)] bg-[linear-gradient(168deg,#1c1610_0%,#0c0a08_48%,#050504_100%)] shadow-[0_0_28px_rgba(200,150,72,0.14),inset_0_1px_0_rgba(255,215,165,0.18),inset_0_0_0_1px_rgba(84,169,255,0.06)]"
+                  : "border-[rgba(212,168,94,0.42)] bg-[linear-gradient(172deg,#1e2a38_0%,#151d28_48%,#0b1018_100%)] ring-1 ring-[rgba(29,118,232,0.16)] shadow-[inset_0_1px_0_rgba(255,215,165,0.14),inset_0_0_0_1px_rgba(84,169,255,0.06)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]">VIP</span>
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#ffedd0]">VIP</span>
                 <span
-                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#f0d088]/76" : "text-[#f5dcbc]/82"}`}
+                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#f5d078]/82" : "text-[#f5dcbc]/82"}`}
                 >
                   не активен
                 </span>
               </div>
               <p
                 className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${
-                  isDark ? "text-[rgba(240,206,154,0.58)]" : "text-[rgba(245,218,168,0.76)]"
+                  isDark ? "text-[rgba(255,235,205,0.78)]" : "text-[rgba(245,218,168,0.76)]"
                 }`}
               >
                 Максимальный приоритет
@@ -817,10 +815,10 @@ export default function ProfilePage() {
       {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
         <div
           id="packages-panel"
-          className={`relative overflow-hidden rounded-[22px] border shadow-[0_28px_64px_rgba(0,0,0,0.38)] backdrop-blur-xl ${
+          className={`relative overflow-hidden rounded-[22px] border backdrop-blur-xl ${
             isDark
-              ? "border-[rgba(120,200,255,0.09)] bg-gradient-to-b from-[#121a2e] via-[#0c1220] to-[#080e18] shadow-[0_28px_64px_rgba(0,0,0,0.52),0_0_52px_rgba(84,169,255,0.045)]"
-              : "border-[#1e3a5c]/55 bg-gradient-to-b from-[#152033] via-[#101928] to-[#0d1522] shadow-[0_28px_64px_rgba(10,35,72,0.35)] ring-2 ring-[rgba(29,118,232,0.18)]"
+              ? "border-[rgba(120,200,255,0.09)] bg-gradient-to-b from-[#121a2e] via-[#0c1220] to-[#080e18] shadow-[0_28px_64px_rgba(0,0,0,0.52),0_0_52px_rgba(84,169,255,0.045),inset_0_1px_0_rgba(255,255,255,0.045)]"
+              : "border-[rgba(50,92,148,0.65)] bg-gradient-to-b from-[#141d30] via-[#0f1624] to-[#090f18] shadow-[0_32px_70px_rgba(0,0,0,0.62),0_0_56px_rgba(84,169,255,0.085),inset_0_1px_0_rgba(255,255,255,0.055)] ring-2 ring-[rgba(29,118,232,0.26)]"
           }`}
         >
           <div
@@ -829,24 +827,48 @@ export default function ProfilePage() {
           />
 
           <div className="relative px-5 pb-6 pt-7">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/38">Размещение</p>
-            <p className="mt-2 text-[29px] font-semibold tracking-[-0.03em] leading-none text-white/97 tabular-nums">
-              {placementQuota.active}<span className="mx-1 align-baseline text-[20px] font-normal text-white/28">/</span>{placementQuota.max}
+            <p
+              className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-amber-200/48" : "text-amber-200/55"}`}
+            >
+              Размещение
             </p>
-            <p className="mt-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-white/32">активных</p>
-            <div className="mt-5 h-[3px] w-full overflow-hidden rounded-full bg-white/[0.07]">
+            <p className="mt-2 text-[29px] font-bold tracking-[-0.03em] leading-none text-white tabular-nums">
+              {placementQuota.active}
+              <span
+                className={`mx-1 align-baseline text-[20px] font-medium ${isDark ? "text-white/34" : "text-white/42"}`}
+              >
+                /
+              </span>
+              {placementQuota.max}
+            </p>
+            <p
+              className={`mt-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${isDark ? "text-white/42" : "text-white/52"}`}
+            >
+              активных
+            </p>
+            <div
+              className={`mt-5 h-[3px] w-full overflow-hidden rounded-full ${isDark ? "bg-white/[0.08]" : "bg-white/[0.13]"}`}
+            >
               <div
                 className="h-full rounded-full bg-gradient-to-r from-white/75 via-amber-200/55 to-amber-100/42 transition-[width] duration-500 ease-out"
                 style={{ width: `${placementQuota.fillPct}%` }}
               />
             </div>
-            <p className="mt-3 text-[11px] text-white/30">{FREE_ACTIVE_LISTINGS_CAP} бесплатно включено</p>
+            <p
+              className={`mt-4 text-[13px] font-semibold leading-snug tracking-wide ${isDark ? "text-amber-100/[0.58]" : "text-amber-100/[0.68]"}`}
+            >
+              {FREE_ACTIVE_LISTINGS_CAP} бесплатно включено
+            </p>
             {listingExtraCapacity > 0 ? (
-              <p className="mt-2 text-[11px] text-amber-200/35">ещё +{listingExtraCapacity} по пакету</p>
+              <p className={`mt-2 text-[12px] font-medium ${isDark ? "text-amber-200/48" : "text-amber-200/56"}`}>
+                ещё +{listingExtraCapacity} по пакету
+              </p>
             ) : null}
           </div>
 
-          <div className="relative border-t border-white/[0.055] bg-black/30 px-5 py-7">
+          <div
+            className={`relative border-t bg-black/[0.32] px-5 py-7 ${isDark ? "border-white/[0.09]" : "border-white/[0.14]"}`}
+          >
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/32">
               Ещё слотов
             </p>

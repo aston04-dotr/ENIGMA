@@ -521,18 +521,18 @@ export function ListingCard({
             className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
                 ? "border-[rgba(122,206,255,0.3)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] shadow-[0_0_26px_rgba(84,169,255,0.12)] hover:border-[rgba(148,214,255,0.4)] hover:shadow-[0_0_34px_rgba(84,169,255,0.14)]"
-                : "border-[rgba(29,118,232,0.38)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] shadow-[0_10px_30px_rgba(29,118,232,0.11)] ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(29,118,232,0.48)] hover:shadow-[0_14px_36px_rgba(29,118,232,0.14)]"
+                : "border-[rgba(120,200,255,0.46)] bg-[linear-gradient(152deg,rgba(22,40,78,0.98)_0%,rgba(12,22,44,0.99)_55%,rgba(6,12,28,1)_100%)] shadow-[0_0_32px_rgba(84,169,255,0.24),0_10px_28px_rgba(29,118,232,0.14)] ring-1 ring-[rgba(120,200,255,0.22)] hover:border-[rgba(150,220,255,0.54)] hover:shadow-[0_0_42px_rgba(84,169,255,0.28)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-[#054a9e]" : "text-[#b8dcff]"}`}>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#b8dcff]">
                 BOOST
               </span>
-              <span className={`text-[14px] tabular-nums font-bold ${theme === "light" ? "text-[#054080]" : "text-[#8ecfff]"}`}>
+              <span className="text-[14px] tabular-nums font-bold text-[#8ecfff]">
                 {priceRub} ₽
               </span>
             </div>
-            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-600" : "text-white/42"}`}>
+            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-white/48">
               Больше показов
             </p>
           </Link>
@@ -543,11 +543,11 @@ export function ListingCard({
             className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
                 ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_12px_36px_rgba(0,0,0,0.26)] hover:border-[rgba(214,228,246,0.32)]"
-                : "border-slate-500/40 bg-[linear-gradient(168deg,#d9e4f4_0%,#eef3fb_52%,#f9fbfe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] ring-1 ring-slate-500/22 hover:border-slate-500/48"
+                : "border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06] hover:border-[rgba(92,102,118,0.42)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-900" : "text-[#e2ebfb]"}`}>
+              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-950" : "text-[#e2ebfb]"}`}>
                 TOP
               </span>
               <span className={`text-[14px] tabular-nums font-bold ${theme === "light" ? "text-slate-800" : "text-[#aabdd6]"}`}>
@@ -562,19 +562,19 @@ export function ListingCard({
           <Link
             href={vipHref()}
             onClick={() => trackBoostEvent("vip_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,212,148,0.12),inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-[rgba(240,206,138,0.32)] bg-gradient-to-br from-[#17130e] via-[#090b0d] to-[#09070b] hover:border-[rgba(250,215,148,0.38)] hover:shadow-[0_0_30px_rgba(250,200,92,0.08)]"
-                : "border-[rgba(212,168,94,0.4)] bg-[linear-gradient(168deg,#1e2a38_0%,#151d28_52%,#0b1018_100%)] text-white ring-1 ring-[rgba(29,118,232,0.16)] hover:border-[rgba(250,200,92,0.32)]"
+                ? "border-[rgba(255,220,155,0.44)] bg-[linear-gradient(168deg,#1c1610_0%,#0c0a08_48%,#050504_100%)] shadow-[0_0_28px_rgba(200,150,72,0.14),inset_0_1px_0_rgba(255,215,165,0.18),inset_0_0_0_1px_rgba(84,169,255,0.06)] hover:border-[rgba(255,224,158,0.52)] hover:shadow-[0_0_36px_rgba(200,150,72,0.18)]"
+                : "border-[rgba(212,168,94,0.4)] bg-[linear-gradient(168deg,#1e2a38_0%,#151d28_52%,#0b1018_100%)] text-white ring-1 ring-[rgba(29,118,232,0.16)] shadow-[inset_0_1px_0_rgba(255,215,165,0.14),inset_0_0_0_1px_rgba(84,169,255,0.06)] hover:border-[rgba(250,200,92,0.32)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]">VIP</span>
-              <span className="text-[14px] tabular-nums font-bold text-[#f5d088]/92">{defaultVipCtaPriceRub()} ₽</span>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#ffedd0]">VIP</span>
+              <span className="text-[14px] tabular-nums font-bold text-[#f8d58c]">{defaultVipCtaPriceRub()} ₽</span>
             </div>
             <p
               className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${
-                theme === "dark" ? "text-[rgba(240,206,154,0.55)]" : "text-[rgba(245,218,168,0.72)]"
+                theme === "dark" ? "text-[rgba(255,235,205,0.78)]" : "text-[rgba(245,218,168,0.76)]"
               }`}
             >
               Максимальный приоритет
