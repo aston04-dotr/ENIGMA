@@ -91,7 +91,7 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
     /** PKCE / magic-link fragments on /auth/*; safe on other routes (Supabase only parses when present). */
     detectSessionInUrl: true,
     storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
-    /** Coordinate refresh-token rotation across tabs + browser/PWA instances on the same origin. */
+    /** Синхронизация записи refresh/access между вкладками (BroadcastChannel) — снижает гонки ротации токенов. */
     multiTab: true,
   },
   cookies: {

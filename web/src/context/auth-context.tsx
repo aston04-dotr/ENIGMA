@@ -19,6 +19,9 @@ import {
 import {
   preferMobileSoftAuthPath,
   recoverSessionAfterTransientFault,
+  clearClientAuthAfterInvalidRefresh,
+  isInvalidLocalRefreshTokenError,
+  peekAuthApiErrorParts,
 } from "@/lib/authHardRecovery";
 import { loadProfileSnapshot } from "@/lib/postLoginSync";
 import {
@@ -93,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileRef = useRef<UserRow | null>(null);
   const profileReqSeq = useRef(0);
   const lastTokenRefreshDiagAtRef = useRef(0);
+  const lastAuthRefreshOkLogRef = useRef(0);
   const lastProfileRefreshDiagAtRef = useRef(0);
 
   const assignProfileRow = useCallback((row: UserRow | null) => {
@@ -196,6 +200,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     const { data, error } = await supabase.auth.getUser();
+    if (error && isInvalidLocalRefreshTokenError(error)) {
+      console.warn("[AUTH_REFRESH]", {
+        stage: "refreshProfile_fatal_refresh",
+        ...peekAuthApiErrorParts(error),
+      });
+      await clearClientAuthAfterInvalidRefresh("refreshProfile:getUser");
+      return null;
+    }
     if (error || !data.user) return null;
     const u = data.user;
     const seq = ++profileReqSeq.current;
@@ -270,6 +282,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const first = await supabase.auth.getSession();
         if (!active || isAuthCircuitOpen()) return;
 
+        if (first.error && isInvalidLocalRefreshTokenError(first.error)) {
+          console.warn("[AUTH_REFRESH]", {
+            stage: "bootstrap_fatal_refresh_skip_recover",
+            ...peekAuthApiErrorParts(first.error),
+          });
+          await clearClientAuthAfterInvalidRefresh("bootstrap:getSession");
+          if (!active) return;
+          setSession(null);
+          setUser(null);
+          setRestAccessToken(null);
+          void loadProfileForUser(null);
+          return;
+        }
+
         let next: Session | null = null;
         if (first.error) {
           console.warn("[AUTH_NULL_SESSION_SOFT]", {
@@ -315,6 +341,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRestAccessToken(next);
         if (event === "TOKEN_REFRESHED") {
           bumpEnigmaCounter("sessionDiagRefreshAttempts");
+          const nw = Date.now();
+          if (nw - lastAuthRefreshOkLogRef.current > 90_000) {
+            lastAuthRefreshOkLogRef.current = nw;
+            console.warn("[AUTH_REFRESH]", {
+              stage: "TOKEN_REFRESHED_ok",
+              t: nw,
+              hasUser: Boolean(next?.user?.id),
+            });
+          }
           if (enigmaDiagEnabled()) {
             const now = Date.now();
             if (now - lastTokenRefreshDiagAtRef.current > 4000) {
@@ -399,7 +434,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (enigmaDiagEnabled()) {
             diagWarn("SESSION_REFRESH", { phase: "wake_getUser", trigger });
           }
-          const { data } = await supabase.auth.getUser();
+          const { data, error: guErr } = await supabase.auth.getUser();
+          if (guErr && isInvalidLocalRefreshTokenError(guErr)) {
+            console.warn("[AUTH_REFRESH]", {
+              stage: "wake_getUser_fatal_refresh",
+              trigger,
+              ...peekAuthApiErrorParts(guErr),
+            });
+            await clearClientAuthAfterInvalidRefresh(`wake:getUser:${trigger}`);
+            return;
+          }
           if (!data.user || data.user.id !== uid) return;
           await refreshProfile();
         })();

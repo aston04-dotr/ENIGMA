@@ -23,6 +23,7 @@ function normalizeServerCookieOptions(
   };
 }
 
+/** Создаёт SSR-клиент. У @supabase/ssr autoRefreshToken: false, но getSession/getUser при просроченном access всё ещё могут вызывать refresh по refresh_token из cookie; при битом refresh см. middleware и authRefreshErrors. */
 export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   const cookieAdapter = {

@@ -2,6 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
+import {
+  isInvalidLocalRefreshTokenError,
+  peekAuthApiErrorParts,
+  serverSignOutLocalStaleSession,
+} from "@/lib/authStaleSessionCleanup";
 
 function normalizeCookieOptions(
   req: NextRequest,
@@ -61,12 +66,31 @@ async function updateSession(req: NextRequest) {
   });
 
   try {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.user) {
+    const { data: sessionWrap, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr && isInvalidLocalRefreshTokenError(sessionErr)) {
+      console.warn("[AUTH_REFRESH]", {
+        stage: "middleware_fatal_refresh_cleanup",
+        t: Date.now(),
+        pathname: pathname,
+        ...peekAuthApiErrorParts(sessionErr),
+      });
+      await serverSignOutLocalStaleSession(supabase, "middleware:getSession_error");
+      return res;
+    }
+    if (sessionWrap?.session?.user) {
       // Never redirect here: authenticated requests must keep streaming without blink.
       return res;
     }
-  } catch {
+  } catch (e: unknown) {
+    if (isInvalidLocalRefreshTokenError(e)) {
+      console.warn("[AUTH_REFRESH]", {
+        stage: "middleware_fatal_refresh_throw_cleanup",
+        t: Date.now(),
+        pathname: pathname,
+        ...peekAuthApiErrorParts(e),
+      });
+      await serverSignOutLocalStaleSession(supabase, "middleware:getSession_throw");
+    }
     return res;
   }
 

@@ -2,15 +2,27 @@
 
 import type { Session } from "@supabase/supabase-js";
 import {
+  closeAuthCircuit,
   isHardAuthResetInFlight,
   openAuthCircuit,
   recordAuthFaultAndIsRepeat,
+  resetAuthFaultWindow,
   setHardAuthResetInFlight,
 } from "@/lib/authCircuitState";
+import {
+  isInvalidLocalRefreshTokenError,
+  peekAuthApiErrorParts,
+} from "@/lib/authRefreshErrors";
 import { purgeSupabaseAuthBrowserStorage } from "@/lib/purgeSupabaseBrowserAuth";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
+
+export { isInvalidLocalRefreshTokenError, peekAuthApiErrorParts } from "@/lib/authRefreshErrors";
+
+/** Дедуп одновременных clear (вкладки / middleware client+server гонка). */
+let lastInvalidRefreshClearAt = 0;
+const INVALID_REFRESH_CLEAR_COOLDOWN_MS = 4_000;
 
 /** Touch / standalone PWA — не делаем hard logout из транзиторных ошибок refresh. */
 export function preferMobileSoftAuthPath(): boolean {
@@ -43,12 +55,76 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 /**
- * После TOKEN_REFRESH_REJECTED / странного TOKEN_REFRESH — ждём storage/cookies и несколько попыток.
- * Не редиректит; вызывает hard logout только через maybeHardLogoutAfterSoftRecovery (и то осторожно).
+ * Удаляет только локальную сессию (cookies + storage), не трогая другие устройства.
+ * Вызывать при refresh_token_not_found / Invalid Refresh Token.
+ */
+export async function clearClientAuthAfterInvalidRefresh(reason: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (now - lastInvalidRefreshClearAt < INVALID_REFRESH_CLEAR_COOLDOWN_MS) {
+    console.warn("[AUTH_REFRESH]", {
+      stage: "client_clear_skipped_cooldown",
+      reason,
+      dtMs: now - lastInvalidRefreshClearAt,
+    });
+    return;
+  }
+  lastInvalidRefreshClearAt = now;
+
+  console.warn("[AUTH_REFRESH]", {
+    stage: "client_invalid_refresh_clear_begin",
+    reason,
+    t: now,
+  });
+
+  openAuthCircuit();
+  purgeSupabaseAuthBrowserStorage();
+  setRestAccessToken(null);
+
+  console.warn("[AUTH_REFRESH]", {
+    stage: "client_sign_out_local",
+    reason,
+  });
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+    console.warn("[AUTH_REFRESH]", { stage: "client_sign_out_local_ok", reason });
+  } catch (e) {
+    console.warn("[AUTH_REFRESH]", {
+      stage: "client_sign_out_local_exception",
+      reason,
+      ...peekAuthApiErrorParts(e),
+    });
+  } finally {
+    closeAuthCircuit();
+    resetAuthFaultWindow();
+    setHardAuthResetInFlight(false);
+    console.warn("[AUTH_REFRESH]", { stage: "client_invalid_refresh_clear_end", reason });
+  }
+}
+
+/**
+ * После сетевых/transient проблем wake — несколько попыток getSession/getUser без отдельного refreshSession().
+ * getSession уже вызывает _callRefreshToken внутри GoTrue при просроченном access token.
  */
 export async function recoverSessionAfterTransientFault(context: string): Promise<Session | null> {
+  const immediate = await supabase.auth.getSession();
+  if (immediate.error && isInvalidLocalRefreshTokenError(immediate.error)) {
+    console.warn("[AUTH_REFRESH]", {
+      stage: "recover_immediate_fatal_refresh",
+      context,
+      ...peekAuthApiErrorParts(immediate.error),
+    });
+    await clearClientAuthAfterInvalidRefresh(`recover:immediate:${context}`);
+    return null;
+  }
+
   dispatchAuthSessionRecoveryActive(true);
   console.warn("[AUTH_MOBILE_WAKE]", { context, phase: "soft_recovery_start" });
+  console.warn("[AUTH_REFRESH]", {
+    stage: "soft_recovery_start",
+    context,
+    t: Date.now(),
+  });
   const delays = [120, 280, 520, 900, 1600];
   try {
     for (let attempt = 0; attempt < delays.length; attempt++) {
@@ -75,28 +151,43 @@ export async function recoverSessionAfterTransientFault(context: string): Promis
       await sleepMs(delays[attempt] ?? 400);
 
       const { data: gs, error: ge } = await supabase.auth.getSession();
+      if (ge && isInvalidLocalRefreshTokenError(ge)) {
+        console.warn("[AUTH_REFRESH]", {
+          stage: "recover_loop_fatal_refresh_getSession",
+          context,
+          attempt,
+          ...peekAuthApiErrorParts(ge),
+        });
+        await clearClientAuthAfterInvalidRefresh(`recover:getSession:${context}`);
+        return null;
+      }
+
       if (!ge && gs.session?.user) {
         console.warn("[AUTH_MOBILE_WAKE]", {
           context,
           phase: "recovered_via_getSession",
           attempt,
         });
+        console.warn("[AUTH_REFRESH]", {
+          stage: "soft_recovery_ok_getSession",
+          context,
+          attempt,
+          uid: gs.session.user.id,
+        });
         return gs.session;
       }
 
-      if (attempt === 2) {
-        const { data: ref, error: re } = await supabase.auth.refreshSession();
-        if (!re && ref.session?.user) {
-          console.warn("[AUTH_MOBILE_WAKE]", {
-            context,
-            phase: "recovered_via_refreshSession",
-            attempt,
-          });
-          return ref.session;
-        }
-      }
-
       const { data: gu, error: ue } = await supabase.auth.getUser();
+      if (ue && isInvalidLocalRefreshTokenError(ue)) {
+        console.warn("[AUTH_REFRESH]", {
+          stage: "recover_loop_fatal_refresh_getUser",
+          context,
+          attempt,
+          ...peekAuthApiErrorParts(ue),
+        });
+        await clearClientAuthAfterInvalidRefresh(`recover:getUser:${context}`);
+        return null;
+      }
       if (!ue && gu.user) {
         const { data: gs2 } = await supabase.auth.getSession();
         if (gs2.session?.user) {
@@ -104,6 +195,12 @@ export async function recoverSessionAfterTransientFault(context: string): Promis
             context,
             phase: "recovered_via_getUser",
             attempt,
+          });
+          console.warn("[AUTH_REFRESH]", {
+            stage: "soft_recovery_ok_getUser",
+            context,
+            attempt,
+            uid: gu.user.id,
           });
           return gs2.session;
         }
@@ -117,6 +214,7 @@ export async function recoverSessionAfterTransientFault(context: string): Promis
       });
     }
     console.warn("[AUTH_MOBILE_WAKE]", { context, phase: "soft_recovery_exhausted" });
+    console.warn("[AUTH_REFRESH]", { stage: "soft_recovery_exhausted", context });
     return null;
   } finally {
     dispatchAuthSessionRecoveryActive(false);
@@ -128,6 +226,18 @@ export async function maybeHardLogoutAfterSoftRecovery(evStr: string): Promise<v
     phase: "eval_after_soft_recovery",
     event: evStr,
   });
+
+  const pre = await supabase.auth.getSession();
+  if (pre.error && isInvalidLocalRefreshTokenError(pre.error)) {
+    console.warn("[AUTH_HARD_LOGOUT_REASON]", {
+      decision: "fatal_refresh_via_getSession_probe",
+      event: evStr,
+      ...peekAuthApiErrorParts(pre.error),
+    });
+    await clearClientAuthAfterInvalidRefresh(`maybeHardLogout:probe_getSession:${evStr}`);
+    return;
+  }
+
   if (preferMobileSoftAuthPath()) {
     console.warn("[AUTH_HARD_LOGOUT_REASON]", {
       decision: "skip_mobile_pwa_soft_path",
@@ -141,6 +251,18 @@ export async function maybeHardLogoutAfterSoftRecovery(evStr: string): Promise<v
   }
 
   const { data, error } = await supabase.auth.getUser();
+
+  const code = peekAuthApiErrorParts(error).code ?? "";
+  if (error && isInvalidLocalRefreshTokenError(error)) {
+    console.warn("[AUTH_HARD_LOGOUT_REASON]", {
+      decision: "skip_fatal_refresh_already_handled_path",
+      event: evStr,
+      ...peekAuthApiErrorParts(error),
+    });
+    await clearClientAuthAfterInvalidRefresh(`maybeHardLogout:${evStr}:${code}`);
+    return;
+  }
+
   if (data.user) {
     console.warn("[AUTH_HARD_LOGOUT_REASON]", {
       decision: "skip_getUser_still_has_user",
@@ -199,8 +321,7 @@ export async function hardSignOutAndRedirectToLogin(reason: string): Promise<voi
 }
 
 /**
- * Раньше вело к немедленному hard logout на singleton; после wake на iOS это часто false positive.
- * Теперь — только триггер мягкого recoverSessionAfterTransientFault.
+ * После проблем TOKEN_REFRESH_REJECTED и т.п. — мягкое recoverSessionAfterTransientFault.
  */
 export function isTransientSingletonAuthFault(event: unknown, sess: unknown): boolean {
   const ev = String(event ?? "");

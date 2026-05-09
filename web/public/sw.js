@@ -178,6 +178,7 @@ self.addEventListener("fetch", (event) => {
     pathname === "/auth" ||
     pathname.startsWith("/auth/");
 
+  /* Auth/session/cookies только по сети — SW не должен отдавать кэшированные ответы к API или Supabase. */
   if (isApi) {
     event.respondWith(fetch(request));
     return;
