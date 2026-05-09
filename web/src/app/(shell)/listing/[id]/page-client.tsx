@@ -25,7 +25,7 @@ import {
   toggleFavorite,
 } from "@/lib/listings";
 import { tryLightVibrate } from "@/lib/nativeHaptics";
-import { renewListingPublication } from "@/lib/listingRenewal";
+import { isBoostActive, isTopActive } from "@/lib/monetization";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { reportListingTrustPenalty } from "@/lib/trust";
@@ -161,6 +161,8 @@ export default function ListingDetailPage() {
     row && viewerId && ownerId && ownerId === viewerId,
   );
   const partnerListing = safeItem?.is_partner_ad === true;
+  const topActive = row ? isTopActive(row) : false;
+  const boosted = row ? isBoostActive(row) : false;
   const listingExpired = String(safeItem.status ?? "") === "expired";
 
   const handleRenewPublication = useCallback(async () => {
@@ -541,6 +543,18 @@ export default function ListingDetailPage() {
               {safeIndex + 1} из {imgs.length}
             </div>
           ) : null}
+          {topActive ? (
+            <div
+              className={`pointer-events-none absolute left-3 z-[25] rounded-md border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(38,46,62,0.08)] ring-1 ring-black/[0.06] backdrop-blur-sm ${imgs.length > 0 ? "top-11" : "top-3"}`}
+            >
+              TOP
+            </div>
+          ) : null}
+          {boosted ? (
+            <div className="pointer-events-none absolute right-3 top-14 z-[25] rounded-md border border-[rgba(110,188,255,0.38)] bg-[linear-gradient(152deg,rgba(18,38,74,0.96)_0%,rgba(8,14,32,1)_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#b8dcff] shadow-[0_0_16px_rgba(84,169,255,0.22)] ring-1 ring-[rgba(110,188,255,0.2)] backdrop-blur-sm">
+              BOOST
+            </div>
+          ) : null}
           <div
             className="absolute right-3 top-3 z-30 flex items-center gap-2"
             onPointerDown={(e) => e.stopPropagation()}
@@ -706,21 +720,17 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
-                      theme === "dark"
-                        ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_12px_36px_rgba(0,0,0,0.26)] hover:border-[rgba(214,228,246,0.32)]"
-                        : "border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06] hover:border-[rgba(92,102,118,0.42)]"
-                    }`}
+                    className="flex min-h-[52px] flex-col justify-center rounded-2xl border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-4 py-3.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] hover:border-[rgba(92,102,118,0.42)]"
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#e2ebfb]" : "text-slate-950"}`}>
+                      <span className="text-[12px] font-semibold tracking-[0.14em] text-slate-950">
                         TOP
                       </span>
-                      <span className={`text-[15px] tabular-nums font-bold ${theme === "dark" ? "text-[#aabdd6]" : "text-slate-800"}`}>
+                      <span className="text-[15px] tabular-nums font-bold text-slate-800">
                         {defaultTopCtaPriceRub()} ₽
                       </span>
                     </span>
-                    <span className={`mt-1 text-[11px] leading-[1.28] tracking-tight ${theme === "dark" ? "text-slate-400/75" : "text-slate-600"}`}>
+                    <span className="mt-1 text-[11px] leading-[1.28] tracking-tight text-slate-600">
                       Выше в ленте
                     </span>
                   </Link>

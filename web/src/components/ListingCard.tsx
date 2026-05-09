@@ -11,7 +11,7 @@ import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
-import { isBoostActive } from "@/lib/monetization";
+import { isBoostActive, isTopActive } from "@/lib/monetization";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import { tryLightVibrate } from "@/lib/nativeHaptics";
@@ -164,6 +164,7 @@ export function ListingCard({
       : "";
   const itemLocation = itemDistrict ? `${itemCity}, ${itemDistrict}` : itemCity;
   const boosted = safeItem ? isBoostActive(safeItem) : false;
+  const topActive = safeItem ? isTopActive(safeItem) : false;
   const lid = String(safeItem?.id ?? "").trim();
   const viewerId = session?.user?.id ?? null;
   const isOwn = Boolean(viewerId && safeItem?.user_id && safeItem.user_id === viewerId);
@@ -417,9 +418,16 @@ export function ListingCard({
             Партнёр
           </span>
         ) : null}
+        {topActive ? (
+          <span
+            className={`pointer-events-none absolute left-3 z-[12] rounded-md border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(38,46,62,0.08)] ring-1 ring-black/[0.06] backdrop-blur-sm ${partner ? "top-14" : "top-3"}`}
+          >
+            TOP
+          </span>
+        ) : null}
         {boosted ? (
-          <span className="pointer-events-none absolute right-3 top-14 z-[12] rounded-md border border-white/14 bg-black/42 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-white/86 backdrop-blur-md">
-            В топе
+          <span className="pointer-events-none absolute right-3 top-14 z-[12] rounded-md border border-[rgba(110,188,255,0.38)] bg-[linear-gradient(152deg,rgba(18,38,74,0.96)_0%,rgba(8,14,32,1)_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#b8dcff] shadow-[0_0_16px_rgba(84,169,255,0.22)] ring-1 ring-[rgba(110,188,255,0.2)] backdrop-blur-sm">
+            BOOST
           </span>
         ) : null}
         <div
@@ -540,21 +548,17 @@ export function ListingCard({
           <Link
             href={topHref()}
             onClick={() => trackBoostEvent("top_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
-              theme === "dark"
-                ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_12px_36px_rgba(0,0,0,0.26)] hover:border-[rgba(214,228,246,0.32)]"
-                : "border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06] hover:border-[rgba(92,102,118,0.42)]"
-            }`}
+            className="block rounded-[11px] border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] hover:border-[rgba(92,102,118,0.42)]"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-950" : "text-[#e2ebfb]"}`}>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-slate-950">
                 TOP
               </span>
-              <span className={`text-[14px] tabular-nums font-bold ${theme === "light" ? "text-slate-800" : "text-[#aabdd6]"}`}>
+              <span className="text-[14px] tabular-nums font-bold text-slate-800">
                 {defaultTopCtaPriceRub()} ₽
               </span>
             </div>
-            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-600" : "text-slate-400/75"}`}>
+            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-slate-600">
               Выше в ленте
             </p>
           </Link>

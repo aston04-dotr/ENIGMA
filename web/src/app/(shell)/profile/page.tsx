@@ -752,26 +752,14 @@ export default function ProfilePage() {
               </div>
               <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-white/48">Больше показов</p>
             </div>
-            <div
-              className={`rounded-[11px] border px-3 py-[11px] ${
-                isDark
-                  ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.048),0_14px_40px_rgba(0,0,0,0.28)]"
-                  : "border-[rgba(110,118,132,0.36)] bg-[linear-gradient(168deg,#d2d8e4_0%,#e6e9f1_42%,#f2f4f8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(45,52,68,0.09),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06]"
-              }`}
-            >
+            <div className="rounded-[11px] border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06]">
               <div className="flex items-baseline justify-between gap-2">
-                <span
-                  className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#e2ebfb]" : "text-slate-950"}`}
-                >
-                  TOP
-                </span>
-                <span
-                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#aabdd6]/82" : "text-slate-700"}`}
-                >
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-slate-950">TOP</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums text-slate-700">
                   активен
                 </span>
               </div>
-              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-slate-400/78" : "text-slate-600"}`}>
+              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-slate-600">
                 Выше в ленте
               </p>
             </div>
