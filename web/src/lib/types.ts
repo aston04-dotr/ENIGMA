@@ -151,7 +151,8 @@ export type ChatMemberRow = {
   last_read_message_id?: string | null;
 };
 
-export type MessageStatus = "sent" | "delivered" | "seen";
+/** Исходящее сообщение — без «прочитано» (read receipts). */
+export type MessageStatus = "sending" | "sent" | "delivered";
 
 export type MessageType = "text" | "image";
 
@@ -180,9 +181,9 @@ export type MessageRow = {
   deleted_at?: string | null;
   hidden_for_user_ids?: string[];
   status?: MessageStatus | string | null;
-  /** Получатель отметил доставку (✓✓ серые). */
+  /** Получатель подтвердил доставку на устройство (оставляем для ✓✓ «доставлено», без read UI). */
   delivered_at?: string | null;
-  /** Собеседник прочитал (✓✓ фиолетовые). */
+  /** Сервисное поле (mark_chat_read / reconcile); не показываем как «прочитано» отправителю. */
   read_at?: string | null;
 };
 

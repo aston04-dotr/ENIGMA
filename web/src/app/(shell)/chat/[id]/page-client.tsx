@@ -41,11 +41,13 @@ type RoomStatus =
   | "reconnecting"
   | "error";
 
-type MessageContextMenuState = {
-  id: string;
+type MessageActionsState = {
+  messageId: string;
   mine: boolean;
-  x: number;
-  y: number;
+  variant: "sheet" | "popover";
+  phase: "actions" | "confirm_all";
+  popoverLeft: number;
+  popoverTop: number;
 };
 
 function isUuid(value: string): boolean {
@@ -298,21 +300,151 @@ function PaperclipIcon({ className }: { className?: string }) {
   );
 }
 
-function MessageReadStatus({
-  mine,
-  showRead,
+function shouldUseChatMessageActionSheet(): boolean {
+  if (typeof window === "undefined") return true;
+  if (window.matchMedia("(pointer: coarse)").matches) return true;
+  if (window.matchMedia("(max-width: 767px)").matches) return true;
+  return false;
+}
+
+const MESSAGE_ACTION_MENU_MIN_WIDTH = 260;
+
+function clampMessagePopoverPosition(
+  left: number,
+  top: number,
+  menuHeightEstimate: number,
+): { left: number; top: number } {
+  if (typeof window === "undefined") return { left, top };
+  const pad = 10;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = MESSAGE_ACTION_MENU_MIN_WIDTH;
+  let L = Math.min(Math.max(left, pad), vw - w - pad);
+  let T = Math.min(Math.max(top, pad), vh - menuHeightEstimate - pad);
+  return { left: L, top: T };
+}
+
+function bubbleAnchorForPopover(mine: boolean, rect: DOMRect): { left: number; top: number } {
+  const gap = 8;
+  const w = MESSAGE_ACTION_MENU_MIN_WIDTH;
+  const left = mine ? rect.left - w - gap : rect.right + gap;
+  /** Align top-of-menu with bubble top; visually «рядом с сообщением». */
+  return { left, top: rect.top };
+}
+
+function SvgDeliveryChecks({
+  variant,
+  className,
 }: {
-  mine: boolean;
-  showRead: boolean;
+  variant: "sending" | "sent" | "delivered";
+  className?: string;
 }) {
-  if (!mine || !showRead) return null;
+  /** Одна галка — отправлено по серверу; две — доставлено у получателя. Без синего «прочитано». */
+  const stroke =
+    variant === "sending"
+      ? "rgb(255 255 255 / 0.52)"
+      : variant === "delivered"
+        ? "rgb(255 255 255 / 0.68)"
+        : "rgb(255 255 255 / 0.55)";
+  if (variant === "delivered") {
+    return (
+      <span className={`inline-flex items-center ${className ?? ""}`.trim()}>
+        <svg
+          width="14"
+          height="12"
+          viewBox="0 0 16 12"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden
+        >
+          <path
+            d="M2 7.35L6.3 11.25 13.95 3"
+            stroke={stroke}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <svg
+          className="-ml-[8px]"
+          width="14"
+          height="12"
+          viewBox="0 0 16 12"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden
+        >
+          <path
+            d="M2 7.35L6.3 11.25 13.95 3"
+            stroke={stroke}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    );
+  }
+  if (variant === "sending") {
+    return (
+      <svg
+        className={`${className ?? ""} opacity-85 animate-pulse`.trim()}
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
+      >
+        <circle cx="12" cy="12" r="8" stroke="rgb(255 255 255 / 0.45)" strokeWidth="1.4" strokeDasharray="5 10" />
+      </svg>
+    );
+  }
   return (
-    <span
-      className="leading-none text-sky-500 dark:text-sky-400"
-      aria-label="прочитано"
-      title="прочитано"
+    <svg
+      className={className}
+      width="16"
+      height="12"
+      viewBox="0 0 16 12"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
     >
-      прочитано
+      <path
+        d="M2 7.35L6.3 11.25 13.95 3"
+        stroke={stroke}
+        strokeWidth="1.55"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Только свои сообщения: отправка / отправлено / доставлено (без UI «прочитано»). */
+function OutboundDeliveryTicks({ message: m }: { message: MessageRow }) {
+  if (m.imageUploadFailed) return null;
+
+  const temp = m.id.startsWith("temp-");
+  const inFlight =
+    temp &&
+    !m.imageUploadFailed &&
+    Boolean(m.pendingUpload || m.status !== "sent");
+
+  let variant: "sending" | "sent" | "delivered" = "sent";
+  if (inFlight) variant = "sending";
+  else if (hasValidTimestamp(m.delivered_at)) variant = "delivered";
+
+  const aria =
+    variant === "delivered"
+      ? "Доставлено"
+      : variant === "sending"
+        ? "Отправляется…"
+        : "Отправлено";
+
+  return (
+    <span className="inline-flex items-center opacity-95" aria-label={aria} title={aria}>
+      <SvgDeliveryChecks variant={variant} className="-mr-px shrink-0" />
     </span>
   );
 }
@@ -320,7 +452,6 @@ function MessageReadStatus({
 const ChatListMessageRow = memo(function ChatListMessageRow({
   m,
   mine,
-  latestReadMessageId,
   isAppearing,
   imageRetryingId,
   onOpenLightbox,
@@ -329,7 +460,6 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
 }: {
   m: MessageRow;
   mine: boolean;
-  latestReadMessageId: string | null;
   isAppearing: boolean;
   imageRetryingId: string | null;
   onOpenLightbox: (url: string) => void;
@@ -340,11 +470,10 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
   ) => void;
 }) {
   const isImage = m.type === "image" && Boolean(m.image_url);
-  const isOptimistic = m.id.startsWith("temp-");
   const messageTime = formatMessageTime(m.created_at);
   const longPressTimerRef = useRef<number | null>(null);
   const canOpenMenu = !m.id.startsWith("temp-");
-  const showReadStatus = mine && latestReadMessageId === m.id;
+  const isOptimistic = m.id.startsWith("temp-");
 
   const clearLongPress = () => {
     if (typeof window === "undefined") return;
@@ -438,14 +567,11 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
           )}
         </div>
         {!m.deleted ? (
-          <div className="mt-0.5 flex min-h-[14px] shrink-0 items-center justify-end gap-1 px-0.5 text-xs text-fg/40">
-            <span>{messageTime}</span>
-            {mine ? (
-              <MessageReadStatus
-                mine
-                showRead={showReadStatus}
-              />
-            ) : null}
+          <div
+            className={`mt-0.5 flex min-h-[18px] shrink-0 items-center gap-2 px-0.5 text-[11px] ${mine ? "justify-end text-white/50" : "justify-start text-muted"}`}
+          >
+            <span className="tabular-nums">{messageTime}</span>
+            {mine ? <OutboundDeliveryTicks message={m} /> : null}
           </div>
         ) : null}
       </div>
@@ -506,8 +632,9 @@ export default function ChatRoomPage() {
   const [showScrollToStart, setShowScrollToStart] = useState(false);
   const [showScrollToNew, setShowScrollToNew] = useState(false);
   const [headerElevated, setHeaderElevated] = useState(false);
-  const [messageMenu, setMessageMenu] = useState<MessageContextMenuState | null>(null);
-  const [deleteForAllPendingId, setDeleteForAllPendingId] = useState<string | null>(null);
+  const [messageActions, setMessageActions] = useState<MessageActionsState | null>(
+    null,
+  );
   const [appearingMessageIds, setAppearingMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -594,22 +721,7 @@ export default function ChatRoomPage() {
   }, [messages, me]);
 
   const displayMessages = useMemo(() => visibleMessages, [visibleMessages]);
-  const latestReadOutgoingMessageId = useMemo(() => {
-    if (!me) return null;
-    let candidateId: string | null = null;
-    let candidateCreatedAtMs = -1;
-    for (const m of displayMessages) {
-      if (m.sender_id !== me) continue;
-      if (!hasValidTimestamp(m.read_at)) continue;
-      const createdAtMs = Date.parse(m.created_at);
-      if (Number.isNaN(createdAtMs)) continue;
-      if (createdAtMs >= candidateCreatedAtMs) {
-        candidateCreatedAtMs = createdAtMs;
-        candidateId = m.id;
-      }
-    }
-    return candidateId;
-  }, [displayMessages, me]);
+
   const setPeerTypingStable = useCallback((newState: boolean) => {
     if (newState === lastPeerTypingStateRef.current) {
       return;
@@ -707,8 +819,7 @@ export default function ChatRoomPage() {
     peerLastPresenceAtRef.current = null;
     setShowScrollToStart(false);
     setShowScrollToNew(false);
-    setMessageMenu(null);
-    setDeleteForAllPendingId(null);
+    setMessageActions(null);
     setHeaderElevated(false);
     setAppearingMessageIds(new Set());
     messageAnimHydratedChatIdRef.current = null;
@@ -1583,12 +1694,39 @@ export default function ChatRoomPage() {
       if (!me) return;
       if (message.id.startsWith("temp-")) return;
       const mine = message.sender_id === me;
-      setDeleteForAllPendingId(null);
-      setMessageMenu({
-        id: message.id,
+
+      let variant: MessageActionsState["variant"] = "popover";
+      let popLeft = Math.max(12, pos.x);
+      let popTop = Math.max(12, pos.y);
+
+      if (typeof document !== "undefined") {
+        if (shouldUseChatMessageActionSheet()) {
+          variant = "sheet";
+        } else {
+          const row = document.querySelector(
+              `[data-message-id="${message.id}"]`,
+            ) as HTMLElement | null;
+          if (row?.getBoundingClientRect) {
+            const rect = row.getBoundingClientRect();
+            const anchor = bubbleAnchorForPopover(mine, rect);
+            const clamped = clampMessagePopoverPosition(
+              anchor.left,
+              anchor.top,
+              mine ? 300 : 300,
+            );
+            popLeft = clamped.left;
+            popTop = clamped.top;
+          }
+        }
+      }
+
+      setMessageActions({
+        messageId: message.id,
         mine,
-        x: Math.max(12, pos.x),
-        y: Math.max(12, pos.y),
+        variant,
+        phase: "actions",
+        popoverLeft: popLeft,
+        popoverTop: popTop,
       });
     },
     [me],
@@ -1705,15 +1843,14 @@ export default function ChatRoomPage() {
   );
 
   useEffect(() => {
-    if (!messageMenu && !deleteForAllPendingId) return;
+    if (!messageActions) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setMessageMenu(null);
-      setDeleteForAllPendingId(null);
+      setMessageActions(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [messageMenu, deleteForAllPendingId]);
+  }, [messageActions]);
 
   function send() {
     if (!text.trim()) return;
@@ -2267,7 +2404,6 @@ export default function ChatRoomPage() {
             key={m.id}
             m={m}
             mine={m.sender_id === me}
-            latestReadMessageId={latestReadOutgoingMessageId}
             isAppearing={appearingMessageIds.has(m.id)}
             imageRetryingId={imageRetryingId}
             onOpenLightbox={setLightboxUrl}
@@ -2363,88 +2499,158 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {messageMenu ? (
-        <div
-          className="fixed inset-0 z-[70]"
-          onClick={() => setMessageMenu(null)}
-          aria-hidden
-        >
-          <div
-            className="absolute w-48 rounded-xl border border-line/70 bg-elevated/95 p-1 shadow-soft backdrop-blur-md"
-            style={{
-              left: messageMenu.x,
-              top: messageMenu.y,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="pressable flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-fg hover:bg-elev-2"
-              onClick={() => {
-                const id = messageMenu.id;
-                setMessageMenu(null);
-                void deleteMessageForMe(id);
-              }}
-            >
-              Удалить у меня
-            </button>
-            {messageMenu.mine ? (
-              <button
-                type="button"
-                className="pressable flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
-                onClick={() => {
-                  const id = messageMenu.id;
-                  setMessageMenu(null);
-                  setDeleteForAllPendingId(id);
-                }}
-              >
-                Удалить у всех
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      {messageActions ? (
+        <div className="fixed inset-0 z-[70]" role="presentation">
+          <button
+            type="button"
+            aria-label="Закрыть"
+            tabIndex={-1}
+            className="absolute inset-0 animate-listingBackdropIn bg-black/50 backdrop-blur-[1px]"
+            onClick={() => setMessageActions(null)}
+          />
 
-      {deleteForAllPendingId ? (
-        <div
-          className="fixed inset-0 z-[75] flex items-end justify-center bg-main/70 p-4 backdrop-blur-sm sm:items-center"
-          onClick={() => setDeleteForAllPendingId(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-for-all-title"
-        >
           <div
-            className="w-full max-w-sm rounded-card border border-line bg-elevated p-5 shadow-soft"
+            role="dialog"
+            aria-modal="true"
+            className={
+              messageActions.variant === "sheet"
+                ? "animate-chatSheetUp absolute inset-x-0 bottom-0 z-[2] mx-auto w-full max-w-lg rounded-t-[1.35rem] border-x border-t border-line/85 bg-elevated px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_48px_rgba(0,0,0,0.28)] dark:border-line/65"
+                : "animate-receiptPop fixed z-[2] w-[min(272px,calc(100vw-24px))] rounded-[1.1rem] border border-line/85 bg-elevated p-4 shadow-soft dark:border-line/65"
+            }
+            style={
+              messageActions.variant === "popover"
+                ? {
+                    left: `${messageActions.popoverLeft}px`,
+                    top: `${messageActions.popoverTop}px`,
+                  }
+                : undefined
+            }
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="delete-for-all-title" className="text-base font-semibold text-fg">
-              Удалить сообщение у всех?
-            </h2>
-            <p className="mt-2 text-sm text-muted">
-              Это действие нельзя отменить. У всех участников останется пометка
-              «Сообщение удалено».
-            </p>
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                className="pressable min-h-[44px] flex-1 rounded-lg border border-line bg-transparent px-3 text-sm font-medium text-fg"
-                onClick={() => setDeleteForAllPendingId(null)}
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                className="pressable min-h-[44px] flex-1 rounded-lg bg-danger px-3 text-sm font-semibold text-white"
-                onClick={() => {
-                  const id = deleteForAllPendingId;
-                  setDeleteForAllPendingId(null);
-                  if (!id) return;
-                  void deleteMessageForAll(id);
-                }}
-              >
-                Удалить
-              </button>
-            </div>
+            {messageActions.variant === "sheet" ? (
+              <div
+                className="mx-auto mb-4 mt-1 h-1 w-11 shrink-0 rounded-full bg-line/65"
+                aria-hidden
+              />
+            ) : null}
+
+            {messageActions.phase === "actions" ? (
+              <div className="flex flex-col gap-3">
+                <p
+                  id="msg-actions-title"
+                  className={
+                    messageActions.variant === "sheet"
+                      ? "mb-1 text-center text-[12px] font-semibold uppercase tracking-[0.2em] text-muted"
+                      : "mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
+                  }
+                >
+                  Сообщение
+                </p>
+                <button
+                  type="button"
+                  className={
+                    messageActions.variant === "sheet"
+                      ? "pressable flex min-h-[56px] w-full touch-manipulation items-center justify-center rounded-2xl bg-line/55 px-4 text-[16px] font-semibold leading-snug text-fg transition-colors active:bg-line/65 dark:bg-white/12 dark:active:bg-white/18"
+                      : "pressable flex min-h-[50px] w-full touch-manipulation items-center justify-center rounded-xl bg-line/50 px-3 text-[15px] font-semibold text-fg transition-colors hover:bg-line/58 dark:bg-white/10 dark:hover:bg-white/14"
+                  }
+                  onClick={() => {
+                    const id = messageActions.messageId;
+                    setMessageActions(null);
+                    void deleteMessageForMe(id);
+                  }}
+                >
+                  Удалить у меня
+                </button>
+
+                {messageActions.mine ? (
+                  <>
+                    <div className="my-px h-px bg-line/48 dark:bg-white/10" aria-hidden />
+                    <button
+                      type="button"
+                      className={
+                        messageActions.variant === "sheet"
+                          ? "pressable flex min-h-[56px] w-full touch-manipulation items-center justify-center rounded-2xl border-2 border-danger/75 bg-transparent px-4 text-[16px] font-semibold leading-snug text-danger transition-colors active:bg-danger/12 dark:border-danger"
+                          : "pressable flex min-h-[50px] w-full touch-manipulation items-center justify-center rounded-xl border-[1.75px] border-danger/85 bg-transparent px-3 text-[15px] font-semibold text-danger transition-colors hover:bg-danger/12"
+                      }
+                      onClick={() =>
+                        setMessageActions((prev) =>
+                          prev ? { ...prev, phase: "confirm_all" } : prev,
+                        )
+                      }
+                    >
+                      Удалить у всех
+                    </button>
+                  </>
+                ) : null}
+
+                <button
+                  type="button"
+                  className={`pressable mx-auto mb-2 mt-4 min-h-[44px] w-full rounded-xl text-[15px] font-medium ${messageActions.variant === "sheet" ? "text-muted" : "text-muted"}`}
+                  onClick={() => setMessageActions(null)}
+                >
+                  Отмена
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <h2
+                  id="delete-for-all-title"
+                  className={
+                    messageActions.variant === "sheet"
+                      ? "text-center text-lg font-semibold leading-snug text-fg"
+                      : "text-base font-semibold leading-snug text-fg"
+                  }
+                >
+                  Удалить у всех участников?
+                </h2>
+                <p
+                  className={
+                    messageActions.variant === "sheet"
+                      ? "text-center text-[15px] leading-relaxed text-muted"
+                      : "text-sm leading-relaxed text-muted"
+                  }
+                >
+                  Действие нельзя отменить: у каждого в чате останется «Сообщение удалено», без восстановления
+                  текста.
+                </p>
+                <button
+                  type="button"
+                  className={`pressable rounded-xl px-4 text-[15px] font-medium ${messageActions.variant === "sheet" ? "min-h-[50px]" : "min-h-[44px]"}`}
+                  onClick={() =>
+                    setMessageActions((prev) =>
+                      prev ? { ...prev, phase: "actions" } : prev,
+                    )
+                  }
+                >
+                  ← Назад
+                </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    type="button"
+                    className={
+                      messageActions.variant === "sheet"
+                        ? "pressable min-h-[54px] w-full rounded-2xl bg-danger px-4 text-[16px] font-semibold leading-snug text-white shadow-inner active:bg-danger/90 dark:bg-danger"
+                        : "pressable min-h-[48px] w-full rounded-xl bg-danger px-3 text-[15px] font-semibold text-white active:bg-danger/90"
+                    }
+                    onClick={() => {
+                      const id = messageActions.messageId;
+                      setMessageActions(null);
+                      if (!id) return;
+                      void deleteMessageForAll(id);
+                    }}
+                  >
+                    Удалить у всех навсегда
+                  </button>
+                  <button
+                    type="button"
+                    className="pressable mx-auto mb-2 min-h-[42px] w-full rounded-xl py-2 text-[15px] font-medium text-muted"
+                    onClick={() => setMessageActions(null)}
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
