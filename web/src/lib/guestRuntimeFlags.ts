@@ -89,11 +89,8 @@ export async function getGuestRuntimeFlags(opts?: {
 
   const job = (async () => {
     try {
-      const { data, error } = await (supabase.rpc as unknown as (
-        fn: string,
-        args?: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: { message?: string } | null }>)(
-        "get_guest_runtime_flags",
+      const { data, error } = await supabase.rpc(
+        "get_guest_runtime_flags" as never,
         {
           p_guest_uuid: opts?.guestUuid ?? null,
           p_user_id: opts?.userId ?? null,

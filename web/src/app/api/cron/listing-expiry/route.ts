@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 /**
  * Периодический запуск истечения объявлений и рассылки listing_owner_notices.
  * Защита: заголовок Authorization: Bearer <LISTING_EXPIRY_CRON_SECRET>.
- * На Vercel добавьте cron в vercel.json и переменные SUPABASE_SERVICE_ROLE_KEY, LISTING_EXPIRY_CRON_SECRET.
+ * На VPS: systemd timer/crontab или внешний scheduler — GET с секретом, плюс
+ * SUPABASE_SERVICE_ROLE_KEY и LISTING_EXPIRY_CRON_SECRET в env процесса (pm2).
  */
 export async function GET(req: Request) {
   const secret = process.env.LISTING_EXPIRY_CRON_SECRET?.trim();

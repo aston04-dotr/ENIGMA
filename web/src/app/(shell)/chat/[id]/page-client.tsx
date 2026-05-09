@@ -682,6 +682,8 @@ export default function ChatRoomPage() {
   const isAtBottomRef = useRef(true);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
+  /** Один backfill после reconnect (SUBSCRIBED), не пачка при флапе сокета. */
+  const reconnectBackfillTimerRef = useRef<number | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastLoadedMessageIdRef = useRef<string | null>(null);
   const lastReadMarkedMessageIdRef = useRef<string | null>(null);
@@ -1268,55 +1270,65 @@ export default function ChatRoomPage() {
     return () => window.clearTimeout(t);
   }, [chatId, messages]);
 
-  const loadMessages = useCallback(async () => {
-    if (!chatId || !isUuid(chatId)) return;
+  const loadMessages = useCallback(
+    async (opts?: { reason?: "initial" | "reconnect" }) => {
+      const fromReconnect = opts?.reason === "reconnect";
+      if (!chatId || !isUuid(chatId)) return;
 
-    setMessagesLoaded(false);
-    setLoadErr(null);
+      if (!fromReconnect) {
+        setMessagesLoaded(false);
+        setLoadErr(null);
+      }
 
-    try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select(CHAT_MESSAGES_SELECT)
-        .eq("chat_id", chatId)
-        .order("created_at", { ascending: false })
-        .limit(MESSAGE_LIST_MAX);
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .select(CHAT_MESSAGES_SELECT)
+          .eq("chat_id", chatId)
+          .order("created_at", { ascending: false })
+          .limit(MESSAGE_LIST_MAX);
 
-      if (error) {
-        console.error("chat room load messages", error);
-        setLoadErr(FETCH_ERROR_MESSAGE);
-        setMessages([]);
+        if (error) {
+          console.error("chat room load messages", error);
+          if (!fromReconnect) {
+            setLoadErr(FETCH_ERROR_MESSAGE);
+            setMessages([]);
+            realtimeInsertIdsRef.current.clear();
+          }
+          setMessagesLoaded(true);
+          return;
+        }
+
+        const rowsRaw = Array.isArray(data)
+          ? ([...data] as Record<string, unknown>[]).reverse()
+          : [];
+
+        const safe = rowsRaw.map((row) => normalizeMessage(row));
+
+        if (!mountedRef.current) return;
+
+        setMessages(sortMessages(safe));
         setMessagesLoaded(true);
         realtimeInsertIdsRef.current.clear();
-        return;
+        for (const row of safe) {
+          if (isUuid(row.id)) realtimeInsertIdsRef.current.set(row.id, Date.now());
+        }
+        lastLoadedMessageIdRef.current =
+          safe.length > 0 ? safe[safe.length - 1].id : null;
+        void markIncomingDeliveredBatch();
+      } catch (error) {
+        console.error("chat room load unexpected", error);
+        if (!mountedRef.current) return;
+        if (!fromReconnect) {
+          setLoadErr(FETCH_ERROR_MESSAGE);
+          setMessages([]);
+          realtimeInsertIdsRef.current.clear();
+        }
+        setMessagesLoaded(true);
       }
-
-      const rowsRaw = Array.isArray(data)
-        ? ([...data] as Record<string, unknown>[]).reverse()
-        : [];
-
-      const safe = rowsRaw.map((row) => normalizeMessage(row));
-
-      if (!mountedRef.current) return;
-
-      setMessages(sortMessages(safe));
-      setMessagesLoaded(true);
-      realtimeInsertIdsRef.current.clear();
-      for (const row of safe) {
-        if (isUuid(row.id)) realtimeInsertIdsRef.current.set(row.id, Date.now());
-      }
-      lastLoadedMessageIdRef.current =
-        safe.length > 0 ? safe[safe.length - 1].id : null;
-      void markIncomingDeliveredBatch();
-    } catch (error) {
-      console.error("chat room load unexpected", error);
-      if (!mountedRef.current) return;
-      setLoadErr(FETCH_ERROR_MESSAGE);
-      setMessages([]);
-      setMessagesLoaded(true);
-      realtimeInsertIdsRef.current.clear();
-    }
-  }, [chatId, markIncomingDeliveredBatch]);
+    },
+    [chatId, markIncomingDeliveredBatch],
+  );
 
   useEffect(() => {
     setMessages((prev) =>
@@ -1352,9 +1364,24 @@ export default function ChatRoomPage() {
     [chatId, isChatForeground, markChatRead, me],
   );
 
-  const backfillAfterReconnect = useCallback(async () => {
-    await loadMessages();
-    await refreshChats({ silent: true });
+  const backfillAfterReconnect = useCallback(() => {
+    const run = () => {
+      void (async () => {
+        await loadMessages({ reason: "reconnect" });
+        await refreshChats({ silent: true });
+      })();
+    };
+    if (typeof window === "undefined") {
+      run();
+      return;
+    }
+    if (reconnectBackfillTimerRef.current != null) {
+      window.clearTimeout(reconnectBackfillTimerRef.current);
+    }
+    reconnectBackfillTimerRef.current = window.setTimeout(() => {
+      reconnectBackfillTimerRef.current = null;
+      run();
+    }, 450);
   }, [loadMessages, refreshChats]);
 
   useEffect(() => {
@@ -1680,6 +1707,10 @@ export default function ChatRoomPage() {
       cancelled = true;
       clearReconnect();
       if (typeof window !== "undefined") {
+        if (reconnectBackfillTimerRef.current != null) {
+          window.clearTimeout(reconnectBackfillTimerRef.current);
+          reconnectBackfillTimerRef.current = null;
+        }
         if (peerOfflineTimerRef.current) {
           window.clearTimeout(peerOfflineTimerRef.current);
           peerOfflineTimerRef.current = null;

@@ -36,18 +36,23 @@ export function GuestPersistenceBootstrap() {
         // ignore
       }
       if (!flags.guest_presence_enabled) return;
-      await (supabase.rpc as unknown as (
-        fn: string,
-        args?: Record<string, unknown>,
-      ) => Promise<{ error: { message?: string } | null }>)(
-        "register_guest_presence",
-        {
-          p_guest_uuid: identity.guest_uuid,
-          p_fingerprint: identity.fingerprint,
-        },
-      ).catch(() => {
-        // rpc may be unavailable before migration rollout
-      });
+      // supabase.rpc() returns a PostgrestBuilder (thenable), not a Promise — нельзя .catch().
+      try {
+        const { error } = await supabase.rpc(
+          // генотип Database.Functions ещё не содержит guest RPC после миграций
+          "register_guest_presence" as never,
+          {
+            p_guest_uuid: identity.guest_uuid,
+            p_fingerprint: identity.fingerprint,
+          },
+        );
+        if (error && process.env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
+          console.warn("register_guest_presence", error.message);
+        }
+      } catch {
+        // RPC недоступен или сеть
+      }
     })();
   }, []);
 

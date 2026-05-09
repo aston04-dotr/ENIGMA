@@ -2,16 +2,20 @@ import type { NextConfig } from "next";
 import path from "path";
 
 /**
- * TEMP (mobile PWA / chat wake): на Vercel Production по умолчанию `1`.
- * Выключить без правки кода: `NEXT_PUBLIC_ENIGMA_DIAG=0` в env хостинга + redeploy.
+ * Версия для клиента (/api/app-version, PWA). Задаётся при сборке: NEXT_PUBLIC_APP_VERSION
+ * или любой из стандартных SHA CI (GIT_COMMIT_SHA, CI_COMMIT_SHA, GITHUB_SHA).
+ * Диагностика клиента — только если в env сборки: NEXT_PUBLIC_ENIGMA_DIAG=1 (ничего не инжектим здесь).
  */
-function resolveNextPublicEnigmaDiag(): string {
-  const raw = process.env.NEXT_PUBLIC_ENIGMA_DIAG?.trim();
-  if (raw === "0" || raw === "false") return "0";
-  if (raw === "1" || raw === "true") return "1";
-  if (process.env.VERCEL_ENV === "production") return "1";
-  // Не-Vercel production: выставите NEXT_PUBLIC_ENIGMA_DIAG=1 в env сборки при необходимости.
-  return raw ?? "";
+function resolvePublicAppVersion(): string {
+  const explicit = process.env.NEXT_PUBLIC_APP_VERSION?.trim();
+  if (explicit) return explicit;
+  const sha =
+    process.env.GIT_COMMIT_SHA?.trim() ||
+    process.env.CI_COMMIT_SHA?.trim() ||
+    process.env.GITHUB_SHA?.trim() ||
+    "";
+  if (sha) return sha;
+  return process.env.NODE_ENV === "production" ? "production" : "dev";
 }
 
 const nextConfig: NextConfig = {
@@ -20,12 +24,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["sharp"],
   /** Для сравнения с /api/app-version (авто-обновление после деплоя). */
   env: {
-    NEXT_PUBLIC_APP_VERSION:
-      process.env.VERCEL_GIT_COMMIT_SHA ||
-      process.env.VERCEL_DEPLOYMENT_ID ||
-      process.env.NEXT_PUBLIC_APP_VERSION ||
-      "dev",
-    NEXT_PUBLIC_ENIGMA_DIAG: resolveNextPublicEnigmaDiag(),
+    NEXT_PUBLIC_APP_VERSION: resolvePublicAppVersion(),
   },
   /** Dev double-invokes subtrees/effects — watch `[STRICT_MODE_DUPLICATE_EFFECT]` in ChatUnread realtime setup. */
   reactStrictMode: true,

@@ -303,7 +303,7 @@ export async function uploadChatPhotoViaSharpPipeline(
 }
 
 /**
- * Сначала пайплайн Sharp; при ошибке сети/Vercel — локальное JPEG-сжатие + прямой upload.
+ * Сначала пайплайн Sharp; при ошибке сети или недоступности API-сжатия — локальное JPEG-сжатие + прямой upload.
  */
 export async function uploadChatImagePublicUrlPreferPipeline(
   file: File,

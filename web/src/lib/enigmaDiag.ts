@@ -2,8 +2,7 @@ import { bumpEnigmaCounter, type EnigmaDebugCounters } from "@/lib/enigmaDebugCo
 
 export function enigmaDiagEnabled(): boolean {
   if (typeof process === "undefined") return false;
-  if (process.env.NEXT_PUBLIC_ENIGMA_DIAG === "1") return true;
-  return process.env.NODE_ENV === "development";
+  return process.env.NEXT_PUBLIC_ENIGMA_DIAG === "1";
 }
 
 /** Теги: AUTH_FLOW | REALTIME_RECONNECT | CHAT_RENDER | SESSION_REFRESH | PROFILE_REFRESH | AUTO_SCROLL */

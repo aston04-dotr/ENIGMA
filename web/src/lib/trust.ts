@@ -68,12 +68,13 @@ export async function reportListingTrustPenalty(
     }
     return { error: "Нет сессии" };
   }
-  const { error } = await (supabase.rpc as unknown as (
-    fn: string,
-    args?: Record<string, unknown>
-  ) => Promise<{ error: { message?: string } | null }>)("report_listing_trust_penalty", {
-    p_listing: listingId,
-    p_reason: reason,
-  });
+  const { error } = await supabase.rpc(
+    // не во всех снапшотах supabase.types
+    "report_listing_trust_penalty" as never,
+    {
+      p_listing: listingId,
+      p_reason: reason,
+    },
+  );
   return { error: error?.message ?? null };
 }

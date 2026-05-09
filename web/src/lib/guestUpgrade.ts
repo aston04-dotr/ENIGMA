@@ -21,21 +21,17 @@ export async function mergeGuestStateAfterSignIn(userId: string): Promise<void> 
   if (!flags.guest_merge_enabled) {
     return;
   }
-  const invokeRpc = (name: string) =>
-    (supabase.rpc as unknown as (
-      fn: string,
-      args?: Record<string, unknown>,
-    ) => Promise<{ error: { message?: string; code?: string } | null }>)(
-      name,
-      {
-        p_guest_uuid: identity.guest_uuid,
-        p_guest_fingerprint: identity.fingerprint,
-      },
-    );
+  const mergeArgs = {
+    p_guest_uuid: identity.guest_uuid,
+    p_guest_fingerprint: identity.fingerprint,
+  };
 
   let merged = false;
   try {
-    const res = await invokeRpc("merge_guest_state_controlled");
+    const res = await supabase.rpc(
+      "merge_guest_state_controlled" as never,
+      mergeArgs as never,
+    );
     merged = !res.error;
   } catch {
     merged = false;
@@ -43,7 +39,10 @@ export async function mergeGuestStateAfterSignIn(userId: string): Promise<void> 
 
   if (!merged) {
     try {
-      const fallback = await invokeRpc("merge_guest_state");
+      const fallback = await supabase.rpc(
+        "merge_guest_state" as never,
+        mergeArgs as never,
+      );
       merged = !fallback.error;
     } catch {
       merged = false;
