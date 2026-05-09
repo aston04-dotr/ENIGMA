@@ -7,6 +7,7 @@ import {
   registerActiveUsageTick,
   registerVisitForSaveFlow,
   rememberSaveEnigmaContinuationRoute,
+  clearSaveEnigmaContinuationRoute,
   shouldShowSaveEnigmaPrompt,
 } from "@/lib/saveEnigmaFlow";
 import { usePathname, useRouter } from "next/navigation";
@@ -61,32 +62,46 @@ export function SaveEnigmaPrompt() {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[calc(72px+env(safe-area-inset-bottom))] z-[70] px-4">
       <div className="pointer-events-auto mx-auto max-w-md rounded-2xl border border-line bg-elevated/95 p-4 shadow-soft backdrop-blur-md">
-        <p className="text-sm font-semibold text-fg">Сохранить мой Enigma</p>
+        <p className="text-sm font-semibold text-fg">Вернуться в аккаунт</p>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Закрепите ваши чаты, непрочитанные, избранное и активность, чтобы всё осталось с вами.
+          Чаты, непрочитанные и избранное — после подтверждения почты в аккаунте.
         </p>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                dismissSaveEnigmaPrompt();
+                setVisible(false);
+              }}
+              className="pressable min-h-[42px] flex-1 rounded-xl border border-line bg-elev-2 px-3 text-sm font-medium text-fg"
+            >
+              Позже
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                rememberSaveEnigmaContinuationRoute();
+                dismissSaveEnigmaPrompt(12 * 60 * 60 * 1000);
+                setVisible(false);
+                router.push("/login?reason=save_enigma&source=delayed_prompt");
+              }}
+              className="pressable min-h-[42px] flex-[1.2] rounded-xl bg-accent px-3 text-sm font-semibold text-white"
+            >
+              Вернуться в аккаунт
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => {
-              dismissSaveEnigmaPrompt();
-              setVisible(false);
-            }}
-            className="pressable min-h-[42px] flex-1 rounded-xl border border-line bg-elev-2 px-3 text-sm font-medium text-fg"
-          >
-            Позже
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              rememberSaveEnigmaContinuationRoute();
+              clearSaveEnigmaContinuationRoute();
               dismissSaveEnigmaPrompt(12 * 60 * 60 * 1000);
               setVisible(false);
-              router.push("/login?reason=save_enigma&source=delayed_prompt");
+              router.push("/login");
             }}
-            className="pressable min-h-[42px] flex-1 rounded-xl bg-accent px-3 text-sm font-semibold text-white"
+            className="pressable min-h-[42px] w-full rounded-xl border border-line bg-transparent px-3 text-sm font-medium text-accent"
           >
-            Сохранить мой Enigma
+            Войти в другой аккаунт
           </button>
         </div>
       </div>

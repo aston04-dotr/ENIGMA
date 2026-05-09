@@ -8,7 +8,10 @@ import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { getOrCreateChat } from "@/lib/chats";
 import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity";
-import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import {
+  rememberSaveEnigmaContinuationRoute,
+  clearSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { chatPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
 import { supabase } from "@/lib/supabase";
@@ -2489,24 +2492,36 @@ export default function ChatRoomPage() {
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5">
         <div className="w-full max-w-sm rounded-card border border-line bg-elevated p-4">
           <p className="text-sm text-muted">
-            Сохраните мой Enigma, чтобы открыть личные сообщения.
+            Здесь личные сообщения — откройте после возврата в аккаунт по почте.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof window !== "undefined") {
-                rememberSaveEnigmaContinuationRoute(
-                  `${window.location.pathname}${window.location.search}`,
-                );
-              } else {
-                rememberSaveEnigmaContinuationRoute(chatPath(chatId));
-              }
-              router.push("/login?reason=save_enigma&source=chat_room");
-            }}
-            className="pressable mt-3 min-h-[44px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
-          >
-            Сохранить мой Enigma
-          </button>
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  rememberSaveEnigmaContinuationRoute(
+                    `${window.location.pathname}${window.location.search}`,
+                  );
+                } else {
+                  rememberSaveEnigmaContinuationRoute(chatPath(chatId));
+                }
+                router.push("/login?reason=save_enigma&source=chat_room");
+              }}
+              className="pressable min-h-[48px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
+            >
+              Вернуться в аккаунт
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearSaveEnigmaContinuationRoute();
+                router.push("/login");
+              }}
+              className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-4 py-2 text-sm font-medium text-fg"
+            >
+              Войти в другой аккаунт
+            </button>
+          </div>
         </div>
       </main>
     );

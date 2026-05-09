@@ -8,7 +8,7 @@ export async function ownerArchiveListing(
   if (!id) return { ok: false, error: "Некорректное объявление" };
   const { data } = await supabase.auth.getUser();
   const uid = data.user?.id;
-  if (!uid) return { ok: false, error: "Войдите в аккаунт" };
+  if (!uid) return { ok: false, error: "Вернитесь в аккаунт" };
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("listings")
@@ -26,7 +26,7 @@ export async function ownerDeleteListing(
   if (!id) return { ok: false, error: "Некорректное объявление" };
   const { data } = await supabase.auth.getUser();
   const uid = data.user?.id;
-  if (!uid) return { ok: false, error: "Войдите в аккаунт" };
+  if (!uid) return { ok: false, error: "Вернитесь в аккаунт" };
 
   const { data: listingImages, error: listingImagesError } = await supabase
     .from("images")

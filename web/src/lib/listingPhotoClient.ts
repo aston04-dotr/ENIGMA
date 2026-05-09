@@ -94,7 +94,7 @@ export function mapListingPhotoUploadUiError(raw: unknown): string {
   const t = s.toLowerCase();
   if (t.includes("file_too_large")) return "Файл слишком большой (лимит 15 МБ)";
   if (t.includes("svg_rejected")) return "Формат SVG не поддерживается";
-  if (t.includes("unauthorized")) return "Сессия истекла — войдите снова";
+  if (t.includes("unauthorized")) return "Сессия истекла — вернитесь в аккаунт";
   if (t.includes("network") || t.includes("failed to fetch")) return "Нет сети. Проверьте соединение и попробуйте снова";
   if (t.includes("storage_upload_failed")) return "Хранилище недоступно, попробуйте позже";
   if (t.includes("pipeline_failed") || t.includes("decode") || t.includes("422")) {

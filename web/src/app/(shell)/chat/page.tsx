@@ -6,7 +6,7 @@ import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { chatPath } from "@/lib/mobileRuntime";
 import { normalizeChatParticipantName } from "@/lib/guestIdentity";
-import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import { rememberSaveEnigmaContinuationRoute, clearSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -178,18 +178,30 @@ export default function ChatsPage() {
         <h1 className="text-[26px] font-bold tracking-tight text-fg">Чаты</h1>
         <div className="mt-5 rounded-card border border-line bg-elevated p-4">
           <p className="text-sm text-muted">
-            Сохраните мой Enigma, чтобы писать продавцам и видеть личные сообщения.
+            Чаты и переписка с продавцами — после возврата в аккаунт по почте.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              rememberSaveEnigmaContinuationRoute("/chat");
-              router.push("/login?reason=save_enigma&source=chat_page");
-            }}
-            className="pressable mt-3 min-h-[44px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
-          >
-            Сохранить мой Enigma
-          </button>
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                rememberSaveEnigmaContinuationRoute("/chat");
+                router.push("/login?reason=save_enigma&source=chat_page");
+              }}
+              className="pressable min-h-[48px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
+            >
+              Вернуться в аккаунт
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearSaveEnigmaContinuationRoute();
+                router.push("/login");
+              }}
+              className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-4 py-2 text-sm font-medium text-fg"
+            >
+              Войти в другой аккаунт
+            </button>
+          </div>
         </div>
       </main>
     );

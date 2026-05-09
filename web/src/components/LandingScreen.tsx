@@ -18,7 +18,7 @@ export function LandingScreen({ minimal = false }: { minimal?: boolean }) {
               prefetch
               className="landing-button pressable mt-10 inline-flex min-h-[56px] min-w-[220px] items-center justify-center rounded-[18px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] px-8 text-base font-extrabold text-white shadow-[0_14px_40px_rgba(139,92,246,0.42)] transition-transform duration-200 hover:scale-[1.04] active:scale-[0.98]"
             >
-              Сохранить мой Enigma
+              Вернуться в аккаунт
             </Link>
           </>
         )}

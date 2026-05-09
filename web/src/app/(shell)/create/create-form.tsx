@@ -44,6 +44,10 @@ import {
   LAND_PURPOSE_OPTIONS,
 } from "@/lib/realestateConstants";
 import Link from "next/link";
+import {
+  clearSaveEnigmaContinuationRoute,
+  rememberSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
@@ -1431,14 +1435,29 @@ export function CreateListingForm() {
     return (
       <main className="safe-pt px-5 pb-8 pt-10">
         <p className="text-sm text-muted">
-          Сохрани Enigma, чтобы публиковать объявления и не терять черновики.
+          Публикация и черновики — в вашем аккаунте после возврата по почте.
         </p>
-        <Link
-          href="/login?reason=save_enigma&source=create_listing"
-          className="mt-6 inline-block min-h-[48px] rounded-card bg-accent px-6 py-3 text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
-        >
-          Сохранить мой Enigma
-        </Link>
+        <div className="mt-6 flex flex-col gap-2">
+          <Link
+            href="/login?reason=save_enigma&source=create_listing"
+            onClick={() => {
+              rememberSaveEnigmaContinuationRoute();
+            }}
+            className="pressable inline-flex min-h-[48px] items-center justify-center rounded-card bg-accent px-6 py-3 text-center text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
+          >
+            Вернуться в аккаунт
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              clearSaveEnigmaContinuationRoute();
+              router.push("/login");
+            }}
+            className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-6 py-2.5 text-sm font-medium text-fg"
+          >
+            Войти в другой аккаунт
+          </button>
+        </div>
       </main>
     );
   }

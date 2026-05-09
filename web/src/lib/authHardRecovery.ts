@@ -14,6 +14,7 @@ import {
   peekAuthApiErrorParts,
 } from "@/lib/authRefreshErrors";
 import { purgeSupabaseAuthBrowserStorage } from "@/lib/purgeSupabaseBrowserAuth";
+import { windowAppearsStandalonePwa } from "@/lib/pwaStandalone";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
@@ -30,9 +31,7 @@ export function preferMobileSoftAuthPath(): boolean {
   try {
     if (window.matchMedia("(pointer: coarse)").matches) return true;
     if (window.matchMedia("(hover: none)").matches) return true;
-    if (window.matchMedia("(display-mode: standalone)").matches) return true;
-    const nav = navigator as Navigator & { standalone?: boolean };
-    if (nav.standalone === true) return true;
+    if (windowAppearsStandalonePwa()) return true;
   } catch {
     /* ignore */
   }

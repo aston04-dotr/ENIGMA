@@ -339,7 +339,7 @@ export default function ProfilePage() {
       return "Этот номер уже привязан к другому аккаунту.";
     }
     if (m.includes("row-level security") || err.code === "42501") {
-      return "Нет прав на сохранение. Выйдите и войдите снова.";
+      return "Нет прав на сохранение. Выйдите и вернитесь в аккаунт.";
     }
     return raw || "Не удалось сохранить телефон";
   }
@@ -404,7 +404,7 @@ export default function ProfilePage() {
       const authUser = authData.user;
       if (!authUser) {
         setPhoneSaving(false);
-        setPhoneMessage("Сессия истекла. Войдите снова");
+        setPhoneMessage("Сессия истекла — вернитесь в аккаунт");
         return;
       }
       console.log("UPSERT USER ID:", authUser.id);

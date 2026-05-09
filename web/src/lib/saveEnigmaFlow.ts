@@ -139,6 +139,16 @@ export function rememberSaveEnigmaContinuationRoute(path?: string): void {
   }
 }
 
+/** Сброс маршрута возврата после логина (вход в другой аккаунт). */
+export function clearSaveEnigmaContinuationRoute(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(CONTINUATION_ROUTE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function consumeSaveEnigmaContinuationRoute(): string | null {
   if (typeof window === "undefined") return null;
   try {

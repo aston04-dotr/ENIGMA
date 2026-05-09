@@ -6,6 +6,7 @@ import { isOptionalEmailValid } from "@/lib/validate";
 import { useAuth } from "@/context/auth-context";
 import { consumeAccessDeniedMessage } from "@/lib/deleteAccount";
 import {
+  clearSaveEnigmaContinuationRoute,
   consumePendingChatIntent,
   consumeSaveEnigmaContinuationRoute,
 } from "@/lib/saveEnigmaFlow";
@@ -64,12 +65,14 @@ export default function LoginPage() {
       return;
     }
     if (search.get("reason") === "stale_refresh_token") {
-      setBanner("Сессия устарела. Войдите снова.");
+      setBanner("Сессия устарела — вернитесь в аккаунт по почте.");
       return;
     }
     if (search.get("reason") === "save_enigma") {
       setSaveMode(true);
-      setBanner("Сохрани Enigma, чтобы чаты, избранное и активность остались с тобой.");
+      setBanner(
+        "Подтвердите почту в аккаунте — чаты, избранное и активность останутся с вами.",
+      );
     }
   }, []);
 
@@ -150,11 +153,11 @@ export default function LoginPage() {
         <p className="mb-6 rounded-card border border-line bg-elevated px-4 py-3 text-sm text-fg">{banner}</p>
       ) : null}
       <h1 className="text-[28px] font-bold tracking-tight text-fg">
-        {saveMode ? "Сохранить мой Enigma" : "Вход"}
+        {saveMode ? "Вернуться в аккаунт" : "Вход"}
       </h1>
       <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
         {saveMode
-          ? "Подтверди почту, и мы закрепим твои диалоги, избранное и черновики за аккаунтом."
+          ? "Код с почты вернёт вас в аккаунт — с чатами и избранным."
           : "Отправим 8-значный код на почту. Введите его на следующем шаге."}
       </p>
       <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
@@ -209,8 +212,22 @@ export default function LoginPage() {
         disabled={loading || !acceptedTerms}
         className="pressable mt-8 min-h-[52px] w-full rounded-card bg-accent py-3.5 text-base font-semibold text-white transition-colors duration-ui hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? "Отправка…" : saveMode ? "Сохранить и получить код" : "Получить код"}
+        {loading ? "Отправка…" : "Получить код"}
       </button>
+      {saveMode ? (
+        <button
+          type="button"
+          onClick={() => {
+            clearSaveEnigmaContinuationRoute();
+            setSaveMode(false);
+            setBanner(null);
+            router.replace("/login");
+          }}
+          className="mt-4 w-full py-2 text-center text-[15px] font-medium text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
+        >
+          Войти в другой аккаунт
+        </button>
+      ) : null}
       {(sent || err) && !loading ? (
         <p className="mt-3 text-center text-xs text-muted">Можно запросить код ещё раз.</p>
       ) : null}
