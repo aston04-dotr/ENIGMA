@@ -32,12 +32,6 @@ function formatPrice(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
 
-const SLOT_PACK_TAGLINE: Record<number, string> = {
-  25: "Для активных продавцов",
-  50: "Для расширенного каталога",
-  100: "Для команд и витрины",
-};
-
 export default function ProfilePage() {
   const { session, profile, signOut, authResolved, loading, refreshProfile } = useAuth();
   const { theme, mounted } = useTheme();
@@ -501,7 +495,7 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void saveName()}
           disabled={nameSaving}
-          className="enigma-profile-btn-submit"
+          className="enigma-premium-save"
         >
           {nameSaving ? "Сохранение…" : "Сохранить"}
         </button>
@@ -532,7 +526,7 @@ export default function ProfilePage() {
           type="button"
           onClick={() => void savePhone()}
           disabled={phoneSaving}
-          className="enigma-profile-btn-submit"
+          className="enigma-premium-save"
         >
           {phoneSaving ? "Сохранение…" : "Сохранить"}
         </button>
@@ -868,7 +862,7 @@ export default function ProfilePage() {
                     key={pack.slots}
                     type="button"
                     onClick={() => setSelectedListingPack(pack)}
-                    className={`flex w-full items-start justify-between gap-4 rounded-[13px] border px-4 py-[15px] text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.995] ${
+                    className={`flex w-full items-center justify-between gap-4 rounded-[13px] border px-4 py-[15px] text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.995] ${
                       selected
                         ? isDark
                           ? "border-amber-200/52 bg-white/[0.095] shadow-[0_14px_36px_rgba(0,0,0,0.42)]"
@@ -882,9 +876,6 @@ export default function ProfilePage() {
                       <span className="text-[19px] font-semibold tracking-tight text-white/[0.97] tabular-nums">
                         +{pack.slots} слотов
                       </span>
-                      <p className={`mt-1 text-[10.5px] tracking-wide ${isDark ? "text-white/[0.36]" : "text-white/[0.44]"}`}>
-                        {SLOT_PACK_TAGLINE[pack.slots] ?? ""}
-                      </p>
                     </div>
                     <span
                       className={`shrink-0 tabular-nums tracking-[-0.025em] ${

@@ -1363,7 +1363,7 @@ export default function EditListingPage() {
           type="button"
           disabled={saving || !hasChanges}
           onClick={() => void save()}
-          className="w-full min-h-[56px] rounded-card bg-accent py-4 text-[17px] font-semibold text-white transition-all duration-200 hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20 mt-4"
+          className="enigma-premium-save enigma-premium-save--extended w-full disabled:cursor-not-allowed"
         >
           {saving ? "Сохранение…" : hasChanges ? "Сохранить изменения" : "Нет изменений"}
         </button>
