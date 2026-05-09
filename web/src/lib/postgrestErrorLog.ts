@@ -42,10 +42,22 @@ export function logPostgrestError(prefix: string, error: unknown, extra?: Record
   });
 }
 
-/** Схема на сервере отстаёт от select (PGRST204 / «column … does not exist»). */
+/** Схема на сервере отстаёт от select (PGRST204 / Postgres 42xxx вроде 42703 undefined_column). */
 export function postgrestIndicatesSchemaColumnMismatch(error: unknown): boolean {
   const s = serializePostgrestError(error);
   if (s.code === "PGRST204") return true;
+  const code = String(s.code ?? "").trim();
+  if (/^42\d{3}$/.test(code)) {
+    const blob = `${s.message} ${s.details} ${s.hint}`.toLowerCase();
+    if (
+      blob.includes("column") ||
+      blob.includes("does not exist") ||
+      blob.includes("не существует") ||
+      code === "42703"
+    ) {
+      return true;
+    }
+  }
   const m = `${s.message} ${s.details}`.toLowerCase();
   return m.includes("column") && (m.includes("not find") || m.includes("does not exist"));
 }

@@ -864,7 +864,6 @@ export function ChatUnreadProvider({
         }
 
         setRows((prev) => mergeServerRowsWithLocal(prev, finalRows));
-        setHydratedState(true);
         chatDebugLog("refreshChats:done", {
           rows: finalRows.length,
           totalUnread: computeTotalUnread(finalRows),
@@ -889,6 +888,7 @@ export function ChatUnreadProvider({
       })();
 
       refreshInFlightRef.current = run.finally(() => {
+        if (userId) setHydratedState(true);
         refreshInFlightRef.current = null;
       });
       return refreshInFlightRef.current;
@@ -1123,6 +1123,7 @@ export function ChatUnreadProvider({
       lastForegroundSilentRefreshAtRef.current = now;
       chatDebugLog("chat:foreground-refresh", { reason, userId: userId ?? null });
       scheduleRefreshRef.current(400, { silent: true });
+      scheduleReconcileRef.current(`foreground:${reason}`, 900);
     },
     [userId],
   );
@@ -2025,12 +2026,11 @@ export function ChatUnreadProvider({
       rows: rows.length,
     });
   }, [rows.length, totalUnread]);
+  /** Список чатов: не блокировать весь UI ожиданием list-realtime SUBSCRIBED — комната и REST работают сами по себе. */
   const readyState = useMemo(() => {
     if (!userId) return true;
-    if (!hydratedState) return false;
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-    return realtimeReadyState;
-  }, [hydratedState, realtimeReadyState, userId]);
+    return hydratedState;
+  }, [hydratedState, userId]);
 
   const value = useMemo<ChatUnreadContextValue>(
     () => ({

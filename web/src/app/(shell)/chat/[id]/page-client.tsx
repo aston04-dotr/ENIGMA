@@ -251,6 +251,8 @@ const CHAT_MESSAGES_SELECT_FALLBACK =
   "id,chat_id,sender_id,text,created_at,type,image_url,voice_url,reply_to,edited_at,deleted,hidden_for_user_ids,status,delivered_at,read_at";
 const CHAT_MESSAGES_SELECT_ULTRA =
   "id,chat_id,sender_id,text,created_at,type,deleted";
+/** Минимум при 42703 даже без `type` / `deleted` (отстающие кастомные схемы). */
+const CHAT_MESSAGES_SELECT_MICRO = "id,chat_id,sender_id,text,created_at";
 const CHAT_DRAFT_PREFIX = "enigma:chat-draft:";
 const REALTIME_EVENT_TTL_MS = 15_000;
 
@@ -606,8 +608,7 @@ export default function ChatRoomPage() {
   const pathname = usePathname();
   const router = useRouter();
   const { session, loading, authResolved } = useAuth();
-  const { markChatRead, setActiveChatId, getChatRow, refreshChats, ready: chatReady } =
-    useChatUnread();
+  const { markChatRead, setActiveChatId, getChatRow, refreshChats } = useChatUnread();
 
   const me = session?.user?.id ?? null;
   const chatId = resolveRuntimeRouteId(routeId, searchParams.get("id"));
@@ -725,6 +726,7 @@ export default function ChatRoomPage() {
   const initialScrollForChatIdRef = useRef<string | null>(null);
   const messageAnimHydratedChatIdRef = useRef<string | null>(null);
   const messageAnimKnownIdsRef = useRef<Set<string>>(new Set());
+  const chatWakeSyncTimerRef = useRef<number | null>(null);
 
   messagesRef.current = messages;
 
@@ -995,12 +997,43 @@ export default function ChatRoomPage() {
 
   /** Подстрока: соединение / last seen (typing показываем в шапке отдельной строкой). */
   const headerSecondaryLine = useMemo(() => {
-    if (roomStatus === "reconnecting")
-      return { kind: "muted" as const, text: "Переподключение…" };
-    if (roomStatus === "connecting")
+    const hasLocalMessages =
+      messagesLoaded && displayMessages.length > 0;
+    if (roomStatus === "reconnecting") {
+      return {
+        kind: "muted" as const,
+        text: "Переподключение к чату…",
+      };
+    }
+    if (
+      roomStatus === "connecting" &&
+      !messagesLoaded &&
+      displayMessages.length === 0
+    ) {
+      return { kind: "muted" as const, text: "Загрузка сообщений…" };
+    }
+    if (roomStatus === "error") {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return {
+          kind: "muted" as const,
+          text: hasLocalMessages
+            ? "Нет сети — показано сохранённое"
+            : "Offline",
+        };
+      }
+      return {
+        kind: "muted" as const,
+        text: hasLocalMessages
+          ? "Канал нестабилен — показаны сохранённые сообщения"
+          : "Не удалось подключиться к чату",
+      };
+    }
+    if (roomStatus === "connecting" && hasLocalMessages) {
+      return { kind: "empty" as const, text: "" };
+    }
+    if (roomStatus === "connecting") {
       return { kind: "muted" as const, text: "Подключение…" };
-    if (roomStatus === "error")
-      return { kind: "muted" as const, text: "Offline" };
+    }
     if (currentChat?.is_group) return { kind: "empty" as const, text: "" };
     const peerId = currentChat?.other_user_id;
     if (peerId && !peerOnline && peerLastSeenAt) {
@@ -1019,6 +1052,8 @@ export default function ChatRoomPage() {
     currentChat?.other_user_id,
     peerOnline,
     peerLastSeenAt,
+    messagesLoaded,
+    displayMessages.length,
   ]);
 
   const showPeerOnlinePill =
@@ -1326,10 +1361,27 @@ export default function ChatRoomPage() {
           error = r3.error;
         }
 
+        if (error && postgrestIndicatesSchemaColumnMismatch(error)) {
+          logPostgrestError(
+            "chat.messages:dropped_to_micro_select",
+            error,
+            { chatId, tier: "micro" },
+          );
+          const r4 = await runSelect(CHAT_MESSAGES_SELECT_MICRO);
+          data = r4.data;
+          error = r4.error;
+        }
+
         if (error) {
           logPostgrestError("chat.messages:final_error", error, {
             chatId,
             reconnect: Boolean(fromReconnect),
+            tiersTried: [
+              "full",
+              "fallback",
+              "ultra",
+              "micro",
+            ],
           });
           if (!fromReconnect) {
             setLoadErr(FETCH_ERROR_MESSAGE);
@@ -1370,6 +1422,10 @@ export default function ChatRoomPage() {
     },
     [chatId, markIncomingDeliveredBatch],
   );
+
+  const loadMessagesRefForHistory = useRef(loadMessages);
+  loadMessagesRefForHistory.current = loadMessages;
+  const historyBootstrapRoomKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMessages((prev) =>
@@ -1822,16 +1878,64 @@ export default function ChatRoomPage() {
       return;
     }
 
-    setRoomStatus("connecting");
-    void loadMessages();
+    const roomKey = `${chatId}:${isGuestRoute ? "g" : "u"}:${session?.user?.id ?? ""}`;
+    const prevKey = historyBootstrapRoomKeyRef.current;
+    const keyChanged = prevKey !== roomKey;
+    historyBootstrapRoomKeyRef.current = roomKey;
+    if (keyChanged) {
+      setRoomStatus("connecting");
+      void loadMessagesRefForHistory.current();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMessages только через ref, чтобы не дергать историю на каждом смещении identity
   }, [
     chatId,
-    loadMessages,
     authResolved,
     loading,
     session?.user?.id,
     isGuestRoute,
     resolvingGuestRoute,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!chatId || !isUuid(chatId)) return;
+    if (!authResolved || loading) return;
+    if (!session?.user?.id && !isGuestRoute) return;
+    if (isGuestRoute && resolvingGuestRoute) return;
+
+    const poke = () => {
+      if (document.visibilityState !== "visible") return;
+      if (chatWakeSyncTimerRef.current != null) {
+        window.clearTimeout(chatWakeSyncTimerRef.current);
+      }
+      chatWakeSyncTimerRef.current = window.setTimeout(() => {
+        chatWakeSyncTimerRef.current = null;
+        void refreshChats({ silent: true });
+        void loadMessages({ reason: "reconnect" });
+      }, 500);
+    };
+
+    window.addEventListener("pageshow", poke);
+    document.addEventListener("visibilitychange", poke);
+    window.addEventListener("online", poke);
+    return () => {
+      window.removeEventListener("pageshow", poke);
+      document.removeEventListener("visibilitychange", poke);
+      window.removeEventListener("online", poke);
+      if (chatWakeSyncTimerRef.current != null) {
+        window.clearTimeout(chatWakeSyncTimerRef.current);
+        chatWakeSyncTimerRef.current = null;
+      }
+    };
+  }, [
+    authResolved,
+    chatId,
+    isGuestRoute,
+    loading,
+    loadMessages,
+    refreshChats,
+    resolvingGuestRoute,
+    session?.user?.id,
   ]);
 
   useEffect(() => {
@@ -2372,7 +2476,7 @@ export default function ChatRoomPage() {
     }
   }
 
-  if (loading || !authResolved || !chatReady || resolvingGuestRoute) {
+  if (loading || !authResolved || resolvingGuestRoute) {
     return (
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5 text-sm text-muted">
         Подключение...
