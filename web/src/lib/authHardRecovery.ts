@@ -39,11 +39,26 @@ export function preferMobileSoftAuthPath(): boolean {
   return false;
 }
 
+/** Вложенные recoverSessionAfterTransientFault / будущие pipeline — глубина > 0 блокирует deploy reload. */
+let authRecoveryDepth = 0;
+
+export function isAuthRecoveryActive(): boolean {
+  return authRecoveryDepth > 0;
+}
+
 export function dispatchAuthSessionRecoveryActive(active: boolean): void {
   if (typeof window === "undefined") return;
+  if (active) {
+    authRecoveryDepth += 1;
+  } else {
+    authRecoveryDepth = Math.max(0, authRecoveryDepth - 1);
+  }
+  const effective = authRecoveryDepth > 0;
   try {
     window.dispatchEvent(
-      new CustomEvent("enigma-auth-session-recovery", { detail: { active } }),
+      new CustomEvent("enigma-auth-session-recovery", {
+        detail: { active: effective },
+      }),
     );
   } catch {
     /* ignore */

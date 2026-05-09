@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabaseServer";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
+import { resolveRouteHandlerSupabaseUser } from "@/lib/serverSupabaseAuth";
 import {
   pipelineChatPhoto,
   sniffIsSvgMagic,
@@ -23,13 +23,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "supabase_unconfigured" }, { status: 503 });
   }
 
-  const supabase = await createServerSupabase();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
+  const { supabase, user, fatalRefreshCleared } = await resolveRouteHandlerSupabaseUser(
+    "api:media:chat-photo",
+  );
 
-  if (authErr || !user?.id) {
+  if (fatalRefreshCleared || !user?.id) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 

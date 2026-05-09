@@ -23,7 +23,7 @@ function normalizeServerCookieOptions(
   };
 }
 
-/** Создаёт SSR-клиент. У @supabase/ssr autoRefreshToken: false, но getSession/getUser при просроченном access всё ещё могут вызывать refresh по refresh_token из cookie; при битом refresh см. middleware и authRefreshErrors. */
+/** SSR / Route Handler клиент через `cookies()` (Next.js). Для auth вызывайте {@link hardenedServerGetSession} / {@link hardenedServerGetUser} из `@/lib/serverSupabaseAuth` — там фатальный refresh и signOut local совпадают с middleware. */
 export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   const cookieAdapter = {

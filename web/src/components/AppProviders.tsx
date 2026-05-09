@@ -25,13 +25,6 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const hasMounted = useHasMounted();
 
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      console.log("FORCE SAFE RENDER");
-    }, 2000);
-    return () => window.clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
     if (!hasMounted) return;
     try {
       const needsRecovery =

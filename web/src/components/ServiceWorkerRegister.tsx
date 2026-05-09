@@ -1,5 +1,6 @@
 "use client";
 
+import { scheduleDeployReload } from "@/lib/deployHotReload";
 import { useEffect } from "react";
 
 export function ServiceWorkerRegister() {
@@ -15,13 +16,21 @@ export function ServiceWorkerRegister() {
     const onControllerChange = () => {
       if (hasControllerRefresh) return;
       hasControllerRefresh = true;
-      window.location.reload();
+      scheduleDeployReload("service-worker-controllerchange");
     };
+
+    let controllerListenerAttached = false;
 
     const activateWaitingWorker = (reg: ServiceWorkerRegistration | null) => {
       const waiting = reg?.waiting;
       if (!waiting) return;
-      navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+      if (!controllerListenerAttached) {
+        controllerListenerAttached = true;
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          onControllerChange,
+        );
+      }
       waiting.postMessage({ type: "SKIP_WAITING" });
     };
 
@@ -62,7 +71,13 @@ export function ServiceWorkerRegister() {
       if (updateInterval) {
         window.clearInterval(updateInterval);
       }
-      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      if (controllerListenerAttached) {
+        navigator.serviceWorker.removeEventListener(
+          "controllerchange",
+          onControllerChange,
+        );
+        controllerListenerAttached = false;
+      }
     };
   }, []);
 

@@ -14,6 +14,11 @@ import { chatPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
 import { supabase } from "@/lib/supabase";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
+import {
+  logPostgrestError,
+  postgrestIndicatesSchemaColumnMismatch,
+} from "@/lib/postgrestErrorLog";
+import { preferMobileSoftAuthPath } from "@/lib/authHardRecovery";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
@@ -242,6 +247,10 @@ const MESSAGE_LIST_KEEP = 150;
 /** SELECT без * — меньше egress; поля совпадают с {@link normalizeMessage}. */
 const CHAT_MESSAGES_SELECT =
   "id,chat_id,sender_id,text,created_at,type,image_url,voice_url,reply_to,edited_at,deleted,deleted_at,hidden_for_user_ids,status,delivered_at,read_at";
+const CHAT_MESSAGES_SELECT_FALLBACK =
+  "id,chat_id,sender_id,text,created_at,type,image_url,voice_url,reply_to,edited_at,deleted,hidden_for_user_ids,status,delivered_at,read_at";
+const CHAT_MESSAGES_SELECT_ULTRA =
+  "id,chat_id,sender_id,text,created_at,type,deleted";
 const CHAT_DRAFT_PREFIX = "enigma:chat-draft:";
 const REALTIME_EVENT_TTL_MS = 15_000;
 
@@ -1141,8 +1150,12 @@ export default function ChatRoomPage() {
     }
     if (document.visibilityState !== "visible") return false;
     if (document.hidden) return false;
-    if (!document.hasFocus()) return false;
-    if (!windowFocusedRef.current) return false;
+    /** iOS Safari / PWA: `document.hasFocus()` часто false при активном экране после resume. */
+    const relaxedFocus = preferMobileSoftAuthPath();
+    if (!relaxedFocus) {
+      if (!document.hasFocus()) return false;
+      if (!windowFocusedRef.current) return false;
+    }
     if (!pageVisibleRef.current) return false;
     if (!chatId || !isUuid(chatId)) return false;
     const routeMatch = String(pathname ?? "").match(/^\/chat\/([0-9a-f-]{36})$/i)?.[1] ?? null;
@@ -1281,15 +1294,43 @@ export default function ChatRoomPage() {
       }
 
       try {
-        const { data, error } = await supabase
-          .from("messages")
-          .select(CHAT_MESSAGES_SELECT)
-          .eq("chat_id", chatId)
-          .order("created_at", { ascending: false })
-          .limit(MESSAGE_LIST_MAX);
+        const runSelect = (selectList: string) =>
+          supabase
+            .from("messages")
+            .select(selectList)
+            .eq("chat_id", chatId)
+            .order("created_at", { ascending: false })
+            .limit(MESSAGE_LIST_MAX);
+
+        let { data, error } = await runSelect(CHAT_MESSAGES_SELECT);
+
+        if (error && postgrestIndicatesSchemaColumnMismatch(error)) {
+          logPostgrestError(
+            "chat.messages:dropped_to_fallback_select",
+            error,
+            { chatId, tier: "fallback" },
+          );
+          const r2 = await runSelect(CHAT_MESSAGES_SELECT_FALLBACK);
+          data = r2.data;
+          error = r2.error;
+        }
+
+        if (error && postgrestIndicatesSchemaColumnMismatch(error)) {
+          logPostgrestError(
+            "chat.messages:dropped_to_ultra_select",
+            error,
+            { chatId, tier: "ultra" },
+          );
+          const r3 = await runSelect(CHAT_MESSAGES_SELECT_ULTRA);
+          data = r3.data;
+          error = r3.error;
+        }
 
         if (error) {
-          console.error("chat room load messages", error);
+          logPostgrestError("chat.messages:final_error", error, {
+            chatId,
+            reconnect: Boolean(fromReconnect),
+          });
           if (!fromReconnect) {
             setLoadErr(FETCH_ERROR_MESSAGE);
             setMessages([]);
@@ -1446,6 +1487,9 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!chatId) return;
     if (!isUuid(chatId)) return;
+    if (!authResolved || loading) return;
+    if (!session?.user?.id && !isGuestRoute) return;
+    if (isGuestRoute && resolvingGuestRoute) return;
 
     let cancelled = false;
 
@@ -1525,7 +1569,17 @@ export default function ChatRoomPage() {
           },
         })
         .on("system" as any, { event: "error" } as any, (payload: unknown) => {
-          console.error("chat realtime system error", payload);
+          let raw = "";
+          try {
+            raw = JSON.stringify(payload);
+          } catch {
+            raw = String(payload);
+          }
+          console.error("[chat.realtime.system_error]", {
+            chatId,
+            payload,
+            raw,
+          });
         })
         .on("broadcast", { event: "typing" }, (msg) => {
           const payload = msg.payload as {
@@ -1724,6 +1778,11 @@ export default function ChatRoomPage() {
   }, [
     chatId,
     me,
+    authResolved,
+    loading,
+    session?.user?.id,
+    isGuestRoute,
+    resolvingGuestRoute,
     markIncomingDelivered,
     markVisibleRoomRead,
     backfillAfterReconnect,
@@ -1740,8 +1799,8 @@ export default function ChatRoomPage() {
   }, [chatId, roomStatus]);
 
   /**
-   * История: после валидного chatId. Realtime+typing — в эффекте **выше** (подписка
-   * стартует до окончания fetch, чтобы «печатает» и INSERT не замирали в первые секунды).
+   * История сообщений после валидного chatId и **auth hydrate** (`authResolved`, JWT в клиенте).
+   * Realtime-слушатель использует те же ограничения wake/mobile — иначе 400/ошибки join до сессии.
    */
   useEffect(() => {
     if (!chatId || !isUuid(chatId)) {
@@ -1750,9 +1809,30 @@ export default function ChatRoomPage() {
       return;
     }
 
+    if (!authResolved || loading) {
+      setRoomStatus("connecting");
+      return;
+    }
+    if (!session?.user?.id && !isGuestRoute) {
+      setRoomStatus("connecting");
+      return;
+    }
+    if (isGuestRoute && resolvingGuestRoute) {
+      setRoomStatus("connecting");
+      return;
+    }
+
     setRoomStatus("connecting");
     void loadMessages();
-  }, [chatId, loadMessages]);
+  }, [
+    chatId,
+    loadMessages,
+    authResolved,
+    loading,
+    session?.user?.id,
+    isGuestRoute,
+    resolvingGuestRoute,
+  ]);
 
   useEffect(() => {
     if (!messages.length) return;

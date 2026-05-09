@@ -202,28 +202,21 @@ self.addEventListener("fetch", (event) => {
     /\.(js|mjs|css|woff2?|png|jpg|jpeg|gif|webp|svg|ico)$/i.test(pathname);
 
   if (isStaticDest || isStaticPath) {
+    /* Онлайн: network-first, чтобы после деплоя не залипать на старых `/_next/static/*` (stale chunk). */
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-
-        const fetchPromise = fetch(request).then(async (res) => {
+        try {
+          const res = await fetch(request);
           if (res && res.ok) {
             await cache.put(request, res.clone());
             await limitCache(CACHE_NAME);
           }
           return res;
-        });
-
-        if (cached) {
-          event.waitUntil(
-            fetchPromise.catch(() => {
-              /* background refresh noop */
-            }),
-          );
-          return cached;
+        } catch {
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          return fetch(request);
         }
-
-        return fetchPromise;
       }),
     );
     return;

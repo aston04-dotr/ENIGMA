@@ -1,13 +1,28 @@
 "use client";
 
+import { isAuthRecoveryActive } from "@/lib/authHardRecovery";
+import { pokeServiceWorkerUpdate, scheduleDeployReload } from "@/lib/deployHotReload";
 import { useEffect, useRef } from "react";
 
 const STORAGE_KEY = "enigma_app_build_v";
-const CHECK_MS = 120_000;
+
+function isMobileWakeEnvironment(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.matchMedia("(pointer: coarse)").matches) return true;
+    if (window.matchMedia("(hover: none)").matches) return true;
+    if (window.matchMedia("(display-mode: standalone)").matches) return true;
+    const nav = window.navigator as Navigator & { standalone?: boolean };
+    if (nav.standalone === true) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
 
 /**
- * После выката новой версии на сервере — один из открытых табов сделает reload.
- * Сравнение с last из sessionStorage (тот же деплой) или первый пинг — без лишнего F5.
+ * Пуллинг версии деплоя + подталкивание SW (`update`).
+ * При смене `v` из `/api/app-version` — один soft reload в том же табе (сессия из cookies сохранится).
  */
 export function AppVersionCheck() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -17,9 +32,11 @@ export function AppVersionCheck() {
     if (typeof window === "undefined") return;
 
     let cancelled = false;
+    const checkMs = isMobileWakeEnvironment() ? 55_000 : 110_000;
 
     const check = async () => {
       if (cancelled) return;
+      pokeServiceWorkerUpdate();
       try {
         const res = await fetch("/api/app-version", {
           cache: "no-store",
@@ -30,14 +47,17 @@ export function AppVersionCheck() {
         const next = data.v != null ? String(data.v) : "";
         if (!next) return;
 
-        const prev = sessionStorage.getItem(STORAGE_KEY);
+        const prev =
+          typeof window.sessionStorage?.getItem === "function"
+            ? sessionStorage.getItem(STORAGE_KEY)
+            : null;
         if (prev != null && prev !== "" && prev !== next) {
           try {
             sessionStorage.setItem(STORAGE_KEY, next);
           } catch {
             /* quota */
           }
-          window.location.reload();
+          scheduleDeployReload("app-version-mismatch");
           return;
         }
         try {
@@ -50,20 +70,36 @@ export function AppVersionCheck() {
       }
     };
 
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void check();
+    const onFocusOrVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const mobile = isMobileWakeEnvironment();
+      const delayMs = mobile
+        ? isAuthRecoveryActive()
+          ? 2_600
+          : 1_100
+        : isAuthRecoveryActive()
+          ? 800
+          : 0;
+      window.setTimeout(() => {
+        if (document.visibilityState !== "visible") return;
+        void check();
+      }, delayMs);
     };
 
     void check();
-    intervalRef.current = setInterval(() => void check(), CHECK_MS);
-    window.addEventListener("focus", onVisible);
-    document.addEventListener("visibilitychange", onVisible);
+    intervalRef.current = window.setInterval(() => void check(), checkMs);
+    window.addEventListener("pageshow", onFocusOrVisible);
+    window.addEventListener("focus", onFocusOrVisible);
+    window.addEventListener("online", onFocusOrVisible);
+    document.addEventListener("visibilitychange", onFocusOrVisible);
 
     return () => {
       cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
-      window.removeEventListener("focus", onVisible);
-      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onFocusOrVisible);
+      window.removeEventListener("focus", onFocusOrVisible);
+      window.removeEventListener("online", onFocusOrVisible);
+      document.removeEventListener("visibilitychange", onFocusOrVisible);
     };
   }, []);
 

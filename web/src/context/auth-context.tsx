@@ -98,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const lastTokenRefreshDiagAtRef = useRef(0);
   const lastAuthRefreshOkLogRef = useRef(0);
   const lastProfileRefreshDiagAtRef = useRef(0);
+  const lastWakeProfileSyncAtRef = useRef(0);
 
   const assignProfileRow = useCallback((row: UserRow | null) => {
     profileRef.current = row;
@@ -423,31 +424,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined" || !uid) return;
 
     let debounced: number | undefined;
+    const wakeCoalesceMs = preferMobileSoftAuthPath() ? 850 : 450;
+    const wakeProfileMinIntervalMs = preferMobileSoftAuthPath() ? 28_000 : 12_000;
+    let pendingWakeTriggers: string[] = [];
 
     const scheduleSoftRefresh = (trigger: string) => {
+      pendingWakeTriggers.push(trigger);
       if (debounced !== undefined) {
         window.clearTimeout(debounced);
       }
       debounced = window.setTimeout(() => {
+        const triggers = Array.from(new Set(pendingWakeTriggers));
+        pendingWakeTriggers = [];
         void (async () => {
           bumpEnigmaCounter("sessionDiagRefreshAttempts");
+          const wakeId =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID().slice(0, 8)
+              : String(Date.now()).slice(-8);
+          console.warn("[AUTH_MOBILE_WAKE]", {
+            phase: "wake_coalesced",
+            wakeId,
+            triggers,
+            userId: uid,
+          });
           if (enigmaDiagEnabled()) {
-            diagWarn("SESSION_REFRESH", { phase: "wake_getUser", trigger });
-          }
-          const { data, error: guErr } = await supabase.auth.getUser();
-          if (guErr && isInvalidLocalRefreshTokenError(guErr)) {
-            console.warn("[AUTH_REFRESH]", {
-              stage: "wake_getUser_fatal_refresh",
-              trigger,
-              ...peekAuthApiErrorParts(guErr),
+            diagWarn("SESSION_REFRESH", {
+              phase: "wake_getSession",
+              wakeId,
+              triggers,
             });
-            await clearClientAuthAfterInvalidRefresh(`wake:getUser:${trigger}`);
+          }
+          const { data: gs, error: ge } = await supabase.auth.getSession();
+          if (ge && isInvalidLocalRefreshTokenError(ge)) {
+            console.warn("[AUTH_REFRESH]", {
+              stage: "wake_getSession_fatal_refresh",
+              wakeId,
+              triggers,
+              ...peekAuthApiErrorParts(ge),
+            });
+            await clearClientAuthAfterInvalidRefresh(
+              `wake:getSession:${triggers.join(",")}`,
+            );
             return;
           }
-          if (!data.user || data.user.id !== uid) return;
-          await refreshProfile();
+          if (!gs.session?.user || gs.session.user.id !== uid) {
+            console.warn("[AUTH_MOBILE_WAKE]", {
+              phase: "wake_session_mismatch_or_empty",
+              wakeId,
+              triggers,
+              hasSession: Boolean(gs.session?.user?.id),
+            });
+            return;
+          }
+
+          setSession(gs.session);
+          setUser(gs.session.user);
+          setRestAccessToken(gs.session);
+
+          const now = Date.now();
+          if (
+            now - lastWakeProfileSyncAtRef.current >=
+            wakeProfileMinIntervalMs
+          ) {
+            lastWakeProfileSyncAtRef.current = now;
+            void loadProfileForUser(gs.session.user);
+          }
         })();
-      }, 450);
+      }, wakeCoalesceMs);
     };
 
     const onVisibility = () => {
@@ -461,13 +505,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onPageShow = (e: Event) => {
-      if ((e as PageTransitionEvent).persisted) {
+      const pe = e as PageTransitionEvent;
+      if (pe.persisted) {
         console.warn("[AUTH_MOBILE_WAKE]", {
           phase: "pageshow_bfcache",
           userId: uid,
         });
         scheduleSoftRefresh("pageshow_bfcache");
+        return;
       }
+      if (preferMobileSoftAuthPath()) {
+        console.warn("[AUTH_MOBILE_WAKE]", {
+          phase: "pageshow_resume",
+          userId: uid,
+        });
+        scheduleSoftRefresh("pageshow_resume");
+      }
+    };
+
+    const onWindowFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      console.warn("[AUTH_MOBILE_WAKE]", { phase: "window_focus", userId: uid });
+      scheduleSoftRefresh("window_focus");
     };
 
     const onOnline = () => {
@@ -478,14 +537,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
     window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onWindowFocus);
 
     return () => {
       window.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onWindowFocus);
       if (debounced !== undefined) window.clearTimeout(debounced);
     };
-  }, [user?.id, refreshProfile]);
+  }, [user?.id, loadProfileForUser]);
 
   const signOut = useCallback(async () => {
     profileReqSeq.current += 1;
