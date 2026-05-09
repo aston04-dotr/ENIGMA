@@ -232,7 +232,8 @@ export default function EditListingPage() {
   useEffect(() => {
     if (!authResolved || authLoading) return;
     if (!session) {
-      router.replace("/login");
+      console.warn("[AUTH_NULL_SESSION_SOFT]", { route: "listing/edit", phase: "skip_fetch" });
+      setLoading(false);
       return;
     }
     if (!id) return;

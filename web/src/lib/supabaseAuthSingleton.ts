@@ -20,8 +20,9 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { isAuthCircuitOpen } from "@/lib/authCircuitState";
 import {
-  hardSignOutAndRedirectToLogin,
-  isFatalAuthSingletonEvent,
+  isTransientSingletonAuthFault,
+  maybeHardLogoutAfterSoftRecovery,
+  recoverSessionAfterTransientFault,
 } from "@/lib/authHardRecovery";
 import { reportEnigmaIllegalState } from "@/lib/enigmaIllegalState";
 import { supabase } from "@/lib/supabase";
@@ -102,8 +103,18 @@ function ensureGlobalAuthListener() {
   supabase.auth.onAuthStateChange((event, session) => {
     const evStr = String(event);
 
-    if (isFatalAuthSingletonEvent(event, session)) {
-      void hardSignOutAndRedirectToLogin(`fatal-auth-event:${evStr}`);
+    if (isTransientSingletonAuthFault(event, session)) {
+      console.warn("[AUTH_NULL_SESSION_SOFT]", {
+        event: evStr,
+        singleton: true,
+      });
+      void recoverSessionAfterTransientFault(`singleton:${evStr}`).then(async (recovered) => {
+        if (recovered) {
+          emit("TOKEN_REFRESHED", recovered);
+          return;
+        }
+        await maybeHardLogoutAfterSoftRecovery(evStr);
+      });
       return;
     }
 

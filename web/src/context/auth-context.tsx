@@ -16,6 +16,10 @@ import {
   resetAuthFaultWindow,
   setHardAuthResetInFlight,
 } from "@/lib/authCircuitState";
+import {
+  preferMobileSoftAuthPath,
+  recoverSessionAfterTransientFault,
+} from "@/lib/authHardRecovery";
 import { loadProfileSnapshot } from "@/lib/postLoginSync";
 import {
   bootstrapProfileFromCache,
@@ -65,6 +69,8 @@ type AuthCtx = {
   needsName: boolean;
   loading: boolean;
   authResolved: boolean;
+  /** Мягкое восстановление сессии (singleton / wake) — не считать UX «вышел». */
+  authSessionRecovering: boolean;
   profileLoading: boolean;
   onboardingResolved: boolean;
   ready: boolean;
@@ -78,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionRecovering, setSessionRecovering] = useState(false);
   const [profile, setProfileState] = useState<UserRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
@@ -228,19 +235,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id, profile]);
 
   useEffect(() => {
+    const fn = (e: Event) => {
+      try {
+        const active = Boolean((e as CustomEvent<{ active?: boolean }>).detail?.active);
+        setSessionRecovering(active);
+      } catch {
+        setSessionRecovering(false);
+      }
+    };
+    window.addEventListener("enigma-auth-session-recovery", fn as EventListener);
+    return () =>
+      window.removeEventListener(
+        "enigma-auth-session-recovery",
+        fn as EventListener,
+      );
+  }, []);
+
+  useEffect(() => {
     let active = true;
     void (async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const first = await supabase.auth.getSession();
         if (!active || isAuthCircuitOpen()) return;
-        if (error) {
-          console.warn(
-            "[auth-bootstrap] getSession error (ignored for hard reset)",
-            error.message,
-          );
-          return;
+
+        let next: Session | null = null;
+        if (first.error) {
+          console.warn("[AUTH_NULL_SESSION_SOFT]", {
+            phase: "bootstrap_getSession_error",
+            message: first.error.message,
+          });
+          next = await recoverSessionAfterTransientFault("bootstrap:getSession_error");
+          if (!active || isAuthCircuitOpen()) return;
+        } else {
+          next = first.data.session ?? null;
+          if (!next && preferMobileSoftAuthPath()) {
+            console.warn("[AUTH_NULL_SESSION_SOFT]", {
+              phase: "bootstrap_null_session",
+            });
+            next = await recoverSessionAfterTransientFault("bootstrap:null_session_mobile");
+            if (!active || isAuthCircuitOpen()) return;
+          }
         }
-        const next = data.session ?? null;
+
         setSession(next);
         setUser(next?.user ?? null);
         setRestAccessToken(next);
@@ -332,23 +368,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
+        console.warn("[AUTH_MOBILE_WAKE]", {
+          phase: "visibility_visible",
+          userId: uid,
+        });
         scheduleSoftRefresh();
       }
     };
 
     const onPageShow = (e: Event) => {
       if ((e as PageTransitionEvent).persisted) {
+        console.warn("[AUTH_MOBILE_WAKE]", {
+          phase: "pageshow_bfcache",
+          userId: uid,
+        });
         scheduleSoftRefresh();
       }
     };
 
+    const onOnline = () => {
+      console.warn("[AUTH_MOBILE_WAKE]", { phase: "online", userId: uid });
+      scheduleSoftRefresh();
+    };
+
     window.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("online", scheduleSoftRefresh);
+    window.addEventListener("online", onOnline);
     window.addEventListener("pageshow", onPageShow);
 
     return () => {
       window.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("online", scheduleSoftRefresh);
+      window.removeEventListener("online", onOnline);
       window.removeEventListener("pageshow", onPageShow);
       if (debounced !== undefined) window.clearTimeout(debounced);
     };
@@ -356,6 +405,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     profileReqSeq.current += 1;
+    setSessionRecovering(false);
     setSession(null);
     setUser(null);
     assignProfileRow(null);
@@ -380,10 +430,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       needsPhone,
       needsName,
       loading,
-      authResolved: !loading,
+      authResolved: !loading && !sessionRecovering,
+      authSessionRecovering: sessionRecovering,
       profileLoading,
       onboardingResolved,
-      ready: !loading,
+      ready: !loading && !sessionRecovering,
       signOut,
       refreshProfile,
     }),
@@ -395,6 +446,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       needsPhone,
       needsName,
       loading,
+      sessionRecovering,
       profileLoading,
       onboardingResolved,
       signOut,

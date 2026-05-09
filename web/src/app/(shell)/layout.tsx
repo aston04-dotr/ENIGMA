@@ -3,8 +3,8 @@ import { ShellGate } from "@/components/ShellGate";
 import { SiteLegalFooter } from "@/components/SiteLegalFooter";
 
 /**
- * Realtime/chat/presence авторизацию не поднимает здесь: гейты и hard reset → `/login`
- * в AuthProvider (`getSession`/singleton) и в ChatUnreadProvider (`isAuthCircuitOpen`).
+ * Chat/realtime не поднимают сессию: гейт в ShellGate + AuthProvider + мягкое восстановление
+ * после wake (singleton), hard redirect на /login только после подтверждения на desktop.
  */
 
 export default function ShellLayout({
