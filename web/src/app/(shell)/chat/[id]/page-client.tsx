@@ -202,11 +202,6 @@ function formatMessageTime(iso: string): string {
   }
 }
 
-function hasValidTimestamp(value: string | null | undefined): boolean {
-  if (!value) return false;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts);
-}
 
 function extractPresenceLastSeenAt(stateSlice: unknown[] | undefined): string | null {
   if (!Array.isArray(stateSlice) || stateSlice.length === 0) return null;
@@ -357,123 +352,6 @@ function bubbleAnchorForPopover(mine: boolean, rect: DOMRect): { left: number; t
   return { left, top: rect.top };
 }
 
-function SvgDeliveryChecks({
-  variant,
-  className,
-}: {
-  variant: "sending" | "sent" | "delivered";
-  className?: string;
-}) {
-  /** Одна галка — отправлено по серверу; две — доставлено у получателя. Без синего «прочитано». */
-  const stroke =
-    variant === "sending"
-      ? "rgb(255 255 255 / 0.52)"
-      : variant === "delivered"
-        ? "rgb(255 255 255 / 0.68)"
-        : "rgb(255 255 255 / 0.55)";
-  if (variant === "delivered") {
-    return (
-      <span className={`inline-flex items-center ${className ?? ""}`.trim()}>
-        <svg
-          width="14"
-          height="12"
-          viewBox="0 0 16 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden
-        >
-          <path
-            d="M2 7.35L6.3 11.25 13.95 3"
-            stroke={stroke}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <svg
-          className="-ml-[8px]"
-          width="14"
-          height="12"
-          viewBox="0 0 16 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden
-        >
-          <path
-            d="M2 7.35L6.3 11.25 13.95 3"
-            stroke={stroke}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-    );
-  }
-  if (variant === "sending") {
-    return (
-      <svg
-        className={`${className ?? ""} opacity-85 animate-pulse`.trim()}
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden
-      >
-        <circle cx="12" cy="12" r="8" stroke="rgb(255 255 255 / 0.45)" strokeWidth="1.4" strokeDasharray="5 10" />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      className={className}
-      width="16"
-      height="12"
-      viewBox="0 0 16 12"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-    >
-      <path
-        d="M2 7.35L6.3 11.25 13.95 3"
-        stroke={stroke}
-        strokeWidth="1.55"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Только свои сообщения: отправка / отправлено / доставлено (без UI «прочитано»). */
-function OutboundDeliveryTicks({ message: m }: { message: MessageRow }) {
-  if (m.imageUploadFailed) return null;
-
-  const temp = m.id.startsWith("temp-");
-  const inFlight =
-    temp &&
-    !m.imageUploadFailed &&
-    Boolean(m.pendingUpload || m.status !== "sent");
-
-  let variant: "sending" | "sent" | "delivered" = "sent";
-  if (inFlight) variant = "sending";
-  else if (hasValidTimestamp(m.delivered_at)) variant = "delivered";
-
-  const aria =
-    variant === "delivered"
-      ? "Доставлено"
-      : variant === "sending"
-        ? "Отправляется…"
-        : "Отправлено";
-
-  return (
-    <span className="inline-flex items-center opacity-95" aria-label={aria} title={aria}>
-      <SvgDeliveryChecks variant={variant} className="-mr-px shrink-0" />
-    </span>
-  );
-}
-
 const ChatListMessageRow = memo(function ChatListMessageRow({
   m,
   mine,
@@ -593,10 +471,9 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
         </div>
         {!m.deleted ? (
           <div
-            className={`mt-0.5 flex min-h-[18px] shrink-0 items-center gap-2 px-0.5 text-[11px] ${mine ? "justify-end text-white/50" : "justify-start text-muted"}`}
+            className={`mt-0.5 flex min-h-[18px] shrink-0 items-center px-0.5 text-[11px] text-muted ${mine ? "justify-end" : "justify-start"}`}
           >
             <span className="tabular-nums">{messageTime}</span>
-            {mine ? <OutboundDeliveryTicks message={m} /> : null}
           </div>
         ) : null}
       </div>
