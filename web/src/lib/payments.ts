@@ -1,6 +1,7 @@
 /**
- * Клиентский слой оплаты (web): основной провайдер YooKassa.
- * Mock-режим используется только в dev при явной конфигурации.
+ * Слой оплаты (web): в браузере создание платежа идёт через POST /api/payment/create,
+ * чтобы секрет YooKassa не оказывался в клиентском бандле. На сервере вызывается провайдер напрямую.
+ * Mock-режим — только в dev при явной конфигурации.
  */
 
 import {
@@ -49,6 +50,30 @@ export async function createPaymentIntent(
   description: string,
   metadata: Record<string, string> = {}
 ): Promise<PaymentIntent> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/payment/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        rail,
+        amountRub,
+        description,
+        metadata,
+      }),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      payment?: PaymentIntent;
+      error?: string;
+    } | null;
+    if (!res.ok || !data?.ok || !data.payment) {
+      const err = data?.error ?? `payment_create_${res.status}`;
+      throw new Error(err);
+    }
+    return data.payment;
+  }
+
   const created = await providerCreatePaymentIntent(amountRub, "RUB", {
     channel: rail,
     description,

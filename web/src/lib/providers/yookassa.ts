@@ -36,6 +36,10 @@ const YOOKASSA_API_BASE = "https://api.yookassa.ru/v3";
 function readYooKassaConfig() {
   const shopId = String(process.env.YOOKASSA_SHOP_ID ?? "").trim();
   const secretKey = String(process.env.YOOKASSA_SECRET_KEY ?? "").trim();
+  /**
+   * return_url после оплаты: `${origin}/payment`. Обязательно совпадает с публичным доменом
+   * (NEXT_PUBLIC_APP_URL или NEXT_PUBLIC_SITE_URL), иначе YooKassa вернёт пользователя не туда.
+   */
   const appUrl =
     String(process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
     String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim() ||
@@ -53,6 +57,23 @@ function toProviderStatus(rawStatus: string | undefined): YooKassaPaymentResult[
   if (rawStatus === "succeeded") return "confirmed";
   if (rawStatus === "pending" || rawStatus === "waiting_for_capture") return "pending";
   return "failed";
+}
+
+export type YooKassaPaymentSnapshot = {
+  paymentId: string;
+  status: YooKassaPaymentResult["status"];
+  rawStatus: string;
+  metadata: Record<string, string>;
+};
+
+function parsePaymentMetadata(metadataRaw: Record<string, unknown> | undefined): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  if (!metadataRaw || typeof metadataRaw !== "object") return metadata;
+  for (const [key, value] of Object.entries(metadataRaw)) {
+    if (value == null) continue;
+    metadata[key] = String(value);
+  }
+  return metadata;
 }
 
 async function yookassaRequest<T>(path: string, init: RequestInit): Promise<T> {
@@ -78,6 +99,39 @@ async function yookassaRequest<T>(path: string, init: RequestInit): Promise<T> {
   }
 
   return (await res.json()) as T;
+}
+
+/** URL редиректа на оплату (YooKassa отдаёт snake_case; на всякий случай поддерживаем и camelCase). */
+function resolveRedirectConfirmationUrl(payment: YooKassaApiPayment): string | null {
+  const c = payment.confirmation;
+  if (!c || typeof c !== "object") return null;
+  const raw = c as Record<string, unknown>;
+  const snake = raw.confirmation_url;
+  const camel = raw.confirmationUrl;
+  const u =
+    (typeof snake === "string" ? snake : typeof camel === "string" ? (camel as string) : "").trim();
+  return u || null;
+}
+
+/** GET /payments/{id} со snapshot metadata (для /api/payment/status после return_url). */
+export async function fetchPaymentWithMetadata(paymentId: string): Promise<YooKassaPaymentSnapshot | null> {
+  const id = String(paymentId ?? "").trim();
+  if (!id) return null;
+  try {
+    const payment = await yookassaRequest<YooKassaApiPayment>(
+      `/payments/${encodeURIComponent(id)}`,
+      { method: "GET" },
+    );
+    const rawStatus = String(payment.status ?? "").trim() || "unknown";
+    return {
+      paymentId: String(payment.id ?? id),
+      status: toProviderStatus(payment.status),
+      rawStatus,
+      metadata: parsePaymentMetadata(payment.metadata as Record<string, unknown>),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchPayment(paymentId: string): Promise<YooKassaPaymentResult> {
@@ -116,8 +170,9 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
   const metadata = input.metadata ?? {};
   const { appUrl } = readYooKassaConfig();
 
+  let payment: YooKassaApiPayment;
   try {
-    const payment = await yookassaRequest<YooKassaApiPayment>("/payments", {
+    payment = await yookassaRequest<YooKassaApiPayment>("/payments", {
       method: "POST",
       headers: {
         "Idempotence-Key": crypto.randomUUID(),
@@ -135,21 +190,37 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
         metadata,
       }),
     });
-
-    return {
-      paymentId: String(payment.id ?? ""),
-      status: toProviderStatus(payment.status),
-      provider: "yookassa",
-      confirmationUrl: String(payment.confirmation?.confirmation_url ?? "").trim() || null,
-    };
-  } catch {
-    return {
-      paymentId: "yookassa_create_failed",
-      status: "failed",
-      provider: "yookassa",
-      confirmationUrl: null,
-    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[yookassa] create_payment_failed", { message: msg });
+    throw new Error(`YOOKASSA_CREATE_FAILED:${msg}`);
   }
+
+  const paymentId = String(payment.id ?? "").trim();
+  if (!paymentId) {
+    console.error("[yookassa] create_payment_missing_id", { rawStatus: payment.status });
+    throw new Error("YOOKASSA_CREATE_FAILED:missing_payment_id");
+  }
+
+  const confirmationUrl = resolveRedirectConfirmationUrl(payment);
+  if (!confirmationUrl) {
+    console.error("[yookassa] create_payment_missing_confirmation_url", {
+      paymentId,
+      status: payment.status,
+      confirmationType:
+        payment.confirmation && typeof payment.confirmation === "object"
+          ? (payment.confirmation as Record<string, unknown>).type
+          : undefined,
+    });
+    throw new Error("YOOKASSA_CREATE_FAILED:missing_confirmation_url");
+  }
+
+  return {
+    paymentId,
+    status: toProviderStatus(payment.status),
+    provider: "yookassa",
+    confirmationUrl,
+  };
 }
 
 export async function handleWebhook(payload: unknown): Promise<YooKassaWebhookResolved> {
