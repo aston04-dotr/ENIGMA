@@ -679,21 +679,23 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-[0_0_28px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-indigo-400/15 bg-gradient-to-br from-[#1c1930]/55 via-[#101018]/86 to-[#07080f] hover:border-indigo-300/28"
-                        : "border-indigo-200/45 bg-gradient-to-br from-[#faf9ff] via-white to-white hover:border-indigo-200/65"
+                        ? "border-[rgba(120,200,255,0.26)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] hover:border-[rgba(148,214,255,0.38)] hover:shadow-[0_0_36px_rgba(84,169,255,0.09)]"
+                        : "border-[rgba(29,118,232,0.28)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] ring-1 ring-[rgba(29,118,232,0.08)] hover:border-[rgba(29,118,232,0.42)] hover:shadow-[0_12px_32px_rgba(29,118,232,0.08)]"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-indigo-100/92" : "text-indigo-950/95"}`}>
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#b8dcff]" : "text-[#0b3d8a]"}`}>
                         BOOST
                       </span>
-                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-indigo-100/76" : "text-indigo-900/82"}`}>
+                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-[#8ecfff]" : "text-[#084298]"}`}>
                         {boostPriceRub} ₽
                       </span>
                     </span>
-                    <span className={`mt-1 text-[11px] tracking-tight ${theme === "dark" ? "text-white/43" : "text-slate-500"}`}>Больше показов</span>
+                    <span className={`mt-1 text-[11px] leading-[1.28] tracking-tight ${theme === "dark" ? "text-white/43" : "text-slate-600"}`}>
+                      Больше показов
+                    </span>
                   </Link>
                   <Link
                     href={topHref}
@@ -704,21 +706,21 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-slate-400/16 bg-gradient-to-br from-[#272b36]/42 via-[#12141c]/92 to-[#08090e] hover:border-slate-300/30"
-                        : "border-slate-200/75 bg-gradient-to-br from-[#fafbfc] to-white hover:border-slate-300/95"
+                        ? "border-[rgba(180,205,235,0.14)] bg-gradient-to-br from-[#1c2436]/94 via-[#121a2e]/97 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-[rgba(200,220,246,0.22)]"
+                        : "border-slate-400/35 bg-gradient-to-br from-[#e8eef8] via-[#fafcfe] to-white ring-1 ring-slate-500/[0.08] hover:border-slate-500/45"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-slate-100/90" : "text-slate-800"}`}>
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#d4e3ff]" : "text-slate-800"}`}>
                         TOP
                       </span>
-                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-slate-200/78" : "text-slate-600"}`}>
+                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-[#aabdd6]" : "text-slate-700"}`}>
                         {defaultTopCtaPriceRub()} ₽
                       </span>
                     </span>
-                    <span className={`mt-1 text-[11px] tracking-tight ${theme === "dark" ? "text-slate-400/72" : "text-slate-500"}`}>
+                    <span className={`mt-1 text-[11px] leading-[1.28] tracking-tight ${theme === "dark" ? "text-slate-400/75" : "text-slate-600"}`}>
                       Выше в ленте
                     </span>
                   </Link>
@@ -731,17 +733,17 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-[inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-amber-500/16 bg-gradient-to-br from-[#0b0a08] via-[#050505] to-[#080807] hover:border-amber-400/28"
-                        : "border-amber-200/50 bg-gradient-to-br from-[#1a1917] to-[#0d0c0b] text-white hover:border-amber-200/65"
+                        ? "border-[rgba(250,215,148,0.22)] bg-gradient-to-br from-[#0f0d09] via-[#050708] to-[#08060a] hover:border-[rgba(250,215,148,0.35)] hover:shadow-[0_0_28px_rgba(250,200,92,0.06)]"
+                        : "border-slate-800/50 bg-[linear-gradient(168deg,#1a2638_0%,#111820_52%,#0a0e14_100%)] text-white ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(250,200,92,0.28)]"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[12px] font-semibold tracking-[0.14em] text-amber-50/90">VIP</span>
-                      <span className="text-[15px] tabular-nums font-semibold text-amber-100/68">{defaultVipCtaPriceRub()} ₽</span>
+                      <span className="text-[12px] font-semibold tracking-[0.14em] text-[#fde7b8]/95">VIP</span>
+                      <span className="text-[15px] tabular-nums font-semibold text-[#f5d088]/88">{defaultVipCtaPriceRub()} ₽</span>
                     </span>
-                    <span className="mt-1 text-[11px] tracking-tight text-amber-100/36">
+                    <span className="mt-1 text-[11px] leading-[1.28] tracking-tight text-[color:rgba(253,227,178,0.42)]">
                       Максимальный приоритет
                     </span>
                   </Link>

@@ -550,8 +550,8 @@ export default function ProfilePage() {
             href="/create"
             className={`inline-flex min-h-[42px] items-center rounded-xl border px-3.5 py-2 text-[13px] font-semibold tracking-tight transition-colors active:scale-[0.99] ${
               isDark
-                ? "border-white/[0.12] bg-white/[0.04] text-white/88 hover:bg-white/[0.08]"
-                : "border-slate-300/70 bg-white/90 text-slate-900 shadow-[0_1px_0_rgba(255,255,255,0.92)_inset] hover:bg-white"
+                ? "border-[rgba(120,200,255,0.18)] bg-white/[0.05] text-white/92 hover:bg-white/[0.09]"
+                : "border-[rgba(29,118,232,0.28)] bg-gradient-to-br from-white to-[#eef5ff] text-[#084298] shadow-[inset_0_1px_0_rgba(255,255,255,1)] hover:border-[rgba(29,118,232,0.45)] hover:shadow-[0_10px_24px_rgba(29,118,232,0.12)]"
             }`}
           >
             Создать
@@ -566,11 +566,11 @@ export default function ProfilePage() {
               className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "active"
                   ? isDark
-                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
-                    : "bg-slate-900 text-white shadow-sm"
+                    ? "border border-[rgba(120,200,255,0.16)] bg-white/[0.07] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[rgba(120,200,255,0.22)]"
+                    : "border border-[#1d76e8]/35 bg-[#1d76e8] text-white shadow-[0_10px_28px_rgba(29,118,232,0.28)] ring-1 ring-white/35"
                   : isDark
                     ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
-                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
+                    : "border border-[rgba(29,118,232,0.22)] bg-white/65 text-slate-700 backdrop-blur-sm hover:bg-[rgba(236,246,255,0.94)]"
               }`}
             >
               Активные
@@ -582,11 +582,11 @@ export default function ProfilePage() {
               className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "archive"
                   ? isDark
-                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
-                    : "bg-slate-900 text-white shadow-sm"
+                    ? "border border-[rgba(120,200,255,0.16)] bg-white/[0.07] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[rgba(120,200,255,0.22)]"
+                    : "border border-[#1d76e8]/35 bg-[#1d76e8] text-white shadow-[0_10px_28px_rgba(29,118,232,0.28)] ring-1 ring-white/35"
                   : isDark
                     ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
-                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
+                    : "border border-[rgba(29,118,232,0.22)] bg-white/65 text-slate-700 backdrop-blur-sm hover:bg-[rgba(236,246,255,0.94)]"
               }`}
             >
               Архив
@@ -598,11 +598,11 @@ export default function ProfilePage() {
               className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "favorites"
                   ? isDark
-                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
-                    : "bg-slate-900 text-white shadow-sm"
+                    ? "border border-[rgba(120,200,255,0.16)] bg-white/[0.07] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[rgba(120,200,255,0.22)]"
+                    : "border border-[#1d76e8]/35 bg-[#1d76e8] text-white shadow-[0_10px_28px_rgba(29,118,232,0.28)] ring-1 ring-white/35"
                   : isDark
                     ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
-                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
+                    : "border border-[rgba(29,118,232,0.22)] bg-white/65 text-slate-700 backdrop-blur-sm hover:bg-[rgba(236,246,255,0.94)]"
               }`}
             >
               Избранное
@@ -705,11 +705,11 @@ export default function ProfilePage() {
         <div
           className={`rounded-[22px] border p-5 backdrop-blur-xl ${
             isDark
-              ? "border-white/[0.08] bg-gradient-to-br from-[#16181f]/92 via-[#101119]/88 to-[#0c0e14]/92 shadow-[0_28px_64px_rgba(0,0,0,0.45)]"
-              : "border-slate-200/70 bg-white/80 shadow-[0_22px_50px_rgba(15,23,42,0.09)] ring-1 ring-black/[0.04]"
+              ? "border-[rgba(120,200,255,0.12)] bg-[linear-gradient(158deg,rgba(22,32,54,0.96)_0%,rgba(12,17,28,0.98)_52%,rgba(8,11,18,1)_100%)] shadow-[0_26px_64px_rgba(0,0,0,0.5),0_0_48px_rgba(84,169,255,0.06)]"
+              : "border-[rgba(29,118,232,0.22)] bg-gradient-to-br from-[#f6f9ff] via-[#eaf1fc] to-[#e4edf8] shadow-[0_22px_50px_rgba(15,50,105,0.11),0_0_36px_rgba(29,118,232,0.06)] ring-1 ring-[rgba(29,118,232,0.08)]"
           }`}
         >
-          <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDark ? "text-white/40" : "text-slate-500"}`}>
+          <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-[#8ecfff]/72" : "text-[#1d76e8]/75"}`}>
             Продвижение
           </p>
           <p className={`mt-2 text-[17px] font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
@@ -717,10 +717,10 @@ export default function ProfilePage() {
           </p>
           <Link
             href="#promo-status-panel"
-            className={`mt-5 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border px-3 text-[13px] font-medium transition-[border-color,background-color,transform,opacity] duration-150 ease-out active:scale-[0.985] ${
+            className={`mt-5 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border px-3 text-[13px] font-semibold tracking-tight transition-[border-color,background-color,transform,opacity] duration-150 ease-out active:scale-[0.985] ${
               isDark
-                ? "border-white/[0.12] bg-white/[0.04] text-white/92 hover:bg-white/[0.08]"
-                : "border-slate-300/70 bg-white text-slate-800 hover:bg-slate-50"
+                ? "border-[rgba(120,200,255,0.18)] bg-white/[0.05] text-white/92 hover:bg-white/[0.09]"
+                : "border-[rgba(29,118,232,0.35)] bg-white/95 text-[#0b3d8a] shadow-[inset_0_1px_0_rgba(255,255,255,1)] hover:border-[#1d76e8]/55 hover:bg-[#f8fbff]"
             }`}
           >
             Статус продвижений
@@ -731,21 +731,21 @@ export default function ProfilePage() {
         <div
           className={`rounded-[22px] border p-5 backdrop-blur-xl ${
             isDark
-              ? "border-white/[0.07] bg-white/[0.03] shadow-[0_18px_44px_rgba(0,0,0,0.32)]"
-              : "border-slate-200/65 bg-white/75 shadow-[0_16px_40px_rgba(15,23,42,0.07)] ring-1 ring-black/[0.03]"
+              ? "border-[rgba(120,200,255,0.1)] bg-[linear-gradient(168deg,rgba(18,26,44,0.92)_0%,rgba(10,14,24,0.96)_100%)] shadow-[0_22px_56px_rgba(0,0,0,0.46),0_0_44px_rgba(84,169,255,0.045)]"
+              : "border-[rgba(29,118,232,0.2)] bg-gradient-to-b from-white via-[#f3f8ff] to-[#eaf1fb] shadow-[0_18px_44px_rgba(22,52,105,0.1)] ring-1 ring-[rgba(29,118,232,0.07)]"
           }`}
         >
           <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-white/48" : "text-slate-500"}`}>Статус</p>
           <div className="mt-3 space-y-2">
             <div
-              className={`rounded-[11px] border px-3 py-[11px] ${
+              className={`rounded-[11px] border px-3 py-[11px] shadow-[0_0_22px_rgba(84,169,255,0.05)] ${
                 isDark
-                  ? "border-white/[0.07] bg-[linear-gradient(168deg,rgba(40,44,78,0.25)_0%,rgba(17,17,24,0.96)_55%,rgba(10,10,14,0.98)_100%)]"
-                  : "border-indigo-100/80 bg-[linear-gradient(180deg,#ffffff_0%,#fafbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+                  ? "border-[rgba(140,210,255,0.22)] bg-[linear-gradient(152deg,rgba(24,40,72,0.94)_0%,rgba(14,20,36,0.98)_58%,rgba(8,12,22,1)_100%)]"
+                  : "border-[rgba(29,118,232,0.3)] bg-[linear-gradient(180deg,#f2f8ff_0%,#ffffff_100%)] ring-1 ring-[rgba(29,118,232,0.1)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-[11px] font-semibold tracking-[0.16em] ${isDark ? "text-indigo-100/86" : "text-indigo-950/92"}`}>BOOST</span>
+                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#b8dcff]" : "text-[#0b3d8a]"}`}>BOOST</span>
                 <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
               </div>
               <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-white/34" : "text-slate-500"}`}>Больше показов</p>
@@ -753,25 +753,25 @@ export default function ProfilePage() {
             <div
               className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
-                  ? "border-white/[0.07] bg-gradient-to-br from-[#1e222b]/55 via-[#111116]/95 to-[#0a0b0f]"
-                  : "border-slate-200/90 bg-gradient-to-b from-white to-[#f9fafb] shadow-[inset_0_1px_0_rgba(255,255,255,0.94)]"
+                  ? "border-[rgba(180,205,235,0.15)] bg-gradient-to-br from-[#1a2336]/95 via-[#121a2e]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  : "border-slate-400/40 bg-gradient-to-b from-[#e8eef8] via-white to-[#f7faff] ring-1 ring-slate-400/15"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-[11px] font-semibold tracking-[0.16em] ${isDark ? "text-slate-100/86" : "text-slate-800"}`}>TOP</span>
+                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#d4e3ff]" : "text-slate-800"}`}>TOP</span>
                 <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
               </div>
               <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-slate-400/74" : "text-slate-500"}`}>Выше в ленте</p>
             </div>
             <div
-              className={`rounded-[11px] border px-3 py-[11px] ${
+              className={`rounded-[11px] border px-3 py-[11px] shadow-[inset_0_0_0_1px_rgba(84,169,255,0.08)] ${
                 isDark
-                  ? "border-white/[0.08] bg-gradient-to-br from-[#0a0a0a] via-[#060606] to-[#080808]"
-                  : "border-slate-300/55 bg-gradient-to-b from-neutral-900 to-neutral-950"
+                  ? "border-[rgba(246,210,140,0.24)] bg-[linear-gradient(168deg,#12100c_0%,#060708_52%,#09070a_100%)]"
+                  : "border-slate-900/40 bg-[linear-gradient(172deg,#243242_0%,#141c28_48%,#0a0e14_100%)] ring-1 ring-[rgba(29,118,232,0.14)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[11px] font-semibold tracking-[0.16em] text-amber-50/85">VIP</span>
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]/95">VIP</span>
                 <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-amber-200/45" : "text-amber-200/58"}`}>не активен</span>
               </div>
               <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-amber-100/38">Максимальный приоритет</p>
@@ -782,11 +782,11 @@ export default function ProfilePage() {
           <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-white/44" : "text-slate-500"}`}>Слоты</p>
           <div
             className={`mt-3 flex items-baseline justify-between gap-3 rounded-[11px] border px-3.5 py-3 ${
-              isDark ? "border-white/[0.07] bg-white/[0.04]" : "border-slate-200/85 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,1)]"
+              isDark ? "border-[rgba(120,200,255,0.1)] bg-white/[0.045]" : "border-[rgba(29,118,232,0.22)] bg-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,1)]"
             }`}
           >
             <span className={`text-[12px] font-medium tracking-tight ${isDark ? "text-white/64" : "text-slate-600"}`}>Дополнительные</span>
-            <span className={`text-[28px] font-semibold tabular-nums tracking-[-0.03em] leading-none ${isDark ? "text-white/96" : "text-slate-900"}`}>{listingExtraCapacity}</span>
+            <span className={`text-[28px] font-semibold tabular-nums tracking-[-0.03em] leading-none ${isDark ? "text-[#f2f9ff]" : "text-[#061428]"}`}>{listingExtraCapacity}</span>
           </div>
         </div>
 
@@ -795,8 +795,8 @@ export default function ProfilePage() {
           id="packages-panel"
           className={`relative overflow-hidden rounded-[22px] border shadow-[0_28px_64px_rgba(0,0,0,0.38)] backdrop-blur-xl ${
             isDark
-              ? "border-white/[0.07] bg-gradient-to-b from-[#16161f] via-[#0f1016] to-[#0b0d12]"
-              : "border-slate-800/55 bg-gradient-to-b from-[#16151a] via-[#101015] to-[#0d0e12] ring-1 ring-amber-200/35"
+              ? "border-[rgba(120,200,255,0.09)] bg-gradient-to-b from-[#121a2e] via-[#0c1220] to-[#080e18] shadow-[0_28px_64px_rgba(0,0,0,0.52),0_0_52px_rgba(84,169,255,0.045)]"
+              : "border-[#1e3a5c]/55 bg-gradient-to-b from-[#152033] via-[#101928] to-[#0d1522] shadow-[0_28px_64px_rgba(10,35,72,0.35)] ring-2 ring-[rgba(29,118,232,0.18)]"
           }`}
         >
           <div
@@ -877,20 +877,12 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div
-          className={`rounded-[22px] border p-5 backdrop-blur-xl ${
-            isDark
-              ? "border-white/[0.07] bg-white/[0.03]"
-              : "border-slate-200/65 bg-white/75 ring-1 ring-black/[0.03]"
-          }`}
-        >
-          <p className={`mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] ${isDark ? "text-white/40" : "text-slate-500"}`}>Настройки</p>
+        <div className="enigma-glass-sheet-soft p-5">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Настройки</p>
           <ThemeToggle />
           <Link
             href="/support"
-            className={`pressable mt-4 flex min-h-[50px] w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.04] ${
-              isDark ? "border-white/[0.1]" : "border-slate-200/75"
-            }`}
+            className={`pressable mt-4 flex min-h-[50px] w-full items-center justify-between rounded-xl border border-line px-4 py-3 text-left transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.04]`}
           >
             <span className="text-sm font-medium text-fg">Поддержка</span>
             <span className="text-sm text-muted">→</span>

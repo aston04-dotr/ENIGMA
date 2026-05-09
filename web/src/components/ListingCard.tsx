@@ -33,18 +33,18 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 const listingCardShell = (isLight: boolean): CSSProperties =>
   isLight
     ? {
-        borderColor: "rgba(15, 23, 42, 0.088)",
+        borderColor: "rgba(29, 118, 232, 0.16)",
         backgroundImage:
-          "linear-gradient(168deg, rgba(255,255,255,0.99) 0%, rgba(252,253,255,1) 48%, rgba(246,248,252,1) 100%)",
+          "linear-gradient(172deg, rgba(255,255,255,0.98) 0%, rgba(236,246,255,0.95) 40%, rgba(226,237,253,1) 100%)",
         boxShadow:
-          "0 1px 0 rgba(255,255,255,0.995) inset, 0 1px 4px rgba(15,23,42,0.034), 0 18px 40px rgba(15,23,42,0.072), 0 0 0 0.75px rgba(15,23,42,0.05)",
+          "0 1px 0 rgba(255,255,255,0.98) inset, 0 1px 3px rgba(15,52,110,0.06), 0 18px 42px rgba(15,52,110,0.1), 0 0 0 0.65px rgba(29,118,232,0.08), 0 0 48px rgba(29,118,232,0.05)",
       }
     : {
-        borderColor: "rgba(255,255,255,0.055)",
+        borderColor: "rgba(100, 180, 255, 0.14)",
         backgroundImage:
-          "linear-gradient(175deg, rgba(255,255,255,0.042) 0%, rgba(255,255,255,0.014) 42%, rgba(255,255,255,0.005) 100%), radial-gradient(85% 55% at 10% -6%, rgba(255,255,255,0.055), transparent 58%)",
+          "linear-gradient(175deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.02) 35%, transparent 72%), radial-gradient(90% 60% at 12% -4%, rgba(84,169,255,0.09), transparent 58%), linear-gradient(180deg, rgba(18,26,42,0.65) 0%, rgba(8,11,18,0.92) 100%)",
         boxShadow:
-          "0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.22), 0 26px 52px rgba(0,0,0,0.34)",
+          "0 1px 0 rgba(133,210,255,0.1) inset, 0 8px 24px rgba(0,0,0,0.28), 0 28px 56px rgba(0,8,22,0.48), 0 0 40px rgba(84,169,255,0.045)",
       };
 
 function formatPriceNumber(n: number) {
@@ -353,7 +353,7 @@ export function ListingCard({
       style={shellStyle}
     >
       <div
-        className={`relative w-full overflow-hidden rounded-t-[22px] ${theme === "light" ? "bg-[#dfe5ee]" : "bg-elev-2"} ${imageHeightClass}`}
+        className={`relative w-full overflow-hidden rounded-t-[22px] ${theme === "light" ? "bg-[#aabdd6]" : "bg-elev-2"} ${imageHeightClass}`}
       >
         {listingCardImgSrc && !heroFatal ? (
           <>
@@ -408,8 +408,8 @@ export function ListingCard({
           style={{
             background:
               theme === "light"
-                ? "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(15,23,42,0.08) 48%, rgba(15,23,42,0.22) 100%)"
-                : "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.24) 52%, rgba(0,0,0,0.58) 100%)",
+                ? "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(15,40,76,0.12) 50%, rgba(8,26,62,0.28) 100%)"
+                : "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(12,42,92,0.18) 45%, rgba(0,14,38,0.62) 100%)",
           }}
         />
         {partner ? (
@@ -473,18 +473,10 @@ export function ListingCard({
           ) : null}
           <div className="mt-1 shrink-0">
             <p
-              className={`flex items-baseline leading-none ${priceStyle.rowGapClass} ${
-                theme === "light" ? "text-[#0f172a]" : "text-white"
-              }`}
+              className={`flex items-baseline leading-none ${priceStyle.rowGapClass} text-fg`}
             >
               <span className={priceStyle.amountClass}>{formatPriceNumber(numericPrice)}</span>
-              <span
-                className={`${priceStyle.rubClass} ${
-                  theme === "light" ? "text-[#0f172a]/52" : "text-white/52"
-                }`}
-              >
-                ₽
-              </span>
+              <span className={`${priceStyle.rubClass} text-muted`}>₽</span>
             </p>
           </div>
           <div className="mt-1.5 shrink-0">
@@ -526,21 +518,21 @@ export function ListingCard({
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] shadow-[0_0_24px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-white/[0.07] bg-gradient-to-br from-[#1a1828]/38 via-[#101018]/88 to-[#07080f] hover:border-indigo-300/22"
-                : "border-slate-200/55 bg-gradient-to-br from-[#faf9ff] via-white to-white hover:border-indigo-200/55"
+                ? "border-[rgba(120,200,255,0.26)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] hover:border-[rgba(148,214,255,0.38)] hover:shadow-[0_0_32px_rgba(84,169,255,0.09)]"
+                : "border-[rgba(29,118,232,0.28)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] ring-1 ring-[rgba(29,118,232,0.08)] hover:border-[rgba(29,118,232,0.42)] hover:shadow-[0_12px_32px_rgba(29,118,232,0.08)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.16em] ${theme === "light" ? "text-indigo-950/88" : "text-indigo-100/86"}`}>
+              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-[#0b3d8a]" : "text-[#b8dcff]"}`}>
                 BOOST
               </span>
-              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-indigo-900/78" : "text-indigo-100/70"}`}>
+              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-[#084298]" : "text-[#8ecfff]"}`}>
                 {priceRub} ₽
               </span>
             </div>
-            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-500/92" : "text-white/38"}`}>
+            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-600" : "text-white/42"}`}>
               Больше показов
             </p>
           </Link>
@@ -550,19 +542,19 @@ export function ListingCard({
             onClick={() => trackBoostEvent("top_click", { listingId: lid, own: isOwn })}
             className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-white/[0.07] bg-gradient-to-br from-[#22262f]/32 via-[#12141c]/92 to-[#08090e] hover:border-slate-300/24"
-                : "border-slate-200/65 bg-gradient-to-br from-[#fafbfc] to-white hover:border-slate-300/85"
+                ? "border-[rgba(180,205,235,0.14)] bg-gradient-to-br from-[#1c2436]/94 via-[#121a2e]/97 to-[#0a101e] hover:border-[rgba(200,220,246,0.22)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                : "border-slate-400/35 bg-gradient-to-br from-[#e8eef8] via-[#fafcfe] to-white ring-1 ring-slate-500/[0.08] hover:border-slate-500/45"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.16em] ${theme === "light" ? "text-slate-800/95" : "text-slate-100/85"}`}>
+              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-800" : "text-[#d4e3ff]"}`}>
                 TOP
               </span>
-              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-slate-600/95" : "text-slate-200/72"}`}>
+              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-slate-700" : "text-[#aabdd6]"}`}>
                 {defaultTopCtaPriceRub()} ₽
               </span>
             </div>
-            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-500/92" : "text-slate-400/65"}`}>
+            <p className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${theme === "light" ? "text-slate-600" : "text-slate-400/75"}`}>
               Выше в ленте
             </p>
           </Link>
@@ -570,17 +562,17 @@ export function ListingCard({
           <Link
             href={vipHref()}
             onClick={() => trackBoostEvent("vip_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] shadow-[inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-white/[0.08] bg-gradient-to-br from-[#0c0b09] via-[#050505] to-[#080807] hover:border-amber-400/22"
-                : "border-slate-300/40 bg-gradient-to-br from-[#181714] to-[#0d0c0b] text-white hover:border-amber-200/45"
+                ? "border-[rgba(250,215,148,0.22)] bg-gradient-to-br from-[#0f0d09] via-[#050708] to-[#08060a] hover:border-[rgba(250,215,148,0.35)] hover:shadow-[0_0_28px_rgba(250,200,92,0.06)]"
+                : "border-slate-800/50 bg-[linear-gradient(168deg,#1a2638_0%,#111820_52%,#0a0e14_100%)] text-white ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(250,200,92,0.28)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold tracking-[0.16em] text-amber-50/84">VIP</span>
-              <span className="text-[14px] tabular-nums font-semibold text-amber-100/62">{defaultVipCtaPriceRub()} ₽</span>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]/95">VIP</span>
+              <span className="text-[14px] tabular-nums font-semibold text-[#f5d088]/88">{defaultVipCtaPriceRub()} ₽</span>
             </div>
-            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-amber-100/32">
+            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-[color:rgba(253,227,178,0.42)]">
               Максимальный приоритет
             </p>
           </Link>

@@ -78,13 +78,13 @@ function navChrome(theme: UiTheme): { navClass: string; badgeRing: string } {
   if (theme === "light") {
     return {
       navClass:
-        "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-slate-900/[0.08] safe-pb view-mode-nav sm:max-w-none",
+        "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-[rgba(29,118,232,0.14)] safe-pb view-mode-nav sm:max-w-none",
       badgeRing: "rgba(255,255,255,0.92)",
     };
   }
   return {
     navClass:
-      "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-white/[0.06] safe-pb view-mode-nav sm:max-w-none",
+      "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-[rgba(120,200,255,0.14)] safe-pb view-mode-nav sm:max-w-none",
     badgeRing: "rgba(12,12,12,0.9)",
   };
 }
@@ -92,15 +92,12 @@ function navChrome(theme: UiTheme): { navClass: string; badgeRing: string } {
 function tabColors(theme: UiTheme, active: boolean): { icon: string; label: string } {
   if (theme === "light") {
     return active
-      ? { icon: "text-[#0eaefe]", label: "text-[#0eaefe]" }
-      : {
-          icon: "text-[#26b5ff]/88",
-          label: "text-neutral-400",
-        };
+      ? { icon: "text-[#1d76e8]", label: "text-[#1d76e8]" }
+      : { icon: "text-slate-500/88", label: "text-slate-500/90" };
   }
   return active
-    ? { icon: "text-[#c8fbff]", label: "text-[#c8fbff]" }
-    : { icon: "text-[#72f3ff]/92", label: "text-[#72f3ff]/92" };
+    ? { icon: "text-[#82c8ff]", label: "text-[#82c8ff]" }
+    : { icon: "text-[#6b9cc9]/92", label: "text-[#6b9cc9]/92" };
 }
 
 function isActiveChatRoomPath(pathname: string): boolean {
