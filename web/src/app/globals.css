@@ -15,11 +15,15 @@
   --color-line: rgba(255, 255, 255, 0.08);
   --color-danger: #e07070;
   --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --enigma-surface-1: #0e1114;
+  --enigma-surface-2: rgba(255, 255, 255, 0.03);
+  --enigma-surface-3: rgba(22, 24, 31, 0.88);
+  --enigma-surface-4: rgba(12, 14, 18, 0.96);
 }
 
 [data-theme="light"] {
   --muted: 107 114 128;
-  --color-main: #e8ecf0;
+  --color-main: #e3e9ef;
   --color-elevated: #ffffff;
   --color-elev-2: #f0f3f6;
   --color-fg: #0e1114;
@@ -29,6 +33,11 @@
   --color-line: rgba(0, 0, 0, 0.08);
   --color-danger: #c53e3e;
   --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.08);
+  /* Visual hierarchy: profile / marketplace surfaces */
+  --enigma-surface-1: #e3e9ef;
+  --enigma-surface-2: rgba(255, 255, 255, 0.72);
+  --enigma-surface-3: #ffffff;
+  --enigma-surface-4: rgba(15, 23, 42, 0.04);
 }
 
 html,
@@ -143,6 +152,187 @@ textarea {
 
 .pressable:active {
   transform: scale(0.97);
+}
+
+/*
+  Surface scale (semantic):
+  surface-1 page → bg-main (--enigma-surface-1 aligns)
+  surface-2 / 3 glass sheets → .enigma-glass-sheet-soft, .enigma-glass-sheet-elevated
+  surface-4 premium slabs → компоненты (packages-panel) сохраняют свой графит
+*/
+
+[data-theme="dark"] .enigma-glass-sheet-soft {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.072);
+  background: rgba(255, 255, 255, 0.034);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.039) inset,
+    0 18px 48px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+}
+
+[data-theme="light"] .enigma-glass-sheet-soft {
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.92) inset,
+    0 14px 38px rgba(15, 23, 42, 0.07),
+    0 2px 5px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+[data-theme="dark"] .enigma-glass-sheet-elevated {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  background: linear-gradient(
+    148deg,
+    rgba(26, 28, 35, 0.94) 0%,
+    rgba(17, 19, 25, 0.9) 48%,
+    rgba(13, 15, 20, 0.94) 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 26px 60px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+}
+
+[data-theme="light"] .enigma-glass-sheet-elevated {
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(
+    152deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(246, 248, 252, 0.93) 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 22px 52px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+[data-theme="dark"] .enigma-profile-input {
+  min-height: 48px;
+  width: 100%;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.32);
+  color: inherit;
+}
+
+[data-theme="dark"] .enigma-profile-input::placeholder {
+  color: rgba(255, 255, 255, 0.36);
+}
+
+[data-theme="dark"] .enigma-profile-input:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="dark"] .enigma-profile-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .enigma-profile-input {
+  min-height: 48px;
+  width: 100%;
+  border-radius: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(248, 250, 252, 0.95);
+  color: inherit;
+}
+
+[data-theme="light"] .enigma-profile-input::placeholder {
+  color: rgba(100, 116, 139, 0.65);
+}
+
+[data-theme="light"] .enigma-profile-input:hover:not(:disabled) {
+  border-color: rgba(100, 116, 139, 0.45);
+}
+
+[data-theme="light"] .enigma-profile-input:focus {
+  outline: none;
+  border-color: rgba(51, 65, 85, 0.55);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="dark"] .enigma-profile-btn-submit {
+  margin-top: 0.875rem;
+  display: inline-flex;
+  width: 100%;
+  min-height: 43px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+[data-theme="dark"] .enigma-profile-btn-submit:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.098);
+}
+
+[data-theme="dark"] .enigma-profile-btn-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+[data-theme="dark"] .enigma-profile-btn-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .enigma-profile-btn-submit {
+  margin-top: 0.875rem;
+  display: inline-flex;
+  width: 100%;
+  min-height: 43px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  border: 1px solid rgba(51, 65, 85, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  font-size: 14px;
+  font-weight: 500;
+  color: rgb(23, 32, 48);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+[data-theme="light"] .enigma-profile-btn-submit:hover:not(:disabled) {
+  border-color: rgba(51, 65, 85, 0.38);
+  background: #ffffff;
+}
+
+[data-theme="light"] .enigma-profile-btn-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+[data-theme="light"] .enigma-profile-btn-submit:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .enigma-profile-hint-muted {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+[data-theme="light"] .enigma-profile-hint-muted {
+  color: rgba(71, 85, 105, 0.88);
 }
 
 .scroll-smooth {
@@ -352,13 +542,21 @@ textarea {
   max-width: 100%;
 }
 
-/* Bottom tab bar: фон по теме (контраст задаётся в компоненте). */
+.enigma-shell-pad {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Bottom tab bar: матовое стекло, контраст с контентом; фон задаёт компонент + blur. */
 [data-theme="light"] .bottom-nav-root {
-  background-color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.74) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 [data-theme="dark"] .bottom-nav-root {
-  background-color: #000000 !important;
+  background-color: rgba(10, 10, 11, 0.72) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
 }
 
 /* VisualViewport: фиксированный таббар при клавиатуре (значение задаёт VisualViewportBridge). */
@@ -378,6 +576,12 @@ textarea {
     animation: none !important;
   }
   .animate-messageAppear {
+    animation: none !important;
+  }
+  .enigma-listing-photo-shimmer::after {
+    animation: none !important;
+  }
+  .feed-card-enter {
     animation: none !important;
   }
 }
@@ -409,6 +613,57 @@ html[data-enigma-standalone="1"] .view-mode-frame {
 
 .animate-skeleton {
   animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Shimmer поверх фото карточки до загрузки */
+@keyframes enigma-photo-shimmer {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+.enigma-listing-photo-shimmer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(30, 32, 38, 0.92) 0%, rgba(22, 24, 28, 0.88) 50%, rgba(30, 32, 38, 0.92) 100%);
+}
+
+.enigma-listing-photo-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  opacity: 0.55;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 42%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0.06) 58%,
+    transparent 100%
+  );
+  animation: enigma-photo-shimmer 1.45s ease-in-out infinite;
+}
+
+html[data-theme="light"] .enigma-listing-photo-shimmer {
+  background: linear-gradient(145deg, #eceff3 0%, #e4e8ef 50%, #eceff3 100%);
+}
+
+html[data-theme="light"] .enigma-listing-photo-shimmer::after {
+  opacity: 0.7;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.7) 42%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.7) 58%,
+    transparent 100%
+  );
 }
 
 @keyframes feed-card-in {

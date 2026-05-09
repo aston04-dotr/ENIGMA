@@ -2639,8 +2639,8 @@ export default function ChatRoomPage() {
         ))}
 
         {messagesLoaded && !displayMessages.length && !loadErr ? (
-          <div className="rounded-xl border border-line/60 bg-elevated/80 px-3 py-3 text-center text-xs text-muted">
-            Пока нет сообщений. Напишите первым.
+          <div className="rounded-xl border border-line/55 bg-elevated/90 px-4 py-3.5 text-center text-[13px] leading-snug text-muted/80">
+            Нет сообщений
           </div>
         ) : null}
 

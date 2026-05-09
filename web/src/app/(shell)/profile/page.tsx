@@ -32,37 +32,11 @@ function formatPrice(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
 
-/** Компонент отображения цены с правильной типографикой */
-function PriceDisplay({ value, size = "md" }: { value: number; size?: "sm" | "md" | "lg" }) {
-  const sizeClasses = {
-    sm: { num: "text-[15px]", rub: "text-[11px]" },
-    md: { num: "text-[16px]", rub: "text-[12px]" },
-    lg: { num: "text-[18px]", rub: "text-[13px]" },
-  };
-  return (
-    <span className={`inline-flex items-baseline ${sizeClasses[size].num} font-semibold tracking-[-0.4px]`}>
-      <span>{formatPrice(value)}</span>
-      <span className={`${sizeClasses[size].rub} ml-1 opacity-60`}>₽</span>
-    </span>
-  );
-}
-
-// Micro-animation styles
-const cardEntryAnimation = `
-  @keyframes card-entry {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  .card-animate {
-    animation: card-entry 200ms ease-out forwards;
-  }
-`;
+const SLOT_PACK_TAGLINE: Record<number, string> = {
+  25: "Для активных продавцов",
+  50: "Для расширенного каталога",
+  100: "Для команд и витрины",
+};
 
 export default function ProfilePage() {
   const { session, profile, signOut, authResolved, loading, refreshProfile } = useAuth();
@@ -490,30 +464,30 @@ export default function ProfilePage() {
 
   return (
     <>
-      <main className="safe-pt mx-auto w-full max-w-none space-y-6 bg-main px-4 pb-10 pt-10 sm:px-6 lg:px-8">
-      <section className="space-y-1.5 pb-2">
-        <h1 className="text-[28px] font-semibold tracking-tight text-fg">Профиль</h1>
+      <main className="safe-pt mx-auto w-full max-w-none space-y-8 bg-main px-4 pb-10 pt-10 sm:px-6 lg:px-8">
+      <section className="space-y-2 pb-0.5">
+        <h1 className="text-[26px] font-semibold tracking-[-0.02em] text-fg md:text-[28px]">Профиль</h1>
         {isDirty ? (
-          <div className="text-xs text-orange-500">Есть несохранённые изменения</div>
+          <div
+            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${isDark ? "text-amber-100/48" : "text-amber-900/75"}`}
+          >
+            Несохранённые изменения
+          </div>
         ) : null}
-        {profile?.name ? <p className="text-[20px] font-semibold tracking-tight text-fg">{profile.name}</p> : null}
-        <p className="text-sm text-muted/85">{session.user?.email}</p>
-        <div className="flex items-center gap-3 text-xs text-muted/80">
-          {profile?.public_id ? <p>ID: {profile.public_id}</p> : null}
-          {profile?.trust_score != null ? (
-            <p>Доверие: {profile.trust_score}</p>
-          ) : null}
+        {profile?.name ? (
+          <p className="text-[19px] font-semibold tracking-[-0.015em] text-fg">{profile.name}</p>
+        ) : null}
+        <p className="text-[13px] leading-snug text-muted/74">{session.user?.email}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-medium uppercase tracking-[0.1em] text-muted/62">
+          {profile?.public_id ? <span>ID {profile.public_id}</span> : null}
+          {profile?.trust_score != null ? <span className="tabular-nums">Доверие {profile.trust_score}</span> : null}
         </div>
       </section>
 
-      <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-6">
-      <div className="space-y-6">
-      <div className={`rounded-[16px] border p-4 ${
-        !profile?.name
-          ? (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
-          : (isDark ? "bg-elevated/78 border-line/20" : "bg-[#fcfdff] border-[rgba(15,23,42,0.05)]")
-      }`}>
-        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-muted"}`}>Имя</p>
+      <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-7">
+      <div className="space-y-5">
+      <div className="enigma-glass-sheet-soft px-5 py-5">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted/76">Имя</p>
         <input
           value={nameInput}
           onChange={(e) => {
@@ -521,34 +495,30 @@ export default function ProfilePage() {
             if (nameMessage) setNameMessage(null);
           }}
           placeholder="Введите имя"
-          className="w-full min-h-[48px] rounded-xl border border-line bg-main px-4 text-[16px] text-fg placeholder:text-muted/60 outline-none transition-colors duration-200 focus:ring-2 focus:ring-accent/35"
+          className="enigma-profile-input px-4 py-3 text-[16px]"
         />
         <button
           type="button"
           onClick={() => void saveName()}
           disabled={nameSaving}
-          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98] ${
-            isDark
-              ? "border-[#2f8d6a] bg-[#236f53] text-[#ecfff5] hover:bg-[#2b7d5d]"
-              : "border-[#2f996f] bg-[#39a877] text-white hover:bg-[#32996b]"
-          } disabled:opacity-50`}
+          className="enigma-profile-btn-submit"
         >
-          {nameSaving ? "Сохранение..." : "Сохранить"}
+          {nameSaving ? "Сохранение…" : "Сохранить"}
         </button>
         {nameMessage ? (
-          <p className={`mt-2 text-sm ${nameMessage === "Имя сохранено" ? "text-accent" : "text-danger"}`}>
+          <p className={`mt-2 text-[13px] leading-snug ${nameMessage === "Имя сохранено" ? "enigma-profile-hint-muted" : "text-danger"}`}>
             {nameMessage}
           </p>
         ) : null}
       </div>
 
-      {/* Phone block */}
-      <div className={`rounded-[16px] border p-4 ${
-        !profile?.phone 
-          ? (isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200")
-          : (isDark ? "bg-elevated/72 border-line/20" : "bg-[#f9fbfd] border-[rgba(15,23,42,0.05)]")
-      }`}>
-        <p className={`text-[13px] mb-2 ${isDark ? "text-muted" : "text-muted"}`}>Номер телефона</p>
+      <div className="enigma-glass-sheet-soft px-5 py-5">
+        <div className="mb-2 flex flex-wrap items-baseline gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted/76">Телефон</p>
+          {!profile?.phone ? (
+            <span className={`text-[11px] font-medium uppercase tracking-[0.1em] ${isDark ? "text-white/32" : "text-slate-400"}`}>не указан</span>
+          ) : null}
+        </div>
         <input
           value={phoneInput}
           onChange={(e) => {
@@ -556,40 +526,35 @@ export default function ProfilePage() {
             if (phoneMessage) setPhoneMessage(null);
           }}
           placeholder="Введите телефон"
-          className="w-full min-h-[48px] rounded-xl border border-line bg-main px-4 text-[16px] text-fg placeholder:text-muted/60 outline-none transition-colors duration-200 focus:ring-2 focus:ring-accent/35"
+          className="enigma-profile-input px-4 py-3 text-[16px]"
         />
         <button
           type="button"
           onClick={() => void savePhone()}
           disabled={phoneSaving}
-          className={`mt-3 inline-flex min-h-[43px] w-full items-center justify-center rounded-[12px] border px-3.5 py-2 text-[14px] font-medium transition-all duration-200 hover:brightness-[1.03] active:scale-[0.98] ${
-            isDark
-              ? "border-[#2f8d6a] bg-[#236f53] text-[#ecfff5] hover:bg-[#2b7d5d]"
-              : "border-[#2f996f] bg-[#39a877] text-white hover:bg-[#32996b]"
-          } disabled:opacity-50`}
+          className="enigma-profile-btn-submit"
         >
-          {phoneSaving ? "Сохранение..." : "Сохранить"}
+          {phoneSaving ? "Сохранение…" : "Сохранить"}
         </button>
         {phoneMessage ? (
-          <p className={`mt-2 text-sm ${phoneMessage === "Телефон сохранён" ? "text-accent" : "text-danger"}`}>
+          <p className={`mt-2 text-[13px] leading-snug ${phoneMessage === "Телефон сохранён" ? "enigma-profile-hint-muted" : "text-danger"}`}>
             {phoneMessage}
           </p>
         ) : null}
       </div>
 
-      {/* Мои объявления */}
-      <section className="pt-0.5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[20px] font-semibold tracking-tight text-fg">Мои объявления</h2>
+      <section className="enigma-glass-sheet-elevated px-5 py-6 sm:px-6 sm:py-7">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-fg sm:text-[21px]">Мои объявления</h2>
           <Link
             href="/create"
-            className={`inline-flex min-h-[42px] items-center rounded-[12px] border px-3 py-1.5 text-sm font-medium transition-all duration-200 hover:brightness-[1.02] active:scale-[0.98] ${
+            className={`inline-flex min-h-[42px] items-center rounded-xl border px-3.5 py-2 text-[13px] font-semibold tracking-tight transition-colors active:scale-[0.99] ${
               isDark
-                ? "border-line bg-elevated text-fg hover:bg-elev-2"
-                : "border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+                ? "border-white/[0.12] bg-white/[0.04] text-white/88 hover:bg-white/[0.08]"
+                : "border-slate-300/70 bg-white/90 text-slate-900 shadow-[0_1px_0_rgba(255,255,255,0.92)_inset] hover:bg-white"
             }`}
           >
-            Создать объявление
+            Создать
           </Link>
         </div>
 
@@ -598,70 +563,98 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={() => setListingProfileTab("active")}
-              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+              className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "active"
-                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  ? isDark
+                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
+                    : "bg-slate-900 text-white shadow-sm"
                   : isDark
-                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
-                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+                    ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
+                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
               }`}
             >
               Активные
-              <span className="ml-1.5 font-normal opacity-80">({activeProfileListings.length})</span>
+              <span className="ml-1.5 tabular-nums font-medium text-[12px] opacity-[0.65]">({activeProfileListings.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setListingProfileTab("archive")}
-              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+              className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "archive"
-                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  ? isDark
+                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
+                    : "bg-slate-900 text-white shadow-sm"
                   : isDark
-                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
-                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+                    ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
+                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
               }`}
             >
               Архив
-              <span className="ml-1.5 font-normal opacity-80">({archiveProfileListings.length})</span>
+              <span className="ml-1.5 tabular-nums font-medium text-[12px] opacity-[0.65]">({archiveProfileListings.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setListingProfileTab("favorites")}
-              className={`min-h-[40px] rounded-[12px] px-4 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+              className={`min-h-[40px] rounded-xl px-4 text-[13px] font-semibold tracking-tight transition-all duration-150 active:scale-[0.99] ${
                 listingProfileTab === "favorites"
-                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  ? isDark
+                    ? "bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/16"
+                    : "bg-slate-900 text-white shadow-sm"
                   : isDark
-                    ? "border border-line bg-elevated text-fg hover:bg-elev-2"
-                    : "border border-[rgba(15,23,42,0.12)] bg-elevated text-fg hover:bg-elev-2"
+                    ? "border border-white/[0.08] bg-transparent text-white/58 hover:bg-white/[0.04]"
+                    : "border border-slate-300/65 bg-transparent text-slate-600 hover:bg-black/[0.03]"
               }`}
             >
               Избранное
-              <span className="ml-1.5 font-normal opacity-80">({favoriteListings.length})</span>
+              <span className="ml-1.5 tabular-nums font-medium text-[12px] opacity-[0.65]">({favoriteListings.length})</span>
             </button>
           </div>
         ) : null}
 
         {myListingsLoading && listingProfileTab !== "favorites" ? (
-          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка...</div>
+          <div className="space-y-4">
+            {[0, 1, 2].map((sk) => (
+              <div
+                key={`sk-${sk}`}
+                className="overflow-hidden rounded-[22px] border border-black/[0.035] bg-[var(--enigma-surface-3)] shadow-[0_22px_52px_rgba(0,0,0,0.14),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-[2px] ring-1 ring-black/[0.035] dark:border-white/[0.06] dark:bg-[linear-gradient(172deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.025)_52%,transparent_100%)] dark:shadow-[0_28px_56px_rgba(0,0,0,0.42)] dark:ring-white/[0.05]"
+              >
+                <div className="aspect-[16/11] w-full overflow-hidden rounded-t-[22px] sm:aspect-[16/10]">
+                  <div className="enigma-listing-photo-shimmer h-full w-full rounded-none" aria-hidden />
+                </div>
+                  <div className="space-y-2.5 p-4 pb-5">
+                  <div className="h-[14px] w-[68%] max-w-[220px] rounded-[7px] bg-fg/[0.06] animate-skeleton dark:bg-white/[0.07]" />
+                  <div className="h-[12px] w-[42%] max-w-[140px] rounded-[6px] bg-fg/[0.04] animate-skeleton dark:bg-white/[0.05]" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : listingProfileTab === "favorites" && favoritesLoading ? (
-          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">Загрузка избранного...</div>
+          <div className="rounded-xl border border-black/[0.04] bg-black/[0.025] p-4 text-[13px] text-muted/88 dark:border-white/[0.07] dark:bg-white/[0.03]">
+            Загрузка избранного…
+          </div>
         ) : myListingsError ? (
-          <div className="rounded-card border border-danger/30 bg-danger/5 p-4 text-sm text-danger">{myListingsError}</div>
+          <div className="rounded-xl border border-danger/25 bg-danger/[0.045] p-4 text-[13px] text-danger">{myListingsError}</div>
         ) : (myListings || []).length === 0 && listingProfileTab !== "favorites" ? (
-          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">У вас пока нет объявлений</div>
+          <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] px-4 py-4 text-[13px] leading-relaxed text-muted/84 dark:border-white/[0.07] dark:bg-white/[0.03]">
+            Объявлений нет
+          </div>
         ) : shownProfileListings.length === 0 ? (
-          <div className="rounded-card border border-line bg-elevated p-4 text-sm text-muted">
+          <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] px-4 py-4 text-[13px] leading-relaxed text-muted/84 dark:border-white/[0.07] dark:bg-white/[0.03]">
             {listingProfileTab === "active"
-              ? "Нет активных объявлений — всё в архиве или ещё не создано."
+              ? "Нет активных объявлений"
               : listingProfileTab === "archive"
-                ? "В архиве пока пусто."
-                : "В избранном пока пусто — нажмите сердечко на карточке в ленте."}
+                ? "Архив пуст"
+                : "Избранное пусто"}
           </div>
         ) : (
           <div className="space-y-4">
             {shownProfileListings.map((safeListing) => {
               const isOwner = safeListing.user_id === session?.user?.id;
               return (
-                <div key={safeListing.id} className="rounded-[16px] bg-elevated/28 p-1.5 transition-all duration-200">
+                <div
+                  key={safeListing.id}
+                  className="overflow-hidden rounded-[22px] border border-black/[0.05] shadow-[0_26px_60px_rgba(0,0,0,0.12),0_3px_10px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.03] backdrop-blur-[3px] dark:border-white/[0.07] dark:shadow-[0_32px_64px_rgba(0,0,0,0.48)] dark:ring-white/[0.04]"
+                >
                   <ListingCard item={safeListing} compact favoriteRealtime={false} />
                   {isOwner && listingProfileTab !== "favorites" ? (
                     <div className="flex flex-col gap-2 p-2.5 pt-0">
@@ -670,7 +663,11 @@ export default function ProfilePage() {
                           type="button"
                           disabled={renewingListingId === safeListing.id}
                           onClick={() => void handleRenewListing(safeListing.id)}
-                          className="flex min-h-[46px] w-full items-center justify-center rounded-[12px] bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#dc2626] px-3 text-sm font-bold text-white shadow-[0_6px_20px_rgba(234,88,12,0.35)] transition-all duration-200 hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                            className={`flex min-h-[46px] w-full items-center justify-center rounded-xl border px-3 text-[13px] font-semibold tracking-tight transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-[0.55] ${
+                            isDark
+                              ? "border-amber-200/22 bg-gradient-to-br from-white/[0.09] via-white/[0.04] to-transparent text-[#fdecd3] hover:border-amber-200/40 hover:bg-white/[0.06]"
+                              : "border-slate-300/80 bg-white text-slate-900 hover:border-slate-400 hover:bg-[#fefefe]"
+                          }`}
                         >
                           {renewingListingId === safeListing.id ? "Продление…" : "Продлить публикацию"}
                         </button>
@@ -678,14 +675,18 @@ export default function ProfilePage() {
                       <div className="flex gap-2">
                         <Link
                           href={listingEditPath(String(safeListing.id))}
-                          className="flex min-h-[42px] flex-1 items-center justify-center rounded-[12px] border border-line/50 bg-elevated px-3 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
+                          className={`flex min-h-[42px] flex-1 items-center justify-center rounded-xl border px-3 text-[13px] font-semibold tracking-tight transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+                            isDark
+                              ? "border-white/[0.1] bg-white/[0.04] text-white/88 hover:bg-white/[0.07]"
+                              : "border-slate-300/70 bg-white/95 text-slate-800 hover:bg-white"
+                          }`}
                         >
                           Редактировать
                         </Link>
                         <button
                           type="button"
                           onClick={() => void handleDelete(safeListing.id)}
-                          className="min-h-[42px] rounded-[12px] border border-danger/35 bg-danger/5 px-3.5 text-sm font-medium text-danger transition-all duration-200 hover:bg-danger/10 active:scale-[0.98]"
+                          className="min-h-[42px] rounded-xl border border-danger/35 bg-transparent px-3.5 text-[13px] font-semibold tracking-tight text-danger/95 transition-colors duration-150 ease-out hover:bg-danger/[0.07] active:scale-[0.985]"
                         >
                           Удалить
                         </button>
@@ -700,269 +701,232 @@ export default function ProfilePage() {
       </section>
       </div>
 
-      <div
-        className={`mt-6 space-y-3 transition-all duration-200 ease-in-out lg:sticky lg:top-24 lg:mt-0 lg:self-start lg:-translate-y-[2px] ${
-          isDark ? "lg:rounded-[20px] lg:bg-[#0f1115] lg:p-3" : ""
-        }`}
-        style={
-          isDark
-            ? {
-                background:
-                  "radial-gradient(circle at 70% 20%, rgba(139,95,255,0.12), transparent 40%), radial-gradient(circle at 30% 80%, rgba(110,231,255,0.08), transparent 50%), #0a0a0f",
-              }
-            : undefined
-        }
-      >
-      <div
-        className={`rounded-[16px] border p-4 transition-all duration-200 ease-in-out ${
-          isDark
-            ? "border-white/10 bg-white/5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
-            : "border-[rgba(15,23,42,0.05)] bg-[#fcfdff] shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
-        }`}
-      >
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
-          Спокойное продвижение
-        </p>
-        <p className={`mt-1 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
-          Поднятие и приоритет в ленте — по желанию, отдельно от размещения
-        </p>
-        <Link
-          href="#promo-status-panel"
-          className={`mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-[13px] border px-3 text-[14px] font-medium transition-all duration-200 ease-in-out active:scale-[0.98] ${
+      <aside className="mt-8 space-y-4 lg:mt-0 lg:sticky lg:top-24 lg:self-start">
+        <div
+          className={`rounded-[22px] border p-5 backdrop-blur-xl ${
             isDark
-              ? "border-white/[0.12] bg-white/[0.05] text-fg/95 hover:bg-white/[0.08]"
-              : "border-black/[0.08] bg-white text-[#374151] shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-[#fafafa]"
+              ? "border-white/[0.08] bg-gradient-to-br from-[#16181f]/92 via-[#101119]/88 to-[#0c0e14]/92 shadow-[0_28px_64px_rgba(0,0,0,0.45)]"
+              : "border-slate-200/70 bg-white/80 shadow-[0_22px_50px_rgba(15,23,42,0.09)] ring-1 ring-black/[0.04]"
           }`}
         >
-          Выбрать вариант
-        </Link>
-      </div>
+          <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDark ? "text-white/40" : "text-slate-500"}`}>
+            Продвижение
+          </p>
+          <p className={`mt-2 text-[17px] font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+            Выше в ленте
+          </p>
+          <Link
+            href="#promo-status-panel"
+            className={`mt-5 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border px-3 text-[13px] font-medium transition-[border-color,background-color,transform,opacity] duration-150 ease-out active:scale-[0.985] ${
+              isDark
+                ? "border-white/[0.12] bg-white/[0.04] text-white/92 hover:bg-white/[0.08]"
+                : "border-slate-300/70 bg-white text-slate-800 hover:bg-slate-50"
+            }`}
+          >
+            Статус продвижений
+          </Link>
+        </div>
 
-      {/* ПАНЕЛЬ: МОЙ СТАТУС + МОИ ПАКЕТЫ */}
       <div id="promo-status-panel" />
-      <div className={`rounded-[18px] border p-4 card-animate ${
-        isDark 
-          ? "bg-white/5 border-white/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]" 
-          : "bg-[#fbfcfe] border-[rgba(0,0,0,0.04)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]"
-      }`}>
-        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Мой статус</p>
-        <div className="space-y-1.5">
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <div className="flex items-center gap-2.5">
-              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>Boost</span>
+        <div
+          className={`rounded-[22px] border p-5 backdrop-blur-xl ${
+            isDark
+              ? "border-white/[0.07] bg-white/[0.03] shadow-[0_18px_44px_rgba(0,0,0,0.32)]"
+              : "border-slate-200/65 bg-white/75 shadow-[0_16px_40px_rgba(15,23,42,0.07)] ring-1 ring-black/[0.03]"
+          }`}
+        >
+          <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-white/48" : "text-slate-500"}`}>Статус</p>
+          <div className="mt-3 space-y-2">
+            <div
+              className={`rounded-[11px] border px-3 py-[11px] ${
+                isDark
+                  ? "border-white/[0.07] bg-[linear-gradient(168deg,rgba(40,44,78,0.25)_0%,rgba(17,17,24,0.96)_55%,rgba(10,10,14,0.98)_100%)]"
+                  : "border-indigo-100/80 bg-[linear-gradient(180deg,#ffffff_0%,#fafbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`text-[11px] font-semibold tracking-[0.16em] ${isDark ? "text-indigo-100/86" : "text-indigo-950/92"}`}>BOOST</span>
+                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
+              </div>
+              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-white/34" : "text-slate-500"}`}>Больше показов</p>
             </div>
-            <span className={`text-[12px] font-medium ${isDark ? "text-muted/75" : "text-gray-500"}`}>
-              активен
-            </span>
+            <div
+              className={`rounded-[11px] border px-3 py-[11px] ${
+                isDark
+                  ? "border-white/[0.07] bg-gradient-to-br from-[#1e222b]/55 via-[#111116]/95 to-[#0a0b0f]"
+                  : "border-slate-200/90 bg-gradient-to-b from-white to-[#f9fafb] shadow-[inset_0_1px_0_rgba(255,255,255,0.94)]"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`text-[11px] font-semibold tracking-[0.16em] ${isDark ? "text-slate-100/86" : "text-slate-800"}`}>TOP</span>
+                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
+              </div>
+              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-slate-400/74" : "text-slate-500"}`}>Выше в ленте</p>
+            </div>
+            <div
+              className={`rounded-[11px] border px-3 py-[11px] ${
+                isDark
+                  ? "border-white/[0.08] bg-gradient-to-br from-[#0a0a0a] via-[#060606] to-[#080808]"
+                  : "border-slate-300/55 bg-gradient-to-b from-neutral-900 to-neutral-950"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[11px] font-semibold tracking-[0.16em] text-amber-50/85">VIP</span>
+                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-amber-200/45" : "text-amber-200/58"}`}>не активен</span>
+              </div>
+              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-amber-100/38">Максимальный приоритет</p>
+            </div>
           </div>
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <div className="flex items-center gap-2.5">
-              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>VIP</span>
-            </div>
-            <span className={`text-[12px] font-medium transition-colors duration-200 ${
-              isDark ? "text-muted/80 hover:text-fg/70" : "text-[#9ca3af] hover:text-[#6b7280]"
-            }`}>не активен</span>
-          </div>
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <div className="flex items-center gap-2.5">
-              <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>TOP</span>
-            </div>
-            <span className={`text-[12px] font-medium ${isDark ? "text-muted/75" : "text-gray-500"}`}>
-              активен
-            </span>
+
+          <div className={`my-[18px] h-px ${isDark ? "bg-white/[0.055]" : "bg-slate-200/82"}`} />
+          <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-white/44" : "text-slate-500"}`}>Слоты</p>
+          <div
+            className={`mt-3 flex items-baseline justify-between gap-3 rounded-[11px] border px-3.5 py-3 ${
+              isDark ? "border-white/[0.07] bg-white/[0.04]" : "border-slate-200/85 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,1)]"
+            }`}
+          >
+            <span className={`text-[12px] font-medium tracking-tight ${isDark ? "text-white/64" : "text-slate-600"}`}>Дополнительные</span>
+            <span className={`text-[28px] font-semibold tabular-nums tracking-[-0.03em] leading-none ${isDark ? "text-white/96" : "text-slate-900"}`}>{listingExtraCapacity}</span>
           </div>
         </div>
-        <div className={`my-3 h-px ${isDark ? "bg-white/[0.08]" : "bg-black/[0.05]"}`} />
-        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Балансы</p>
-        <div className="space-y-1.5">
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>
-              Доп. активных объявлений
-            </span>
-            <span className={`text-[18px] font-medium tabular-nums ${isDark ? "text-fg/90" : "text-[#374151]"}`}>
-              {Math.max(0, Math.floor(Number(profile?.listing_extra_slot_capacity ?? 0)))}
-            </span>
-          </div>
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>VIP дней</span>
-            <span className={`text-[18px] font-medium ${isDark ? "text-muted/85" : "text-[#94a3b8]"}`}>0</span>
-          </div>
-          <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
-            isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
-          }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>TOP размещений</span>
-            <span className={`text-[18px] font-medium ${isDark ? "text-accent/95" : "text-[#6f56cf]"}`}>1</span>
-          </div>
-        </div>
-      </div>
 
       {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
-      <div className={`rounded-[18px] border p-4 card-animate ${
-        isDark
-          ? "bg-white/5 border-white/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]"
-          : "bg-[#fbfcfe] border-[rgba(0,0,0,0.04)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]"
-      }`}>
-        <div id="packages-panel" />
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
-          Размещение
-        </p>
-
-        <div className={`mt-3.5 rounded-xl p-3.5 ${isDark ? "bg-white/5" : "bg-[#f8fafc]"}`}>
-          <p className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
-            До {FREE_ACTIVE_LISTINGS_CAP} активных объявлений бесплатно
-          </p>
-          <p className={`mt-2 text-[13px] leading-[1.45] ${isDark ? "text-muted/85" : "text-gray-600/85"}`}>
-            Во всех категориях и городах, без платы за обычное размещение. Enigma помогает спокойно стартовать и
-            набрать живую ленту.
-          </p>
-          <p className={`mt-3 text-[13px] tabular-nums tracking-tight ${isDark ? "text-fg/90" : "text-[#111]/90"}`}>
-            {placementQuota.active} из {placementQuota.max} активных объявлений
-          </p>
+        <div
+          id="packages-panel"
+          className={`relative overflow-hidden rounded-[22px] border shadow-[0_28px_64px_rgba(0,0,0,0.38)] backdrop-blur-xl ${
+            isDark
+              ? "border-white/[0.07] bg-gradient-to-b from-[#16161f] via-[#0f1016] to-[#0b0d12]"
+              : "border-slate-800/55 bg-gradient-to-b from-[#16151a] via-[#101015] to-[#0d0e12] ring-1 ring-amber-200/35"
+          }`}
+        >
           <div
-            className={`mt-2 h-1.5 w-full overflow-hidden rounded-full ${
-              isDark ? "bg-white/[0.08]" : "bg-black/[0.06]"
-            }`}
-            role="presentation"
-          >
-            <div
-              className={`h-full rounded-full transition-[width] duration-500 ease-out ${
-                isDark ? "bg-white/30" : "bg-[#1e293b]/20"
-              }`}
-              style={{ width: `${placementQuota.fillPct}%` }}
-            />
-          </div>
-          {listingExtraCapacity > 0 ? (
-            <p className={`mt-2 text-[12px] leading-relaxed ${isDark ? "text-muted/75" : "text-gray-500"}`}>
-              {FREE_ACTIVE_LISTINGS_CAP} бесплатно · +{listingExtraCapacity} по пакету
+            className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(ellipse_80%_100%_at_50%_0%,rgba(212,175,122,0.16),transparent_65%)]"
+            aria-hidden
+          />
+
+          <div className="relative px-5 pb-6 pt-7">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/38">Размещение</p>
+            <p className="mt-2 text-[29px] font-semibold tracking-[-0.03em] leading-none text-white/97 tabular-nums">
+              {placementQuota.active}<span className="mx-1 align-baseline text-[20px] font-normal text-white/28">/</span>{placementQuota.max}
             </p>
-          ) : null}
+            <p className="mt-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-white/32">активных</p>
+            <div className="mt-5 h-[3px] w-full overflow-hidden rounded-full bg-white/[0.07]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-white/75 via-amber-200/55 to-amber-100/42 transition-[width] duration-500 ease-out"
+                style={{ width: `${placementQuota.fillPct}%` }}
+              />
+            </div>
+            <p className="mt-3 text-[11px] text-white/30">{FREE_ACTIVE_LISTINGS_CAP} бесплатно включено</p>
+            {listingExtraCapacity > 0 ? (
+              <p className="mt-2 text-[11px] text-amber-200/35">ещё +{listingExtraCapacity} по пакету</p>
+            ) : null}
+          </div>
+
+          <div className="relative border-t border-white/[0.055] bg-black/30 px-5 py-7">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/32">
+              Ещё слотов
+            </p>
+            <div className="mt-4 space-y-2.5">
+              {LISTING_EXTRA_SLOT_PACKS.map((pack) => {
+                const selected = selectedListingPack?.slots === pack.slots;
+                return (
+                  <button
+                    key={pack.slots}
+                    type="button"
+                    onClick={() => setSelectedListingPack(pack)}
+                    className={`flex w-full items-start justify-between gap-4 rounded-[13px] border px-4 py-[15px] text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.995] ${
+                      selected
+                        ? "border-amber-200/50 bg-white/[0.09] shadow-[0_14px_36px_rgba(0,0,0,0.42)]"
+                        : "border-white/[0.06] bg-white/[0.035] hover:border-white/[0.11]"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[19px] font-semibold tracking-tight text-white/95 tabular-nums">
+                        +{pack.slots} слотов
+                      </span>
+                      <p className="mt-1 text-[10.5px] tracking-wide text-white/30">{SLOT_PACK_TAGLINE[pack.slots] ?? ""}</p>
+                    </div>
+                    <span className="shrink-0 text-[23px] font-semibold tracking-[-0.022em] text-amber-100/88 tabular-nums">
+                      {formatPrice(pack.priceRub)}
+                      <span className="ml-1 text-[13px] font-medium text-white/45">₽</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={!selectedListingPack}
+              onClick={() => {
+                if (!selectedListingPack) return;
+                const title = encodeURIComponent(`Пакет +${selectedListingPack.slots} активных объявлений`);
+                safePush(
+                  router,
+                  `/payment?promoKind=listing_pack&listingPackSlots=${selectedListingPack.slots}&amount=${selectedListingPack.priceRub}&title=${title}`,
+                );
+              }}
+              className={`mt-5 min-h-[50px] w-full rounded-xl text-[14px] font-semibold tracking-tight transition-all active:scale-[0.99] ${
+                selectedListingPack
+                  ? "border border-amber-200/45 bg-gradient-to-br from-[#e9d9b6] via-[#d4bf91] to-[#b6945e] text-stone-900 shadow-[0_16px_40px_rgba(0,0,0,0.42)] hover:brightness-[1.05]"
+                  : "cursor-not-allowed border border-white/[0.07] bg-white/[0.04] text-white/30"
+              }`}
+            >
+              {selectedListingPack ? `${formatPrice(selectedListingPack.priceRub)} ₽` : "Выберите объём"}
+            </button>
+          </div>
         </div>
 
         <div
-          className={`mt-4 rounded-xl border p-3.5 ${
-            isDark ? "border-white/10 bg-white/[0.03]" : "border-line/60 bg-elevated/40"
+          className={`rounded-[22px] border p-5 backdrop-blur-xl ${
+            isDark
+              ? "border-white/[0.07] bg-white/[0.03]"
+              : "border-slate-200/65 bg-white/75 ring-1 ring-black/[0.03]"
           }`}
         >
-          <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>
-            Нужно больше?
-          </p>
-          <p className={`mt-1.5 text-[12px] leading-relaxed ${isDark ? "text-muted/82" : "text-gray-600/85"}`}>
-            Пакеты дают дополнительные одновременно активные объявления поверх бесплатных {FREE_ACTIVE_LISTINGS_CAP}.
-            Платные продвижения (BOOST / TOP / VIP) — отдельно, как и раньше.
-          </p>
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {LISTING_EXTRA_SLOT_PACKS.map((pack) => {
-              const selected = selectedListingPack?.slots === pack.slots;
-              return (
-                <button
-                  key={pack.slots}
-                  type="button"
-                  onClick={() => setSelectedListingPack(pack)}
-                  className={`rounded-xl border px-3 py-3 text-left transition-colors duration-200 ${
-                    selected
-                      ? isDark
-                        ? "border-accent/60 bg-accent/10"
-                        : "border-accent/50 bg-accent/[0.06]"
-                      : isDark
-                        ? "border-white/10 hover:bg-white/[0.05]"
-                        : "border-line hover:bg-elevated"
-                  }`}
-                >
-                  <span className={`text-[12px] ${isDark ? "text-muted/90" : "text-gray-500"}`}>
-                    +{pack.slots} к лимиту
-                  </span>
-                  <div className="mt-1">
-                    <PriceDisplay value={pack.priceRub} size="sm" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <p className={`mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] ${isDark ? "text-white/40" : "text-slate-500"}`}>Настройки</p>
+          <ThemeToggle />
+          <Link
+            href="/support"
+            className={`pressable mt-4 flex min-h-[50px] w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.04] ${
+              isDark ? "border-white/[0.1]" : "border-slate-200/75"
+            }`}
+          >
+            <span className="text-sm font-medium text-fg">Поддержка</span>
+            <span className="text-sm text-muted">→</span>
+          </Link>
         </div>
-
-        <p className={`mt-4 text-[11px] leading-relaxed ${isDark ? "text-muted/70" : "text-gray-500/90"}`}>
-          Мы мягко ограничиваем злоупотребления: уже сейчас аккаунт привязан к почте. Дальше — по мере роста сервиса —
-          подтверждение телефона, контекст устройства, лимиты при подозрительной активности — всё очень дозировано,
-          чтобы не мешать честным продавцам.
-        </p>
 
         <button
           type="button"
-          disabled={!selectedListingPack}
           onClick={() => {
-            if (!selectedListingPack) return;
-            const title = encodeURIComponent(`Пакет +${selectedListingPack.slots} активных объявлений`);
-            safePush(
-              router,
-              `/payment?promoKind=listing_pack&listingPackSlots=${selectedListingPack.slots}&amount=${selectedListingPack.priceRub}&title=${title}`,
-            );
+            setDeleteErr(null);
+            setConfirmOpen(true);
           }}
-          className={`mt-4 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-out active:scale-[0.99] ${
-            selectedListingPack
-              ? isDark
-                ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_8px_26px_rgba(139,95,255,0.28)] hover:brightness-[1.03]"
-                : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/15 hover:brightness-[1.02]"
-              : isDark
-                ? "cursor-not-allowed bg-white/10 text-muted"
-                : "cursor-not-allowed bg-elev-2 text-muted"
+          className="w-full rounded-xl border border-danger/35 bg-transparent py-3.5 text-sm font-semibold text-danger transition-all hover:bg-danger/[0.06] active:scale-[0.98]"
+        >
+          Удалить аккаунт
+        </button>
+        {deleteErr ? <p className="text-sm text-danger">{deleteErr}</p> : null}
+
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              clearSaveEnigmaContinuationRoute();
+              await signOut();
+              router.replace("/login?signed_out=1");
+            })();
+          }}
+          className={`w-full rounded-xl border py-3.5 text-sm font-semibold transition-all hover:bg-black/[0.04] dark:hover:bg-white/[0.05] active:scale-[0.98] ${
+            isDark ? "border-white/[0.1] text-white/90" : "border-slate-300/75 text-fg"
           }`}
         >
-          {selectedListingPack
-            ? `Оформить ${formatPrice(selectedListingPack.priceRub)} ₽ · +${selectedListingPack.slots} слотов`
-            : "Выберите пакет"}
+          Выйти
         </button>
+      </aside>
       </div>
-
-      <div className="pt-1">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">Настройки</p>
-        <ThemeToggle />
-        <Link
-          href="/support"
-          className="pressable mt-3 flex w-full min-h-[52px] items-center justify-between rounded-card border border-line bg-elevated px-4 py-3 text-left transition-colors duration-ui hover:bg-elev-2"
-        >
-          <span className="text-sm font-medium text-fg">Поддержка</span>
-          <span className="text-sm text-muted">Открыть</span>
-        </Link>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          setDeleteErr(null);
-          setConfirmOpen(true);
-        }}
-        className="mt-3 w-full min-h-[52px] rounded-card border border-danger/40 bg-transparent py-3.5 text-sm font-semibold text-danger transition-all duration-200 hover:bg-danger/5 active:scale-[0.98]"
-      >
-        Удалить аккаунт
-      </button>
-      {deleteErr ? <p className="mt-2 text-sm text-danger">{deleteErr}</p> : null}
-
-      <button
-        type="button"
-        onClick={() => {
-          void (async () => {
-            clearSaveEnigmaContinuationRoute();
-            await signOut();
-            router.replace("/login?signed_out=1");
-          })();
-        }}
-        className="mt-3 w-full min-h-[52px] rounded-card border border-line bg-elevated py-3.5 text-sm font-semibold text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
-      >
-        Выйти
-      </button>
-      </div>
-      </div>
+      </main>
 
       {confirmOpen ? (
         <div
@@ -999,19 +963,6 @@ export default function ProfilePage() {
           </div>
         </div>
       ) : null}
-      </main>
-      <style jsx global>{`
-        @keyframes card-entry {
-          0% {
-            transform: translateY(20px);
-            opacity: 0;
-          }
-          100% {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </>
   );
 }

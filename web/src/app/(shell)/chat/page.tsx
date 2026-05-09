@@ -317,10 +317,7 @@ export default function ChatsPage() {
       </ul>
 
       {!loading && chatReady && sortedRows.length === 0 && !error ? (
-        <EmptyState
-          title="Нет переписок"
-          subtitle="Откройте объявление и нажмите «Написать»."
-        />
+        <EmptyState title="Переписок нет" />
       ) : null}
 
       {!loading && chatReady && !rows.length ? (

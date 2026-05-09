@@ -74,20 +74,18 @@ function formatUnreadBadge(count: number): string {
   return String(count);
 }
 
-function navChrome(theme: UiTheme): { navClass: string; bg: string; badgeRing: string } {
+function navChrome(theme: UiTheme): { navClass: string; badgeRing: string } {
   if (theme === "light") {
     return {
       navClass:
-        "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
-      bg: "#FFFFFF",
-      badgeRing: "#FFFFFF",
+        "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-slate-900/[0.08] safe-pb view-mode-nav sm:max-w-none",
+      badgeRing: "rgba(255,255,255,0.92)",
     };
   }
   return {
     navClass:
-      "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-transparent safe-pb view-mode-nav sm:max-w-none",
-    bg: "#000000",
-    badgeRing: "#000000",
+      "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-white/[0.06] safe-pb view-mode-nav sm:max-w-none",
+    badgeRing: "rgba(12,12,12,0.9)",
   };
 }
 
@@ -151,7 +149,6 @@ function BottomNavInner() {
       className={chrome.navClass}
       style={{
         paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
-        backgroundColor: chrome.bg,
       }}
       aria-busy={loading}
     >

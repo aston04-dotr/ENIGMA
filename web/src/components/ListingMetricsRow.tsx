@@ -85,28 +85,29 @@ export function ListingMetricsRow({
   const safeLive =
     Number.isFinite(Number(live)) && Number(live) > 0 ? Number(live) : null;
 
-  const sizeClass = variant === "detail" ? "text-[12px] gap-3.5" : "text-xs gap-3";
+  const sizeGap = variant === "detail" ? "gap-3.5" : "gap-3";
+  const textSize = variant === "detail" ? "text-[12px]" : "text-[13px]";
 
   return (
     <div
-      className={`flex items-center whitespace-nowrap text-gray-400 opacity-70 ${sizeClass}`}
+      className={`flex items-baseline whitespace-nowrap text-muted/54 ${sizeGap} ${textSize}`}
     >
-      <span className="inline-flex items-center gap-1 leading-none tabular-nums transition-colors duration-200 hover:opacity-100">
+      <span className="inline-flex items-center gap-1 tabular-nums leading-none opacity-95 transition-opacity duration-150 ease-out hover:opacity-100">
         <EyeIcon className="h-4 w-4" />
         <span>{safeViews}</span>
       </span>
 
       {safeLive != null ? (
-        <span className="inline-flex items-center gap-1 text-gray-500 leading-none tabular-nums transition-opacity duration-200 hover:opacity-100">
-          <LiveIcon className="h-4 w-4 animate-pulse" />
+        <span className="inline-flex items-center gap-1 tabular-nums leading-none text-muted/50 transition-opacity duration-150 ease-out hover:text-muted/72">
+          <LiveIcon className="h-4 w-4 animate-pulse opacity-90 [animation-duration:2.6s]" />
           <span>+{safeLive}</span>
         </span>
       ) : null}
 
       {omitFavorite ? (
         <span
-          className={`inline-flex items-center gap-1 leading-none tabular-nums ${
-            isFavorited ? "text-red-500 opacity-100" : "text-gray-400"
+          className={`inline-flex items-center gap-1 tabular-nums leading-none transition-opacity duration-150 ease-out ${
+            isFavorited ? "text-red-500/92" : "text-muted/48"
           }`}
         >
           <HeartIcon className="h-4 w-4" filled={isFavorited} />
@@ -119,10 +120,10 @@ export function ListingMetricsRow({
             aria-label={
               isFavorited ? "Убрать из избранного" : "Добавить в избранное"
             }
-            className={`inline-flex items-center gap-1 leading-none tabular-nums transition-all duration-150 ${
+            className={`inline-flex items-center gap-1 tabular-nums leading-none transition-[opacity,transform,color] duration-150 ease-out active:scale-[0.985] ${
               isFavorited
-                ? "text-red-500 opacity-100 scale-110"
-                : "text-gray-400 hover:opacity-100 hover:text-gray-500"
+                ? "text-red-500/95 scale-[1.02]"
+                : "text-muted/48 hover:text-muted/70"
             }`}
           >
             <HeartIcon
@@ -133,8 +134,8 @@ export function ListingMetricsRow({
           </button>
         ) : (
           <span
-            className={`inline-flex items-center gap-1 leading-none tabular-nums ${
-              isFavorited ? "text-red-500 opacity-100" : "text-gray-400"
+            className={`inline-flex items-center gap-1 tabular-nums leading-none transition-opacity duration-150 ease-out ${
+              isFavorited ? "text-red-500/92" : "text-muted/48"
             }`}
           >
             <HeartIcon className="h-4 w-4" filled={isFavorited} />

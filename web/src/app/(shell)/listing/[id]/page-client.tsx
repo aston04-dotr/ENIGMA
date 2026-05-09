@@ -666,9 +666,9 @@ export default function ListingDetailPage() {
                 Редактировать объявление
               </Link>
               {!listingExpired ? (
-                <div className="space-y-2 pt-1">
-                  <p className="text-center text-[11px] font-medium uppercase tracking-wider text-muted">
-                    По желанию
+                <div className="space-y-2.5 pt-1">
+                  <p className="text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-muted/85">
+                    Продвижение
                   </p>
                   <Link
                     href={boostHref}
@@ -679,15 +679,21 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                      theme === "dark"
+                        ? "border-indigo-400/15 bg-gradient-to-br from-[#1c1930]/55 via-[#101018]/86 to-[#07080f] hover:border-indigo-300/28"
+                        : "border-indigo-200/45 bg-gradient-to-br from-[#faf9ff] via-white to-white hover:border-indigo-200/65"
+                    }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[15px] font-medium text-fg">Поднять в поиске</span>
-                      <span className="text-[15px] tabular-nums font-medium text-muted">{boostPriceRub} ₽</span>
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-indigo-100/92" : "text-indigo-950/95"}`}>
+                        BOOST
+                      </span>
+                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-indigo-100/76" : "text-indigo-900/82"}`}>
+                        {boostPriceRub} ₽
+                      </span>
                     </span>
-                    <span className="mt-0.5 text-[12px] text-muted">
-                      Спокойно подсветим в ленте
-                    </span>
+                    <span className={`mt-1 text-[11px] tracking-tight ${theme === "dark" ? "text-white/43" : "text-slate-500"}`}>Больше показов</span>
                   </Link>
                   <Link
                     href={topHref}
@@ -698,15 +704,23 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                      theme === "dark"
+                        ? "border-slate-400/16 bg-gradient-to-br from-[#272b36]/42 via-[#12141c]/92 to-[#08090e] hover:border-slate-300/30"
+                        : "border-slate-200/75 bg-gradient-to-br from-[#fafbfc] to-white hover:border-slate-300/95"
+                    }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[15px] font-medium text-fg">Приоритет в ленте</span>
-                      <span className="text-[15px] tabular-nums font-medium text-muted">
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-slate-100/90" : "text-slate-800"}`}>
+                        TOP
+                      </span>
+                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-slate-200/78" : "text-slate-600"}`}>
                         {defaultTopCtaPriceRub()} ₽
                       </span>
                     </span>
-                    <span className="mt-0.5 text-[12px] text-muted">Расширенная видимость в ленте</span>
+                    <span className={`mt-1 text-[11px] tracking-tight ${theme === "dark" ? "text-slate-400/72" : "text-slate-500"}`}>
+                      Выше в ленте
+                    </span>
                   </Link>
                   <Link
                     href={vipHref}
@@ -717,15 +731,19 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-colors active:scale-[0.997] ${
+                      theme === "dark"
+                        ? "border-amber-500/16 bg-gradient-to-br from-[#0b0a08] via-[#050505] to-[#080807] hover:border-amber-400/28"
+                        : "border-amber-200/50 bg-gradient-to-br from-[#1a1917] to-[#0d0c0b] text-white hover:border-amber-200/65"
+                    }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[15px] font-medium text-fg">VIP-зона</span>
-                      <span className="text-[15px] tabular-nums font-medium text-muted">
-                        {defaultVipCtaPriceRub()} ₽
-                      </span>
+                      <span className="text-[12px] font-semibold tracking-[0.14em] text-amber-50/90">VIP</span>
+                      <span className="text-[15px] tabular-nums font-semibold text-amber-100/68">{defaultVipCtaPriceRub()} ₽</span>
                     </span>
-                    <span className="mt-0.5 text-[12px] text-muted">Максимальная заметность</span>
+                    <span className="mt-1 text-[11px] tracking-tight text-amber-100/36">
+                      Максимальный приоритет
+                    </span>
                   </Link>
                 </div>
               ) : null}

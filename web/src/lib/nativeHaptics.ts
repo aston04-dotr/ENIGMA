@@ -1,7 +1,7 @@
 /** Очень короткая вибрация (Android WebView / Chrome): только мобильное касание + не reduce-motion + вкладка активна. */
 
 function pickLightVibrateMs(): number {
-  return 5 + Math.floor(Math.random() * 8);
+  return 6 + Math.floor(Math.random() * 4);
 }
 
 function isDesktopLikePointer(): boolean {

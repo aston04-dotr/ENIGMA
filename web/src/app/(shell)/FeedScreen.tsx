@@ -1363,15 +1363,11 @@ export function FeedPage({
         ) : null}
         {filtered.length === 0 ? (
           <EmptyState
-            title={
-              feedVariant === "seeking"
-                ? "Пока нет запросов в этом городе"
-                : "Пока пусто. Создай первое объявление."
-            }
+            title={feedVariant === "seeking" ? "Запросов нет" : "Лента пуста"}
             subtitle={
               feedVariant === "seeking"
-                ? "Здесь появятся объявления «сниму», «куплю», «возьму в прокат»."
-                : "Запусти ленту первым - это займёт меньше минуты."
+                ? "В этом городе пока нет объявлений «сниму», «куплю» и похожих."
+                : undefined
             }
             actionLabel={feedVariant === "seeking" ? "Разместить запрос" : "Создать"}
             actionHref={feedVariant === "seeking" ? "/create?role=seeking" : "/create"}
