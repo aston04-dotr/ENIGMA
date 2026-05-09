@@ -679,17 +679,17 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-[0_0_28px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-[rgba(120,200,255,0.26)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] hover:border-[rgba(148,214,255,0.38)] hover:shadow-[0_0_36px_rgba(84,169,255,0.09)]"
-                        : "border-[rgba(29,118,232,0.28)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] ring-1 ring-[rgba(29,118,232,0.08)] hover:border-[rgba(29,118,232,0.42)] hover:shadow-[0_12px_32px_rgba(29,118,232,0.08)]"
+                        ? "border-[rgba(122,206,255,0.3)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] shadow-[0_0_26px_rgba(84,169,255,0.12)] hover:border-[rgba(148,214,255,0.4)] hover:shadow-[0_0_36px_rgba(84,169,255,0.14)]"
+                        : "border-[rgba(29,118,232,0.38)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] shadow-[0_10px_30px_rgba(29,118,232,0.11)] ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(29,118,232,0.48)] hover:shadow-[0_14px_36px_rgba(29,118,232,0.14)]"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#b8dcff]" : "text-[#0b3d8a]"}`}>
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#b8dcff]" : "text-[#054a9e]"}`}>
                         BOOST
                       </span>
-                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-[#8ecfff]" : "text-[#084298]"}`}>
+                      <span className={`text-[15px] tabular-nums font-bold ${theme === "dark" ? "text-[#8ecfff]" : "text-[#054080]"}`}>
                         {boostPriceRub} ₽
                       </span>
                     </span>
@@ -706,17 +706,17 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-[rgba(180,205,235,0.14)] bg-gradient-to-br from-[#1c2436]/94 via-[#121a2e]/97 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-[rgba(200,220,246,0.22)]"
-                        : "border-slate-400/35 bg-gradient-to-br from-[#e8eef8] via-[#fafcfe] to-white ring-1 ring-slate-500/[0.08] hover:border-slate-500/45"
+                        ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_12px_36px_rgba(0,0,0,0.26)] hover:border-[rgba(214,228,246,0.32)]"
+                        : "border-slate-500/40 bg-[linear-gradient(168deg,#d9e4f4_0%,#eef3fb_52%,#f9fbfe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] ring-1 ring-slate-500/22 hover:border-slate-500/48"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#d4e3ff]" : "text-slate-800"}`}>
+                      <span className={`text-[12px] font-semibold tracking-[0.14em] ${theme === "dark" ? "text-[#e2ebfb]" : "text-slate-900"}`}>
                         TOP
                       </span>
-                      <span className={`text-[15px] tabular-nums font-semibold ${theme === "dark" ? "text-[#aabdd6]" : "text-slate-700"}`}>
+                      <span className={`text-[15px] tabular-nums font-bold ${theme === "dark" ? "text-[#aabdd6]" : "text-slate-800"}`}>
                         {defaultTopCtaPriceRub()} ₽
                       </span>
                     </span>
@@ -733,17 +733,21 @@ export default function ListingDetailPage() {
                         surface: "listing_detail",
                       })
                     }
-                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-[inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
+                    className={`flex min-h-[52px] flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-[inset_0_1px_0_rgba(255,212,148,0.12),inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
                       theme === "dark"
-                        ? "border-[rgba(250,215,148,0.22)] bg-gradient-to-br from-[#0f0d09] via-[#050708] to-[#08060a] hover:border-[rgba(250,215,148,0.35)] hover:shadow-[0_0_28px_rgba(250,200,92,0.06)]"
-                        : "border-slate-800/50 bg-[linear-gradient(168deg,#1a2638_0%,#111820_52%,#0a0e14_100%)] text-white ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(250,200,92,0.28)]"
+                        ? "border-[rgba(240,206,138,0.32)] bg-gradient-to-br from-[#17130e] via-[#090b0d] to-[#09070b] hover:border-[rgba(250,215,148,0.38)] hover:shadow-[0_0_30px_rgba(250,200,92,0.08)]"
+                        : "border-[rgba(212,168,94,0.4)] bg-[linear-gradient(168deg,#1e2a38_0%,#151d28_52%,#0b1018_100%)] text-white ring-1 ring-[rgba(29,118,232,0.16)] hover:border-[rgba(250,200,92,0.32)]"
                     }`}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[12px] font-semibold tracking-[0.14em] text-[#fde7b8]/95">VIP</span>
-                      <span className="text-[15px] tabular-nums font-semibold text-[#f5d088]/88">{defaultVipCtaPriceRub()} ₽</span>
+                      <span className="text-[12px] font-semibold tracking-[0.14em] text-[#fde7b8]">VIP</span>
+                      <span className="text-[15px] tabular-nums font-bold text-[#f5d088]/92">{defaultVipCtaPriceRub()} ₽</span>
                     </span>
-                    <span className="mt-1 text-[11px] leading-[1.28] tracking-tight text-[color:rgba(253,227,178,0.42)]">
+                    <span
+                      className={`mt-1 text-[11px] leading-[1.28] tracking-tight ${
+                        theme === "dark" ? "text-[rgba(240,206,154,0.55)]" : "text-[rgba(245,218,168,0.72)]"
+                      }`}
+                    >
                       Максимальный приоритет
                     </span>
                   </Link>

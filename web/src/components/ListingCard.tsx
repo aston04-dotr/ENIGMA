@@ -518,17 +518,17 @@ export function ListingCard({
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] shadow-[0_0_24px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-[rgba(120,200,255,0.26)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] hover:border-[rgba(148,214,255,0.38)] hover:shadow-[0_0_32px_rgba(84,169,255,0.09)]"
-                : "border-[rgba(29,118,232,0.28)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] ring-1 ring-[rgba(29,118,232,0.08)] hover:border-[rgba(29,118,232,0.42)] hover:shadow-[0_12px_32px_rgba(29,118,232,0.08)]"
+                ? "border-[rgba(122,206,255,0.3)] bg-[linear-gradient(152deg,rgba(26,44,78,0.92)_0%,rgba(14,22,40,0.96)_55%,rgba(8,12,22,1)_100%)] shadow-[0_0_26px_rgba(84,169,255,0.12)] hover:border-[rgba(148,214,255,0.4)] hover:shadow-[0_0_34px_rgba(84,169,255,0.14)]"
+                : "border-[rgba(29,118,232,0.38)] bg-gradient-to-br from-[#eaf2ff] via-white to-[#f2f8ff] shadow-[0_10px_30px_rgba(29,118,232,0.11)] ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(29,118,232,0.48)] hover:shadow-[0_14px_36px_rgba(29,118,232,0.14)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-[#0b3d8a]" : "text-[#b8dcff]"}`}>
+              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-[#054a9e]" : "text-[#b8dcff]"}`}>
                 BOOST
               </span>
-              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-[#084298]" : "text-[#8ecfff]"}`}>
+              <span className={`text-[14px] tabular-nums font-bold ${theme === "light" ? "text-[#054080]" : "text-[#8ecfff]"}`}>
                 {priceRub} ₽
               </span>
             </div>
@@ -540,17 +540,17 @@ export function ListingCard({
           <Link
             href={topHref()}
             onClick={() => trackBoostEvent("top_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-[rgba(180,205,235,0.14)] bg-gradient-to-br from-[#1c2436]/94 via-[#121a2e]/97 to-[#0a101e] hover:border-[rgba(200,220,246,0.22)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                : "border-slate-400/35 bg-gradient-to-br from-[#e8eef8] via-[#fafcfe] to-white ring-1 ring-slate-500/[0.08] hover:border-slate-500/45"
+                ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_12px_36px_rgba(0,0,0,0.26)] hover:border-[rgba(214,228,246,0.32)]"
+                : "border-slate-500/40 bg-[linear-gradient(168deg,#d9e4f4_0%,#eef3fb_52%,#f9fbfe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] ring-1 ring-slate-500/22 hover:border-slate-500/48"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-800" : "text-[#d4e3ff]"}`}>
+              <span className={`text-[11px] font-semibold tracking-[0.18em] ${theme === "light" ? "text-slate-900" : "text-[#e2ebfb]"}`}>
                 TOP
               </span>
-              <span className={`text-[14px] tabular-nums font-semibold ${theme === "light" ? "text-slate-700" : "text-[#aabdd6]"}`}>
+              <span className={`text-[14px] tabular-nums font-bold ${theme === "light" ? "text-slate-800" : "text-[#aabdd6]"}`}>
                 {defaultTopCtaPriceRub()} ₽
               </span>
             </div>
@@ -562,17 +562,21 @@ export function ListingCard({
           <Link
             href={vipHref()}
             onClick={() => trackBoostEvent("vip_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-[11px] border px-3 py-[11px] shadow-[inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.985] ${
+            className={`block rounded-[11px] border px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,212,148,0.12),inset_0_0_0_1px_rgba(84,169,255,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out active:scale-[0.985] ${
               theme === "dark"
-                ? "border-[rgba(250,215,148,0.22)] bg-gradient-to-br from-[#0f0d09] via-[#050708] to-[#08060a] hover:border-[rgba(250,215,148,0.35)] hover:shadow-[0_0_28px_rgba(250,200,92,0.06)]"
-                : "border-slate-800/50 bg-[linear-gradient(168deg,#1a2638_0%,#111820_52%,#0a0e14_100%)] text-white ring-1 ring-[rgba(29,118,232,0.12)] hover:border-[rgba(250,200,92,0.28)]"
+                ? "border-[rgba(240,206,138,0.32)] bg-gradient-to-br from-[#17130e] via-[#090b0d] to-[#09070b] hover:border-[rgba(250,215,148,0.38)] hover:shadow-[0_0_30px_rgba(250,200,92,0.08)]"
+                : "border-[rgba(212,168,94,0.4)] bg-[linear-gradient(168deg,#1e2a38_0%,#151d28_52%,#0b1018_100%)] text-white ring-1 ring-[rgba(29,118,232,0.16)] hover:border-[rgba(250,200,92,0.32)]"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]/95">VIP</span>
-              <span className="text-[14px] tabular-nums font-semibold text-[#f5d088]/88">{defaultVipCtaPriceRub()} ₽</span>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]">VIP</span>
+              <span className="text-[14px] tabular-nums font-bold text-[#f5d088]/92">{defaultVipCtaPriceRub()} ₽</span>
             </div>
-            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-[color:rgba(253,227,178,0.42)]">
+            <p
+              className={`mt-0.5 text-[10.5px] leading-[1.28] tracking-wide ${
+                theme === "dark" ? "text-[rgba(240,206,154,0.55)]" : "text-[rgba(245,218,168,0.72)]"
+              }`}
+            >
               Максимальный приоритет
             </p>
           </Link>

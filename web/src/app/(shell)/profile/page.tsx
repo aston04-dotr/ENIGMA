@@ -738,43 +738,67 @@ export default function ProfilePage() {
           <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-white/48" : "text-slate-500"}`}>Статус</p>
           <div className="mt-3 space-y-2">
             <div
-              className={`rounded-[11px] border px-3 py-[11px] shadow-[0_0_22px_rgba(84,169,255,0.05)] ${
+              className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
-                  ? "border-[rgba(140,210,255,0.22)] bg-[linear-gradient(152deg,rgba(24,40,72,0.94)_0%,rgba(14,20,36,0.98)_58%,rgba(8,12,22,1)_100%)]"
-                  : "border-[rgba(29,118,232,0.3)] bg-[linear-gradient(180deg,#f2f8ff_0%,#ffffff_100%)] ring-1 ring-[rgba(29,118,232,0.1)]"
+                  ? "border-[rgba(122,206,255,0.32)] bg-[linear-gradient(152deg,rgba(24,40,72,0.94)_0%,rgba(14,20,36,0.98)_58%,rgba(8,12,22,1)_100%)] shadow-[0_0_28px_rgba(84,169,255,0.14)]"
+                  : "border-[rgba(29,118,232,0.42)] bg-[linear-gradient(180deg,#eaf4ff_0%,#ffffff_100%)] shadow-[0_10px_32px_rgba(29,118,232,0.12)] ring-1 ring-[rgba(29,118,232,0.14)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#b8dcff]" : "text-[#0b3d8a]"}`}>BOOST</span>
-                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
+                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#b8dcff]" : "text-[#054a9e]"}`}>BOOST</span>
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#8ecfff]/78" : "text-[#0b63d8]/88"}`}
+                >
+                  активен
+                </span>
               </div>
-              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-white/34" : "text-slate-500"}`}>Больше показов</p>
+              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-white/44" : "text-slate-600"}`}>Больше показов</p>
             </div>
             <div
               className={`rounded-[11px] border px-3 py-[11px] ${
                 isDark
-                  ? "border-[rgba(180,205,235,0.15)] bg-gradient-to-br from-[#1a2336]/95 via-[#121a2e]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                  : "border-slate-400/40 bg-gradient-to-b from-[#e8eef8] via-white to-[#f7faff] ring-1 ring-slate-400/15"
+                  ? "border-[rgba(200,218,238,0.22)] bg-gradient-to-br from-[#1f283a]/96 via-[#141c2f]/98 to-[#0a101e] shadow-[inset_0_1px_0_rgba(255,255,255,0.048),0_14px_40px_rgba(0,0,0,0.28)]"
+                  : "border-slate-500/42 bg-[linear-gradient(168deg,#d9e4f4_0%,#eef3fb_52%,#f9fbfe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] ring-1 ring-slate-500/22"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#d4e3ff]" : "text-slate-800"}`}>TOP</span>
-                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-white/40" : "text-slate-500"}`}>активен</span>
+                <span
+                  className={`text-[11px] font-semibold tracking-[0.18em] ${isDark ? "text-[#e2ebfb]" : "text-slate-900"}`}
+                >
+                  TOP
+                </span>
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#aabdd6]/82" : "text-slate-700"}`}
+                >
+                  активен
+                </span>
               </div>
-              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-slate-400/74" : "text-slate-500"}`}>Выше в ленте</p>
+              <p className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${isDark ? "text-slate-400/78" : "text-slate-600"}`}>
+                Выше в ленте
+              </p>
             </div>
             <div
-              className={`rounded-[11px] border px-3 py-[11px] shadow-[inset_0_0_0_1px_rgba(84,169,255,0.08)] ${
+              className={`rounded-[11px] border px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,212,148,0.14),inset_0_0_0_1px_rgba(84,169,255,0.06)] ${
                 isDark
-                  ? "border-[rgba(246,210,140,0.24)] bg-[linear-gradient(168deg,#12100c_0%,#060708_52%,#09070a_100%)]"
-                  : "border-slate-900/40 bg-[linear-gradient(172deg,#243242_0%,#141c28_48%,#0a0e14_100%)] ring-1 ring-[rgba(29,118,232,0.14)]"
+                  ? "border-[rgba(240,206,138,0.34)] bg-[linear-gradient(168deg,#17130e_0%,#090b0d_52%,#09070b_100%)]"
+                  : "border-[rgba(212,168,94,0.42)] bg-[linear-gradient(172deg,#1e2a38_0%,#151d28_48%,#0b1018_100%)] ring-1 ring-[rgba(29,118,232,0.16)]"
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]/95">VIP</span>
-                <span className={`text-[10px] font-medium uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-amber-200/45" : "text-amber-200/58"}`}>не активен</span>
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-[#fde7b8]">VIP</span>
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums ${isDark ? "text-[#f0d088]/76" : "text-[#f5dcbc]/82"}`}
+                >
+                  не активен
+                </span>
               </div>
-              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-amber-100/38">Максимальный приоритет</p>
+              <p
+                className={`mt-1 text-[10.5px] leading-[1.35] tracking-wide ${
+                  isDark ? "text-[rgba(240,206,154,0.58)]" : "text-[rgba(245,218,168,0.76)]"
+                }`}
+              >
+                Максимальный приоритет
+              </p>
             </div>
           </div>
 
@@ -836,19 +860,37 @@ export default function ProfilePage() {
                     onClick={() => setSelectedListingPack(pack)}
                     className={`flex w-full items-start justify-between gap-4 rounded-[13px] border px-4 py-[15px] text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.995] ${
                       selected
-                        ? "border-amber-200/50 bg-white/[0.09] shadow-[0_14px_36px_rgba(0,0,0,0.42)]"
-                        : "border-white/[0.06] bg-white/[0.035] hover:border-white/[0.11]"
+                        ? isDark
+                          ? "border-amber-200/52 bg-white/[0.095] shadow-[0_14px_36px_rgba(0,0,0,0.42)]"
+                          : "border-amber-200/62 bg-white/[0.12] shadow-[0_16px_44px_rgba(0,0,0,0.38)] ring-1 ring-[rgba(255,232,195,0.22)]"
+                        : isDark
+                          ? "border-white/[0.06] bg-white/[0.035] hover:border-white/[0.11]"
+                          : "border-white/[0.095] bg-white/[0.066] hover:border-white/[0.14]"
                     }`}
                   >
                     <div className="min-w-0">
-                      <span className="text-[19px] font-semibold tracking-tight text-white/95 tabular-nums">
+                      <span className="text-[19px] font-semibold tracking-tight text-white/[0.97] tabular-nums">
                         +{pack.slots} слотов
                       </span>
-                      <p className="mt-1 text-[10.5px] tracking-wide text-white/30">{SLOT_PACK_TAGLINE[pack.slots] ?? ""}</p>
+                      <p className={`mt-1 text-[10.5px] tracking-wide ${isDark ? "text-white/[0.36]" : "text-white/[0.44]"}`}>
+                        {SLOT_PACK_TAGLINE[pack.slots] ?? ""}
+                      </p>
                     </div>
-                    <span className="shrink-0 text-[23px] font-semibold tracking-[-0.022em] text-amber-100/88 tabular-nums">
+                    <span
+                      className={`shrink-0 tabular-nums tracking-[-0.025em] ${
+                        isDark
+                          ? "text-[25px] font-bold text-[#fff6ec] drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]"
+                          : "text-[25px] font-bold text-[#fffdfa] drop-shadow-[0_1px_2px_rgba(0,0,0,0.5),0_0_32px_rgba(255,230,206,0.42)]"
+                      }`}
+                    >
                       {formatPrice(pack.priceRub)}
-                      <span className="ml-1 text-[13px] font-medium text-white/45">₽</span>
+                      <span
+                        className={`ml-[3px] tabular-nums align-baseline ${
+                          isDark ? "text-[14px] font-semibold text-[#ffe8cf]/92" : "text-[14px] font-bold text-[#fff2e6]/94"
+                        }`}
+                      >
+                        ₽
+                      </span>
                     </span>
                   </button>
                 );
@@ -866,7 +908,7 @@ export default function ProfilePage() {
                   `/payment?promoKind=listing_pack&listingPackSlots=${selectedListingPack.slots}&amount=${selectedListingPack.priceRub}&title=${title}`,
                 );
               }}
-              className={`mt-5 min-h-[50px] w-full rounded-xl text-[14px] font-semibold tracking-tight transition-all active:scale-[0.99] ${
+                  className={`mt-5 min-h-[50px] w-full rounded-xl text-[15px] font-bold tracking-tight transition-all active:scale-[0.99] ${
                 selectedListingPack
                   ? "border border-amber-200/45 bg-gradient-to-br from-[#e9d9b6] via-[#d4bf91] to-[#b6945e] text-stone-900 shadow-[0_16px_40px_rgba(0,0,0,0.42)] hover:brightness-[1.05]"
                   : "cursor-not-allowed border border-white/[0.07] bg-white/[0.04] text-white/30"
