@@ -15,11 +15,13 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.101.1",
+    "@tanstack/react-virtual": "^3.13.13",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-select": "^5.10.2",
-    "resend": "^4.0.0"
+    "resend": "^4.0.0",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

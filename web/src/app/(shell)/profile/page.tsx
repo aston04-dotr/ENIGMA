@@ -12,8 +12,10 @@ import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { deleteAccount } from "@/lib/deleteAccount";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { listingEditPath } from "@/lib/mobileRuntime";
+import { persistProfileCacheOverlay } from "@/lib/profileLocalCache";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
+import type { UserRow } from "@/lib/types";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -427,6 +429,26 @@ export default function ProfilePage() {
 
     console.log("[profile] phone:update:ok", { ms: t0 ? Math.round(performance.now() - t0) : 0 });
     setPhoneSaving(false);
+    const email = session.user.email ?? null;
+    const overlayRow: UserRow = profile
+      ? {
+          ...profile,
+          phone: normalized,
+          phone_updated_at: normalized ? now : null,
+        }
+      : {
+          id: uid,
+          phone: normalized,
+          phone_updated_at: normalized ? now : null,
+          device_id: null,
+          name: null,
+          email,
+          avatar: null,
+          public_id: uid,
+          created_at: now,
+          trust_score: null,
+        };
+    persistProfileCacheOverlay(uid, overlayRow);
     await refreshProfile();
     setPhoneMessage(normalized ? "Телефон сохранён" : "Телефон очищен");
   }
@@ -479,6 +501,22 @@ export default function ProfilePage() {
       setNameMessage(error.message || "Не удалось сохранить имя");
       return;
     }
+    const email = session.user.email ?? null;
+    const overlayRow: UserRow = profile
+      ? { ...profile, name: nextName }
+      : {
+          id: uid,
+          phone: null,
+          phone_updated_at: null,
+          device_id: null,
+          name: nextName,
+          email,
+          avatar: null,
+          public_id: uid,
+          created_at: now,
+          trust_score: null,
+        };
+    persistProfileCacheOverlay(uid, overlayRow);
     await refreshProfile();
     setNameMessage("Имя сохранено");
   }
@@ -661,7 +699,7 @@ export default function ProfilePage() {
               const isOwner = safeListing.user_id === session?.user?.id;
               return (
                 <div key={safeListing.id} className="rounded-[16px] bg-elevated/28 p-1.5 transition-all duration-200">
-                  <ListingCard item={safeListing} compact />
+                  <ListingCard item={safeListing} compact favoriteRealtime={false} />
                   {isOwner && listingProfileTab !== "favorites" ? (
                     <div className="flex flex-col gap-2 p-2.5 pt-0">
                       {listingProfileTab === "archive" ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import type { MessageRow } from "@/lib/types";
+import { primaryImageThumbUrl } from "@/lib/mediaDerivativeUrls";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SMOOTH_MS = 120;
@@ -90,6 +91,12 @@ export function ChatMessageImageBubble({
     imageAspectRatio,
   } = message;
   const url = image_url ?? "";
+  const displayUrl =
+    pendingUpload ||
+    url.startsWith("blob:") ||
+    !/^https?:\/\//i.test(url)
+      ? url
+      : primaryImageThumbUrl(url) ?? url;
   const [imageReady, setImageReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [barPhase, setBarPhase] = useState<BarPhase>("off");
@@ -200,7 +207,7 @@ export function ChatMessageImageBubble({
         style={{ aspectRatio: String(aspect), maxHeight: "min(50vh, 360px)" }}
       >
         <img
-          src={url}
+          src={displayUrl}
           alt=""
           loading="lazy"
           decoding="async"
@@ -306,7 +313,7 @@ export function ChatMessageImageBubble({
         ) : null}
         <img
           key={url}
-          src={url}
+          src={displayUrl}
           alt=""
           loading="lazy"
           decoding="async"

@@ -24,6 +24,7 @@ import { reportListingTrustPenalty } from "@/lib/trust";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import { listingEditPath, listingPath } from "@/lib/mobileRuntime";
+import { primaryImageThumbUrl } from "@/lib/mediaDerivativeUrls";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +37,10 @@ type Props = {
   item?: ListingRow | null;
   index?: number;
   compact?: boolean;
+  /** В ленте/списках из многих карточек — false, чтобы не открывать N realtime-каналов на favorite_count */
+  favoriteRealtime?: boolean;
+  /** Виртуализованная лента: отступ снизу даёт wrapper, чтобы measureElement включал промежуток */
+  omitOuterMargin?: boolean;
   onOpen?: () => void;
 };
 
@@ -57,7 +62,14 @@ function EyeTinyIcon() {
   );
 }
 
-export function ListingCard({ item, index = 0, compact = false, onOpen }: Props) {
+export function ListingCard({
+  item,
+  index = 0,
+  compact = false,
+  favoriteRealtime = true,
+  omitOuterMargin = false,
+  onOpen,
+}: Props) {
   const { session } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
@@ -67,6 +79,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
     (safeItem as ListingRow & { images?: unknown } | null)?.images,
   ).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const uri = imgs[0]?.url ?? null;
+  const listingCardImgSrc = uri ? primaryImageThumbUrl(uri) ?? uri : null;
   const itemTitle =
     typeof safeItem?.title === "string" && safeItem.title.trim()
       ? safeItem.title
@@ -114,7 +127,10 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
   } | null>(null);
   const priceRub = defaultBoostCtaPriceRub();
 
-  useListingFavoriteRealtime(lid, setFavoriteCountLocal);
+  useListingFavoriteRealtime(
+    favoriteRealtime ? lid : null,
+    setFavoriteCountLocal,
+  );
 
   const listingSheetActions = useMemo((): ListingMenuAction[] => {
     const id = String(lid ?? "").trim();
@@ -250,7 +266,7 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
 
   return (
     <div
-      className="feed-card-enter group relative mb-4 overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:mb-5 md:hover:-translate-y-[3px]"
+      className={`feed-card-enter group relative overflow-hidden rounded-[16px] border bg-elevated/95 transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] md:hover:-translate-y-[3px] ${omitOuterMargin ? "" : "mb-4 md:mb-5"}`}
       style={{
         borderColor: "rgba(255,255,255,0.04)",
         backgroundImage:
@@ -261,14 +277,14 @@ export function ListingCard({ item, index = 0, compact = false, onOpen }: Props)
       }}
     >
       <div className={`relative w-full overflow-hidden rounded-t-[16px] bg-elev-2 ${imageHeightClass}`}>
-        {uri ? (
+        {listingCardImgSrc ? (
           <Image
-            src={uri}
+            src={listingCardImgSrc}
             alt=""
             fill
             className="relative z-0 object-cover saturate-[1.06] contrast-[1.04] transition-all duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04]"
-            sizes="(max-width: 768px) 100vw, 32rem"
-            unoptimized
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 640px, 800px"
+            priority={index < 6}
           />
         ) : (
           <div className="relative z-0 flex h-full items-center justify-center text-[11px] font-semibold tracking-[0.2em] text-muted">

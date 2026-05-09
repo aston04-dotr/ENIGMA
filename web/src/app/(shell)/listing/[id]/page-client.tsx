@@ -31,6 +31,7 @@ import {
   listingPath,
   resolveRuntimeRouteId,
 } from "@/lib/mobileRuntime";
+import { primaryImageAvifUrl } from "@/lib/mediaDerivativeUrls";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -405,6 +406,7 @@ export default function ListingDetailPage() {
       : 0;
   const image = imgs?.[safeIndex] || null;
   const uri = image?.url || null;
+  const heroAvif = uri ? primaryImageAvifUrl(uri) : null;
   const hasMultipleImages = imgs.length > 1;
   const title =
     typeof safeItem.title === "string" && safeItem.title.trim()
@@ -497,14 +499,17 @@ export default function ListingDetailPage() {
         />
         <div className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
-            <Image
-              src={uri}
-              alt=""
-              fill
-              className="object-cover"
-              sizes="100vw"
-              unoptimized
-            />
+            <picture className="absolute inset-0 block h-full w-full">
+              {heroAvif ? <source srcSet={heroAvif} type="image/avif" /> : null}
+              <Image
+                src={uri}
+                alt=""
+                fill
+                priority
+                className="object-cover"
+                sizes="100vw"
+              />
+            </picture>
           ) : (
             <div className="flex h-full items-center justify-center text-sm font-medium tracking-widest text-muted">
               ENIGMA

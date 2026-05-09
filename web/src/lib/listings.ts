@@ -17,7 +17,26 @@ export const LISTINGS_PAGE_SIZE = getListingsPageSize();
 /** Курсор keyset: `created_at` не уникален — добавляем `id`. */
 export type FeedListingsCursor = { created_at: string; id: string };
 
-const FEED_SELECT = "*,images(url,sort_order)";
+/**
+ * Явный SELECT ленты и списков объявлений (без `*`) — меньше egress по сети и в PostgREST.
+ * При добавлении полей в {@link parseFeedListingRow} / карточку — дополнять список и миграцию БД.
+ * `contact_phone` в схеме монорепо может отсутствовать — не включаем (парсер переносит null).
+ */
+export const FEED_LISTING_FIELDS =
+  "id,user_id,title,description,price,category,city,city_id,district,district_id," +
+  "view_count,created_at,updated_at," +
+  "is_partner_ad,is_boosted,boosted_at,boosted_until," +
+  "is_vip,vip_until,is_top,top_until," +
+  "params,favorite_count," +
+  "status,expires_at," +
+  "deal_type,listing_kind,commercial_type," +
+  "has_gas,has_water,has_electricity,has_sewage," +
+  "comms_gas,comms_water,comms_electricity,comms_sewage," +
+  "plot_area,land_type,land_ownership_status," +
+  "engine_power,engine_volume," +
+  "moto_type,moto_engine,moto_mileage,moto_customs_cleared,moto_owners_pts";
+
+const FEED_SELECT = `${FEED_LISTING_FIELDS},images(url,sort_order)`;
 
 function quotePostgrestValue(v: string): string {
   return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -627,10 +646,9 @@ export async function fetchListingsCount(filters: {
  */
 export async function fetchListingsForUser(userId: string): Promise<ListingRow[]> {
   if (!userId?.trim()) return [];
-  const fullSelect = FEED_SELECT;
   const { data, error } = await supabase
     .from("listings")
-    .select(fullSelect)
+    .select(FEED_SELECT)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -643,7 +661,7 @@ export async function fetchListingsForUser(userId: string): Promise<ListingRow[]
 
   const { data: plain, error: errPlain } = await supabase
     .from("listings")
-    .select("*")
+    .select(FEED_LISTING_FIELDS)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (!errPlain && plain) {
@@ -671,7 +689,7 @@ export async function getMyListings(userId: string): Promise<ListingRow[]> {
 
   const { data: plain, error: errPlain } = await supabase
     .from("listings")
-    .select("*")
+    .select(FEED_LISTING_FIELDS)
     .eq("user_id", uid)
     .order("created_at", { ascending: false });
   if (errPlain) throw errPlain;
@@ -1215,12 +1233,16 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
   try {
     let { data, error } = await supabase
       .from("listings")
-      .select("*, images:images(url)")
+      .select(FEED_SELECT)
       .eq("id", listingId)
       .maybeSingle();
 
     if (error && !isSchemaNotInCache(error)) {
-      const second = await supabase.from("listings").select("*").eq("id", listingId).maybeSingle();
+      const second = await supabase
+        .from("listings")
+        .select(FEED_LISTING_FIELDS)
+        .eq("id", listingId)
+        .maybeSingle();
       data = second.data as typeof data;
       error = second.error;
     }

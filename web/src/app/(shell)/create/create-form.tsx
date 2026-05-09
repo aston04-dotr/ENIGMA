@@ -15,6 +15,8 @@ import {
 import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
+import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
+import { mapListingPhotoUploadUiError } from "@/lib/listingPhotoClient";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { getMaxListingPhotos } from "@/lib/runtimeConfig";
@@ -86,6 +88,14 @@ const inputClass =
 
 const MAX_LISTING_PHOTOS = Math.min(10, Math.max(1, getMaxListingPhotos()));
 const CREATE_FORM_STORAGE_KEY = "create_form";
+
+type CreateListingPhotoSlot = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  uploadProgress: number | null;
+  uploadError: string | null;
+};
 /** Совпадает с ключом ленты (`page.tsx`): фильтры недвижимости для префилла «Снять». */
 const FEED_SESSION_STORAGE_KEY = "feed_state";
 
@@ -382,7 +392,7 @@ export function CreateListingForm() {
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
   const [locationSheetStep, setLocationSheetStep] = useState<1 | 2>(1);
   const [category, setCategory] = useState("other");
-  const [files, setFiles] = useState<File[]>([]);
+  const [photoSlots, setPhotoSlots] = useState<CreateListingPhotoSlot[]>([]);
   const [categoryParams, setCategoryParams] = useState<CategoryFormParams>(
     EMPTY_CATEGORY_PARAMS,
   );
@@ -392,7 +402,6 @@ export function CreateListingForm() {
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
   const [showPhoneWarning, setShowPhoneWarning] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const warningRef = useRef<HTMLDivElement | null>(null);
   const hasAnyParams = useMemo(() => {
     const active = categoryParams[category as keyof CategoryFormParams];
@@ -486,7 +495,7 @@ export function CreateListingForm() {
     title.trim() ||
       description.trim() ||
       price.trim() ||
-      files.length > 0 ||
+      photoSlots.length > 0 ||
       category !== "other" ||
       hasAnyParams,
   );
@@ -495,35 +504,45 @@ export function CreateListingForm() {
   });
   const canSubmitBasic = Boolean(title.trim() && parseNonNegativePrice(price) !== null);
 
-  const addSelectedFiles = useCallback((selected: FileList | null) => {
-    if (!selected || selected.length === 0) return;
-    const incoming = Array.from(selected).filter((file) =>
-      String(file.type ?? "").toLowerCase().startsWith("image/"),
-    );
-    if (incoming.length === 0) return;
-    setFiles((prev) => {
-      const base = Array.isArray(prev) ? prev : [];
-      const merged = [...base];
+  const addPhotosFromPicker = useCallback((incoming: File[]) => {
+    if (!incoming.length) return;
+    setPhotoSlots((prev) => {
+      const merged = [...prev];
       for (const file of incoming) {
         if (
           merged.some(
             (x) =>
-              x.name === file.name &&
-              x.size === file.size &&
-              x.lastModified === file.lastModified,
+              x.file.name === file.name &&
+              x.file.size === file.size &&
+              x.file.lastModified === file.lastModified,
           )
         ) {
           continue;
         }
         if (merged.length >= MAX_LISTING_PHOTOS) break;
-        merged.push(file);
+        const id =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        merged.push({
+          id,
+          file,
+          previewUrl: URL.createObjectURL(file),
+          uploadProgress: null,
+          uploadError: null,
+        });
       }
       return merged;
     });
   }, []);
 
-  const removeSelectedFileAt = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, idx) => idx !== index));
+  const removePhotoSlotAt = useCallback((index: number) => {
+    setPhotoSlots((prev) => {
+      const next = prev.filter((_, idx) => idx !== index);
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -553,15 +572,6 @@ export function CreateListingForm() {
     () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
     [regions, selectedRegionId],
   );
-  const selectedFilePreviews = useMemo(
-    () =>
-      files.map((file, idx) => ({
-        key: `${file.name}-${file.size}-${file.lastModified}-${idx}`,
-        url: URL.createObjectURL(file),
-      })),
-    [files],
-  );
-
   const resetCreateFormState = useCallback(() => {
     setTitle("");
     setDescription("");
@@ -571,7 +581,10 @@ export function CreateListingForm() {
     setDistrict("");
     setSelectedDistrictId("");
     setCategory("other");
-    setFiles([]);
+    setPhotoSlots((prev) => {
+      for (const s of prev) URL.revokeObjectURL(s.previewUrl);
+      return [];
+    });
     setCategoryParams(EMPTY_CATEGORY_PARAMS);
     setErr("");
   }, []);
@@ -1129,13 +1142,16 @@ export function CreateListingForm() {
     });
   }, [showPhoneWarning]);
 
+  const photoSlotsRef = useRef(photoSlots);
+  photoSlotsRef.current = photoSlots;
+
   useEffect(() => {
     return () => {
-      for (const item of selectedFilePreviews) {
-        URL.revokeObjectURL(item.url);
+      for (const s of photoSlotsRef.current) {
+        URL.revokeObjectURL(s.previewUrl);
       }
     };
-  }, [selectedFilePreviews]);
+  }, []);
 
   const publish = useCallback(async () => {
     if (!uid) {
@@ -1173,6 +1189,9 @@ export function CreateListingForm() {
     }
     setBusy(true);
     setPublishStage("uploading");
+    setPhotoSlots((prev) =>
+      prev.map((s) => ({ ...s, uploadProgress: null, uploadError: null })),
+    );
     try {
       const uploadGroupId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -1180,16 +1199,52 @@ export function CreateListingForm() {
           : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       const uploadedUrls: string[] = [];
-      const safeFiles = Array.isArray(files) ? files : [];
-      for (let i = 0; i < safeFiles.length; i++) {
-        const file = safeFiles[i];
-        if (!file) continue;
-        const url = await uploadListingPhotoWeb(uid, uploadGroupId, file, i);
-        const normalizedUrl = url.trim();
-        if (!normalizedUrl) {
-          throw new Error("Не удалось загрузить фото");
+      const slotsSnapshot = photoSlots.slice();
+      for (let i = 0; i < slotsSnapshot.length; i++) {
+        const slot = slotsSnapshot[i]!;
+        setPhotoSlots((prev) =>
+          prev.map((s) =>
+            s.id === slot.id ? { ...s, uploadProgress: 0, uploadError: null } : s,
+          ),
+        );
+        try {
+          const url = await uploadListingPhotoWeb(uid, uploadGroupId, slot.file, i, {
+            onUploadProgress: (pct) => {
+              setPhotoSlots((prev) =>
+                prev.map((s) =>
+                  s.id === slot.id ? { ...s, uploadProgress: pct } : s,
+                ),
+              );
+            },
+          });
+          const normalizedUrl = url.trim();
+          if (!normalizedUrl) {
+            throw new Error("Не удалось загрузить фото");
+          }
+          uploadedUrls.push(normalizedUrl);
+          setPhotoSlots((prev) =>
+            prev.map((s) =>
+              s.id === slot.id ? { ...s, uploadProgress: 100 } : s,
+            ),
+          );
+        } catch (uploadErr: unknown) {
+          try {
+            if (uploadedUrls.length > 0) {
+              await removeListingImagesFromStorage(uploadedUrls);
+            }
+          } catch (cleanupErr) {
+            console.warn("LISTING PARTIAL STORAGE CLEANUP", cleanupErr);
+          }
+          const msg = mapListingPhotoUploadUiError(uploadErr);
+          setPhotoSlots((prev) =>
+            prev.map((s) => ({
+              ...s,
+              uploadProgress: null,
+              uploadError: s.id === slot.id ? msg : null,
+            })),
+          );
+          throw new Error(msg);
         }
-        uploadedUrls.push(normalizedUrl);
       }
 
       setPublishStage("creating");
@@ -1269,10 +1324,24 @@ export function CreateListingForm() {
       });
       console.log("CREATE LISTING RESULT", res);
       if (res.error) {
+        try {
+          if (uploadedUrls.length > 0) {
+            await removeListingImagesFromStorage(uploadedUrls);
+          }
+        } catch (storageRollbackErr) {
+          console.warn("LISTING STORAGE ROLLBACK", storageRollbackErr);
+        }
         setErr(res.error);
         return;
       }
       if (!res.id) {
+        try {
+          if (uploadedUrls.length > 0) {
+            await removeListingImagesFromStorage(uploadedUrls);
+          }
+        } catch (storageRollbackErr) {
+          console.warn("LISTING STORAGE ROLLBACK", storageRollbackErr);
+        }
         setErr("Не удалось создать объявление. Попробуй снова.");
         return;
       }
@@ -1339,7 +1408,7 @@ export function CreateListingForm() {
     category,
     listingIntent,
     categoryParams,
-    files,
+    photoSlots,
     router,
     refreshProfile,
     resetCreateFormState,
@@ -1454,52 +1523,57 @@ export function CreateListingForm() {
       </div>
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Фото</label>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          disabled={!canEditListingsAndListingPhotos(profile?.trust_score)}
-          onChange={(e) => {
-            addSelectedFiles(e.target.files);
-            e.target.value = "";
-          }}
-          className="sr-only"
-          tabIndex={-1}
+        <ListingPhotoAddPanel
+          disabled={busy || !canEditListingsAndListingPhotos(profile?.trust_score)}
+          remainingSlots={MAX_LISTING_PHOTOS - photoSlots.length}
+          currentCount={photoSlots.length}
+          maxPhotos={MAX_LISTING_PHOTOS}
+          onAddFiles={addPhotosFromPicker}
         />
-        <div className="mt-2 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={
-              !canEditListingsAndListingPhotos(profile?.trust_score) ||
-              files.length >= MAX_LISTING_PHOTOS
-            }
-            className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-elevated text-2xl font-light text-fg transition-all duration-200 hover:bg-elev-2 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Добавить фото"
-          >
-            +
-          </button>
-          <p className="text-xs text-muted">
-            {files.length}/{MAX_LISTING_PHOTOS} фото
-          </p>
-        </div>
-        {files.length > 0 ? (
+        {photoSlots.length > 0 ? (
           <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {selectedFilePreviews.map((preview, idx) => (
+            {photoSlots.map((slot, idx) => (
               <div
-                key={preview.key}
+                key={slot.id}
                 className="relative overflow-hidden rounded-card border border-line bg-elevated"
               >
                 <img
-                  src={preview.url}
+                  src={slot.previewUrl}
                   alt=""
-                  className="h-24 w-full object-cover"
+                  className={`h-24 w-full object-cover ${slot.uploadError ? "opacity-55" : ""}`}
+                  loading="lazy"
+                  decoding="async"
                 />
+                {slot.uploadProgress != null && slot.uploadProgress < 100 ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5 bg-black/40">
+                    <div
+                      className="h-full bg-accent transition-[width] duration-150"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, slot.uploadProgress))}%`,
+                      }}
+                    />
+                  </div>
+                ) : null}
+                {slot.uploadError ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-end gap-1 bg-black/50 p-1.5">
+                    <p className="line-clamp-3 text-center text-[10px] font-medium leading-tight text-white">
+                      {slot.uploadError}
+                    </p>
                 <button
                   type="button"
-                  onClick={() => removeSelectedFileAt(idx)}
-                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white"
+                  disabled={busy}
+                  onClick={() => void publish()}
+                      className="rounded-md bg-white/95 px-2 py-1 text-[10px] font-semibold text-fg shadow active:scale-95 disabled:opacity-55"
+                    >
+                      Повторить
+                    </button>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => removePhotoSlotAt(idx)}
+                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white disabled:opacity-40"
                   aria-label="Удалить фото"
                 >
                   ×

@@ -32,6 +32,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
 import { ListingMiscCategoryFieldsForEdit } from "@/components/listing/ListingMiscCategoryFieldsForEdit";
 import { ListingRealEstateFields } from "@/components/listing/ListingRealEstateFields";
 import { categoryLabel } from "@/lib/categories";
@@ -51,6 +52,7 @@ import {
   normalizeAllowedListingCity,
 } from "@/lib/russianCities";
 import { listingPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
+import { mapListingPhotoUploadUiError } from "@/lib/listingPhotoClient";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
@@ -98,6 +100,8 @@ type PendingImageFile = {
   id: string;
   file: File;
   previewUrl: string;
+  uploadProgress?: number | null;
+  uploadError?: string | null;
 };
 
 const EXISTING_PREFIX = "existing:";
@@ -185,7 +189,6 @@ export default function EditListingPage() {
   const [pendingImages, setPendingImages] = useState<PendingImageFile[]>([]);
   const [imageOrder, setImageOrder] = useState<string[]>([]);
   const [deletingImageUrls, setDeletingImageUrls] = useState<Set<string>>(() => new Set());
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -419,12 +422,8 @@ export default function EditListingPage() {
     }
   }
 
-  function addPendingFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const selected = Array.from(files).filter((f) =>
-      String(f?.type ?? "").toLowerCase().startsWith("image/"),
-    );
-    if (selected.length === 0) return;
+  function addPendingPhotosFromPicker(selected: File[]) {
+    if (!selected.length) return;
 
     const freeSlots =
       MAX_LISTING_PHOTOS - existingImageUrls.length - pendingImages.length;
@@ -443,6 +442,8 @@ export default function EditListingPage() {
           : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       file,
       previewUrl: URL.createObjectURL(file),
+      uploadProgress: null,
+      uploadError: null,
     }));
 
     if (toAdd.length < selected.length) {
@@ -600,6 +601,9 @@ export default function EditListingPage() {
     }
 
     setSaving(true);
+    setPendingImages((prev) =>
+      prev.map((p) => ({ ...p, uploadProgress: null, uploadError: null })),
+    );
     try {
       const resolvedCity =
         selectedCityId && selectedCityId.trim()
@@ -679,11 +683,45 @@ export default function EditListingPage() {
         if (!pendingId) continue;
         const pending = pendingById.get(pendingId);
         if (!pending) continue;
-        const uploaded = await uploadListingPhotoWeb(
-          session.user.id,
-          id,
-          pending.file,
-          i,
+        setPendingImages((prev) =>
+          prev.map((p) =>
+            p.id === pendingId ? { ...p, uploadProgress: 0, uploadError: null } : p,
+          ),
+        );
+        let uploaded: string;
+        try {
+          uploaded = await uploadListingPhotoWeb(
+            session.user.id,
+            String(id),
+            pending.file,
+            i,
+            {
+              onUploadProgress: (pct) => {
+                setPendingImages((prev) =>
+                  prev.map((p) =>
+                    p.id === pendingId ? { ...p, uploadProgress: pct } : p,
+                  ),
+                );
+              },
+            },
+          );
+        } catch (uploadErr) {
+          const msg = mapListingPhotoUploadUiError(uploadErr);
+          setPendingImages((prev) =>
+            prev.map((p) =>
+              p.id === pendingId
+                ? { ...p, uploadProgress: null, uploadError: msg }
+                : p,
+            ),
+          );
+          throw uploadErr;
+        }
+        setPendingImages((prev) =>
+          prev.map((p) =>
+            p.id === pendingId
+              ? { ...p, uploadProgress: 100, uploadError: null }
+              : p,
+          ),
         );
         finalUrls.push(uploaded);
       }
@@ -738,6 +776,7 @@ export default function EditListingPage() {
       setToast({ message: "Не удалось сохранить изменения", type: "error" });
     } finally {
       setSaving(false);
+      setPendingImages((prev) => prev.map((p) => ({ ...p, uploadProgress: null })));
     }
   }
 
@@ -887,26 +926,15 @@ export default function EditListingPage() {
       <div className="space-y-5">
         <div className="space-y-2">
           <label className="text-sm font-medium text-muted">Фото</label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="sr-only"
-            tabIndex={-1}
-            onChange={(e) => {
-              addPendingFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <button
-            type="button"
+          <ListingPhotoAddPanel
             disabled={saving}
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full min-h-[48px] rounded-card border border-line bg-elevated px-4 py-2 text-sm font-medium text-fg transition-all duration-200 hover:bg-elev-2 disabled:opacity-50"
-          >
-            Добавить фото
-          </button>
+            remainingSlots={
+              MAX_LISTING_PHOTOS - existingImageUrls.length - pendingImages.length
+            }
+            currentCount={existingImageUrls.length + pendingImages.length}
+            maxPhotos={MAX_LISTING_PHOTOS}
+            onAddFiles={addPendingPhotosFromPicker}
+          />
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -918,6 +946,9 @@ export default function EditListingPage() {
                   const isExisting = item.kind === "existing";
                   const isDeleting = isExisting ? deletingImageUrls.has(item.url) : false;
                   const pendingId = item.kind === "pending" ? item.id : null;
+                  const pendingMeta = pendingId ? pendingMap.get(pendingId) ?? null : null;
+                  const uploadPct = pendingMeta?.uploadProgress ?? null;
+                  const uploadErr = pendingMeta?.uploadError ?? null;
                   return (
                     <SortableThumb key={item.key} id={item.key} disabled={saving || isDeleting}>
                       <div
@@ -930,8 +961,27 @@ export default function EditListingPage() {
                           alt=""
                           className={`h-24 w-full object-cover ${
                             isDeleting ? "blur-[1px]" : ""
-                          }`}
+                          } ${uploadErr ? "opacity-55" : ""}`}
+                          loading="lazy"
+                          decoding="async"
                         />
+                        {uploadPct != null && uploadPct < 100 ? (
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5 bg-black/40">
+                            <div
+                              className="h-full bg-accent transition-[width] duration-150"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, uploadPct))}%`,
+                              }}
+                            />
+                          </div>
+                        ) : null}
+                        {uploadErr ? (
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 max-h-[42%] overflow-y-auto bg-black/60 px-1 py-1">
+                            <p className="text-center text-[9px] font-medium leading-tight text-white">
+                              {uploadErr}
+                            </p>
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           disabled={saving || isDeleting}

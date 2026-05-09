@@ -34,6 +34,7 @@ import { interleavePartnerFeedMain } from "@/lib/monetization";
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
 import type { ListingRow } from "@/lib/types";
 import { useTheme } from "@/context/theme-context";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const CACHE_KEY = "cached_listings";
@@ -43,6 +44,18 @@ const FEED_STATE_KEY = "feed_state";
 const ALL_CATEGORY = "all";
 const FILTERS_DEBOUNCE_MS = 350;
 const TEXT_SEARCH_DEBOUNCE_MS = 300;
+/** Приблизительная высота карточки в ленте для window virtualizer (уточняется measureElement). */
+const FEED_VIRTUAL_ESTIMATE_PX = 400;
+/**
+ * Мягкий предел карточек в памяти (новые в начале; при переполнении отбрасываем самые старые с конца).
+ */
+const FEED_ITEMS_SOFT_CAP = 450;
+
+function trimFeedItemsTail(items: ListingRow[]): ListingRow[] {
+  if (!Array.isArray(items) || items.length <= FEED_ITEMS_SOFT_CAP) return items;
+  return items.slice(0, FEED_ITEMS_SOFT_CAP);
+}
+
 const SEARCH_STOP_WORDS = new Set([
   "и",
   "или",
@@ -270,7 +283,13 @@ export function FeedPage({
 }) {
   const { theme } = useTheme();
   const cacheStorageKey = feedVariant === "seeking" ? CACHE_KEY_WANTED : CACHE_KEY;
-  const feedSeed = useMemo(() => readFeedCache(cacheStorageKey), [cacheStorageKey]);
+  const feedSeed = useMemo(() => {
+    const raw = readFeedCache(cacheStorageKey);
+    return {
+      items: trimFeedItemsTail(raw.items),
+      nextCursor: raw.nextCursor,
+    };
+  }, [cacheStorageKey]);
   const feedStateSeed = useMemo(() => readFeedState(), []);
   const seededRegionId = String(feedStateSeed?.regionId ?? "").trim();
   const seededCity = String(feedStateSeed?.city ?? "").trim();
@@ -763,6 +782,12 @@ export function FeedPage({
         feedVariant,
       ]);
 
+  const rowVirtualizer = useWindowVirtualizer({
+    count: filtered.length,
+    estimateSize: () => FEED_VIRTUAL_ESTIMATE_PX,
+    overscan: 6,
+  });
+
   const applyRes = useCallback(
     (
       res: Awaited<ReturnType<typeof fetchListings>>,
@@ -774,9 +799,10 @@ export function FeedPage({
         console.error("LISTINGS FETCH ERROR", res.error);
         setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
         if (mode === "replace") {
-          setItems(raw);
+          const capped = trimFeedItemsTail(raw);
+          setItems(capped);
           setNextCursor(res.nextCursor ?? null);
-          persistFeed(raw, res.nextCursor ?? null, cacheStorageKey);
+          persistFeed(capped, res.nextCursor ?? null, cacheStorageKey);
         }
         return;
       }
@@ -787,14 +813,15 @@ export function FeedPage({
       const mix = mixFeed(raw, session?.user?.id);
       const serverNext = res.nextCursor ?? null;
       if (mode === "replace") {
-        setItems(mix);
+        const capped = trimFeedItemsTail(mix);
+        setItems(capped);
         setNextCursor(serverNext);
-        persistFeed(mix, serverNext, cacheStorageKey);
+        persistFeed(capped, serverNext, cacheStorageKey);
       } else {
         setItems((prev) => {
           const seen = new Set(prev.map((x) => x.id));
           const add = mix.filter((x) => !seen.has(x.id));
-          const merged = [...prev, ...add];
+          const merged = trimFeedItemsTail([...prev, ...add]);
           persistFeed(merged, serverNext, cacheStorageKey);
           return merged;
         });
@@ -834,9 +861,10 @@ export function FeedPage({
           if (res.error) {
             console.error("LISTINGS FETCH ERROR", res.error);
             setFeedError(res.error || LISTINGS_FEED_ERROR_MESSAGE);
-            setItems(raw);
+            const capped = trimFeedItemsTail(raw);
+            setItems(capped);
             setNextCursor(res.nextCursor ?? null);
-            persistFeed(raw, res.nextCursor ?? null, cacheStorageKey);
+            persistFeed(capped, res.nextCursor ?? null, cacheStorageKey);
             return;
           }
           prefetchedRef.current = null;
@@ -845,9 +873,10 @@ export function FeedPage({
           debugLogFeedFetch("replace", raw.length);
           const mix = mixFeed(raw, session?.user?.id);
           const serverNext = res.nextCursor ?? null;
-          setItems(mix);
+          const capped = trimFeedItemsTail(mix);
+          setItems(capped);
           setNextCursor(serverNext);
-          persistFeed(mix, serverNext, cacheStorageKey);
+          persistFeed(capped, serverNext, cacheStorageKey);
         } catch (e) {
           if (cancelled) return;
           console.error("LISTINGS INITIAL FETCH ERROR", e);
@@ -918,7 +947,7 @@ export function FeedPage({
     setItems((prev) => {
       const seen = new Set(prev.map((x) => x.id));
       const add = p.items.filter((x) => !seen.has(x.id));
-      const merged = [...prev, ...add];
+      const merged = trimFeedItemsTail([...prev, ...add]);
       persistFeed(merged, p.nextCursor, cacheStorageKey);
       return merged;
     });
@@ -942,7 +971,9 @@ export function FeedPage({
   }, [nextCursor, feedFilters, applyRes, flushPrefetch]);
 
   useEffect(() => {
-    const onScroll = () => {
+    let rafId: number | null = null;
+    const run = () => {
+      rafId = null;
       const y = window.scrollY || window.pageYOffset || 0;
       setShowScrollTop(y > 300);
 
@@ -959,9 +990,16 @@ export function FeedPage({
         void loadMore();
       }
     };
-    onScroll();
+    const onScroll = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(run);
+    };
+    run();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+    };
   }, [nextCursor, runPrefetch, loadMore]);
 
   const categoryTitle =
@@ -1287,14 +1325,42 @@ export function FeedPage({
           isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
         }`}
       >
-        {filtered.map((item, idx) => (
-          <ListingCard
-            key={item.id}
-            item={item}
-            index={idx}
-            onOpen={rememberFeedStateBeforeOpen}
-          />
-        ))}
+        {filtered.length > 0 ? (
+          <div
+            className="w-full"
+            style={{
+              height: rowVirtualizer.getTotalSize(),
+              position: "relative",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const item = filtered[virtualRow.index];
+              return (
+                <div
+                  key={item.id}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  className="box-border pb-4 md:pb-5"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <ListingCard
+                    item={item}
+                    index={virtualRow.index}
+                    favoriteRealtime={false}
+                    omitOuterMargin
+                    onOpen={rememberFeedStateBeforeOpen}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {filtered.length === 0 ? (
           <EmptyState
             title={

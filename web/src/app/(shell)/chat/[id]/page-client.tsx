@@ -1,6 +1,6 @@
 "use client";
 
-import { ChatImageLightbox } from "@/components/chat/ChatImageLightbox";
+import dynamic from "next/dynamic";
 import { ChatMessageImageBubble } from "@/components/chat/ChatMessageImageBubble";
 import { Toast } from "@/components/Toast";
 import { ErrorUi, FETCH_ERROR_MESSAGE } from "@/components/ErrorUi";
@@ -17,9 +17,8 @@ import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
 import { ChatPendingBlobRegistry } from "@/lib/chatBlobs";
 import {
-  compressImageForChat,
   getAspectFromObjectUrl,
-  makeChatImageStoragePath,
+  uploadChatImagePublicUrlPreferPipeline,
   validateChatImageFileDeep,
   withUploadProgress,
 } from "@/lib/chatImage";
@@ -33,6 +32,14 @@ import {
   useState,
   memo,
 } from "react";
+
+const ChatImageLightbox = dynamic(
+  () =>
+    import("@/components/chat/ChatImageLightbox").then((m) => ({
+      default: m.ChatImageLightbox,
+    })),
+  { ssr: false },
+);
 
 type RoomStatus =
   | "idle"
@@ -230,6 +237,9 @@ const MAX_MESSAGE_ENTER_ANIM = 0;
 /** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
+/** SELECT без * — меньше egress; поля совпадают с {@link normalizeMessage}. */
+const CHAT_MESSAGES_SELECT =
+  "id,chat_id,sender_id,text,created_at,type,image_url,voice_url,reply_to,edited_at,deleted,deleted_at,hidden_for_user_ids,status,delivered_at,read_at";
 const CHAT_DRAFT_PREFIX = "enigma:chat-draft:";
 const REALTIME_EVENT_TTL_MS = 15_000;
 
@@ -1256,9 +1266,10 @@ export default function ChatRoomPage() {
     try {
       const { data, error } = await supabase
         .from("messages")
-        .select("*")
+        .select(CHAT_MESSAGES_SELECT)
         .eq("chat_id", chatId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(MESSAGE_LIST_MAX);
 
       if (error) {
         console.error("chat room load messages", error);
@@ -1269,9 +1280,11 @@ export default function ChatRoomPage() {
         return;
       }
 
-      const safe = Array.isArray(data)
-        ? data.map((row) => normalizeMessage(row as Record<string, unknown>))
+      const rowsRaw = Array.isArray(data)
+        ? ([...data] as Record<string, unknown>[]).reverse()
         : [];
+
+      const safe = rowsRaw.map((row) => normalizeMessage(row));
 
       if (!mountedRef.current) return;
 
@@ -2005,23 +2018,7 @@ export default function ChatRoomPage() {
     try {
       const inserted = await withUploadProgress(
         async () => {
-          const blob = await compressImageForChat(file);
-          const path = makeChatImageStoragePath(chatId, blob, file);
-          const { error: upErr } = await supabase.storage
-            .from("chat-media")
-            .upload(path, blob, {
-              contentType: blob.type || "image/jpeg",
-              upsert: false,
-            });
-          if (upErr) {
-            lastStorageError = upErr.message;
-            console.error("chat-media upload", upErr);
-            throw new Error("upload");
-          }
-          const { data: pub } = supabase.storage
-            .from("chat-media")
-            .getPublicUrl(path);
-          const publicUrl = pub.publicUrl;
+          const publicUrl = await uploadChatImagePublicUrlPreferPipeline(file, chatId);
           uploadPhase.current = "insert";
           const { data: ins, error: insErr } = await supabase
             .from("messages")
@@ -2146,23 +2143,7 @@ export default function ChatRoomPage() {
     try {
       const inserted = await withUploadProgress(
         async () => {
-          const blob = await compressImageForChat(file);
-          const path = makeChatImageStoragePath(chatId, blob, file);
-          const { error: upErr } = await supabase.storage
-            .from("chat-media")
-            .upload(path, blob, {
-              contentType: blob.type || "image/jpeg",
-              upsert: false,
-            });
-          if (upErr) {
-            lastStorageError = upErr.message;
-            console.error("chat-media upload (retry)", upErr);
-            throw new Error("upload");
-          }
-          const { data: pub } = supabase.storage
-            .from("chat-media")
-            .getPublicUrl(path);
-          const publicUrl = pub.publicUrl;
+          const publicUrl = await uploadChatImagePublicUrlPreferPipeline(file, chatId);
           uploadPhase.current = "insert";
           const { data: ins, error: insErr } = await supabase
             .from("messages")

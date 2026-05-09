@@ -4,6 +4,7 @@ import path from "path";
 const nextConfig: NextConfig = {
   /** Монорепо: не поднимать lockfile с родительской папки Desktop как корень трейсинга. */
   outputFileTracingRoot: path.join(process.cwd()),
+  serverExternalPackages: ["sharp"],
   /** Для сравнения с /api/app-version (авто-обновление после деплоя). */
   env: {
     NEXT_PUBLIC_APP_VERSION:
@@ -15,6 +16,7 @@ const nextConfig: NextConfig = {
   /** Dev double-invokes subtrees/effects — watch `[STRICT_MODE_DUPLICATE_EFFECT]` in ChatUnread realtime setup. */
   reactStrictMode: true,
   images: {
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       { protocol: "https", hostname: "**", pathname: "/**" },
       { protocol: "http", hostname: "**", pathname: "/**" },

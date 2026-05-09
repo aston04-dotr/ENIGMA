@@ -1,3 +1,4 @@
+import { normalizeListingPickForUpload } from "./listingPhotoClient";
 import { supabase } from "./supabase";
 
 function parseStorageError(error: unknown): string {
@@ -6,7 +7,7 @@ function parseStorageError(error: unknown): string {
   if (error instanceof Error) return error.message || "Не удалось загрузить фото";
   if (typeof error === "object") {
     const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) return message;
+    if (typeof message === "string" && message.trim()) return message.trim();
     try {
       const asJson = JSON.stringify(error);
       if (asJson && asJson !== "{}") return asJson;
@@ -50,9 +51,6 @@ export function extractListingImageStoragePath(url: string): string | null {
     const objectIdx = parts.indexOf("object");
     if (objectIdx === -1) return null;
 
-    // Supported forms:
-    // /storage/v1/object/public/listing-images/<path>
-    // /storage/v1/object/sign/listing-images/<path>
     const visibility = parts[objectIdx + 1];
     const bucket = parts[objectIdx + 2];
     if (!visibility || !bucket || bucket !== "listing-images") return null;
@@ -65,14 +63,30 @@ export function extractListingImageStoragePath(url: string): string | null {
   }
 }
 
+/** Рядом с основным `.webp` лежат `.avif` и `_thumb.webp` (pipeline Sharp). */
+function expandListingDerivativePaths(primaryPath: string): string[] {
+  const trimmed = primaryPath.trim();
+  if (!trimmed) return [];
+  if (!trimmed.toLowerCase().endsWith(".webp")) return [trimmed];
+  const stem = trimmed.replace(/\.webp$/i, "");
+  const out = [trimmed, `${stem}.avif`, `${stem}_thumb.webp`];
+  return Array.from(new Set(out));
+}
+
+export function collectListingRemovePaths(primaryPublicUrls: string[]): string[] {
+  const acc = new Set<string>();
+  for (const raw of primaryPublicUrls) {
+    const main = extractListingImageStoragePath(String(raw ?? ""));
+    if (!main) continue;
+    for (const p of expandListingDerivativePaths(main)) {
+      acc.add(p);
+    }
+  }
+  return Array.from(acc);
+}
+
 export async function removeListingImagesFromStorage(urls: string[]): Promise<void> {
-  const uniquePaths = Array.from(
-    new Set(
-      (Array.isArray(urls) ? urls : [])
-        .map(extractListingImageStoragePath)
-        .filter((x): x is string => Boolean(x)),
-    ),
-  );
+  const uniquePaths = collectListingRemovePaths(Array.isArray(urls) ? urls : []);
   if (uniquePaths.length === 0) return;
 
   for (const path of uniquePaths) {
@@ -86,19 +100,89 @@ export async function removeListingImagesFromStorage(urls: string[]): Promise<vo
   }
 }
 
+export type ListingPhotoUploadCallbacks = {
+  onUploadProgress?: (percent: number) => void;
+};
+
+function uploadListingPhotoSharpPipelineXHR(
+  objectGroupId: string,
+  file: File,
+  index: number,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.set("file", file);
+    form.set("objectGroupId", objectGroupId);
+    form.set("index", String(index));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/media/listing-photo");
+    xhr.withCredentials = true;
+    xhr.responseType = "text";
+    xhr.upload.onprogress = (ev) => {
+      if (!onProgress) return;
+      if (ev.lengthComputable && ev.total > 0) {
+        onProgress(Math.min(100, Math.round((100 * ev.loaded) / ev.total)));
+      } else {
+        onProgress(0);
+      }
+    };
+    xhr.onerror = () => reject(new Error("network"));
+    xhr.onabort = () => reject(new Error("aborted"));
+    xhr.onload = () => {
+      let data: { ok?: boolean; url?: string; error?: string };
+      try {
+        data = JSON.parse(xhr.responseText || "{}") as {
+          ok?: boolean;
+          url?: string;
+          error?: string;
+        };
+      } catch {
+        reject(new Error("bad_response"));
+        return;
+      }
+      const ok = xhr.status >= 200 && xhr.status < 300 && data?.ok !== false && Boolean(data?.url?.trim());
+      if (!ok) {
+        reject(new Error(data?.error || `listing_pipeline_${xhr.status}`));
+        return;
+      }
+      resolve(String(data.url).trim());
+    };
+    xhr.send(form);
+  });
+}
+
 export async function uploadListingPhotoWeb(
   userId: string,
   objectGroupId: string,
   file: File,
-  index: number
+  index: number,
+  callbacks?: ListingPhotoUploadCallbacks,
 ): Promise<string> {
-  const extRaw = file.name.split(".").pop() || "jpg";
+  const prepared = await normalizeListingPickForUpload(file);
+  const onProgress = callbacks?.onUploadProgress;
+  try {
+    return await uploadListingPhotoSharpPipelineXHR(
+      objectGroupId,
+      prepared,
+      index,
+      onProgress,
+    );
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[uploadListingPhotoWeb] sharp pipeline failed, legacy upload", e);
+    }
+  }
+
+  const extRaw = prepared.name.split(".").pop() || "jpg";
   const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  const contentType = file.type?.trim() || "image/jpeg";
+  const contentType = prepared.type?.trim() || "image/jpeg";
   const path = `${userId}/${objectGroupId}/${index}-${Date.now()}.${ext}`;
 
   try {
-    const data = await file.arrayBuffer();
+    if (onProgress) onProgress(0);
+    const data = await prepared.arrayBuffer();
+    if (onProgress) onProgress(85);
     const { error } = await supabase.storage.from("listing-images").upload(path, data, {
       upsert: true,
       contentType,
@@ -106,6 +190,7 @@ export async function uploadListingPhotoWeb(
     if (error) {
       throw new Error(parseStorageError(error));
     }
+    if (onProgress) onProgress(100);
   } catch (error) {
     throw new Error(parseStorageError(error));
   }

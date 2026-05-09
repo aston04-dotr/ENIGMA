@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_COMPRESS_W = 1600;
 const JPEG_Q = 0.8;
@@ -274,4 +276,57 @@ export function makeChatImageStoragePath(
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "") || "jpg";
   return `${chatId.toLowerCase()}/${id.toLowerCase()}.${ext}`.toLowerCase();
+}
+
+/** Сервер Sharp: WebP + AVIF + thumb в `chat-media` (cookie session). */
+export async function uploadChatPhotoViaSharpPipeline(
+  file: File,
+  chatId: string,
+): Promise<string> {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("chatId", chatId.trim().toLowerCase());
+  const res = await fetch("/api/media/chat-photo", {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    url?: string;
+    error?: string;
+  };
+  if (!res.ok || !data?.url?.trim()) {
+    throw new Error(data?.error || `chat_pipeline_${res.status}`);
+  }
+  return data.url.trim();
+}
+
+/**
+ * Сначала пайплайн Sharp; при ошибке сети/Vercel — локальное JPEG-сжатие + прямой upload.
+ */
+export async function uploadChatImagePublicUrlPreferPipeline(
+  file: File,
+  chatId: string,
+): Promise<string> {
+  try {
+    return await uploadChatPhotoViaSharpPipeline(file, chatId);
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[chatImage] sharp upload fallback", e);
+    }
+    const blob = await compressImageForChat(file);
+    const path = makeChatImageStoragePath(chatId, blob, file);
+    const { error: upErr } = await supabase.storage.from("chat-media").upload(path, blob, {
+      contentType: blob.type || "image/jpeg",
+      upsert: false,
+    });
+    if (upErr) {
+      throw new Error(upErr.message || "chat_upload_failed");
+    }
+    const { data: pub } = supabase.storage.from("chat-media").getPublicUrl(path);
+    const u = pub.publicUrl?.trim();
+    if (!u) throw new Error("no_public_url");
+    return u;
+  }
 }
