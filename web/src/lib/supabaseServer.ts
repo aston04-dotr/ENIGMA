@@ -23,29 +23,35 @@ function normalizeServerCookieOptions(
   };
 }
 
-/** SSR / Route Handler клиент через `cookies()` (Next.js). Для auth вызывайте {@link hardenedServerGetSession} / {@link hardenedServerGetUser} из `@/lib/serverSupabaseAuth` — там фатальный refresh и signOut local совпадают с middleware. */
+/**
+ * Next.js Route Handler / SSR Supabase via cookies().
+ * Must use getAll + setAll @supabase/ssr: without setAll the library stubs writes,
+ * so token refresh cannot persist cookies and APIs may see getUser=null while SPA still appears signed in.
+ */
 export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
-  const cookieAdapter = {
-    getAll() {
-      return cookieStore.getAll();
-    },
-    set(name: string, value: string, options?: Parameters<typeof cookieStore.set>[2]) {
-      cookieStore.set(name, value, normalizeServerCookieOptions(options));
-    },
-    remove(name: string, options?: Parameters<typeof cookieStore.set>[2]) {
-      cookieStore.set(name, "", {
-        ...normalizeServerCookieOptions(options),
-        maxAge: 0,
-      });
-    },
-  } as unknown as {
-    getAll: () => ReturnType<typeof cookieStore.getAll>;
-    set: (name: string, value: string, options?: Parameters<typeof cookieStore.set>[2]) => void;
-    remove: (name: string, options?: Parameters<typeof cookieStore.set>[2]) => void;
-  };
 
   return createServerClient(url, anonKey, {
-    cookies: cookieAdapter,
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          for (const { name, value, options } of cookiesToSet) {
+            if (!value) {
+              cookieStore.set(name, "", {
+                ...normalizeServerCookieOptions(options),
+                maxAge: 0,
+              });
+            } else {
+              cookieStore.set(name, value, normalizeServerCookieOptions(options));
+            }
+          }
+        } catch {
+          /* cookie mutation недоступен в части SSR-контекстов Next */
+        }
+      },
+    },
   });
 }

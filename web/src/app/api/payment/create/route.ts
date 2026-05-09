@@ -6,6 +6,10 @@ import {
   validatePaymentCreateRequest,
 } from "@/lib/paymentValidation";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
+import {
+  routeHandlerAuthDiagEnabled,
+  summarizeCookieHeader,
+} from "@/lib/routeHandlerAuthDiag";
 import { resolveRouteHandlerSupabaseUser } from "@/lib/serverSupabaseAuth";
 
 export const runtime = "nodejs";
@@ -41,12 +45,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "supabase_unconfigured" }, { status: 503 });
   }
 
-  const { supabase, user, fatalRefreshCleared } = await resolveRouteHandlerSupabaseUser(
-    "api:payment:create",
-  );
+  const { supabase, user, fatalRefreshCleared, authErrorMessage } =
+    await resolveRouteHandlerSupabaseUser("api:payment:create");
+
+  if (routeHandlerAuthDiagEnabled()) {
+    const rawCookie = request.headers.get("cookie");
+    const dbg = summarizeCookieHeader(rawCookie);
+    const {
+      data: { user: verifyUser },
+      error: verifyUserError,
+    } = await supabase.auth.getUser();
+
+    console.warn("[payment-create-auth]", {
+      cookie: dbg,
+      resolve: {
+        hasUser: Boolean(user?.id),
+        userId: user?.id ?? null,
+        fatalRefreshCleared,
+        authErrorMessage: authErrorMessage ?? null,
+      },
+      verify_getUser: {
+        hasUser: Boolean(verifyUser?.id),
+        userId: verifyUser?.id ?? null,
+        error: verifyUserError?.message ?? null,
+      },
+    });
+  }
 
   if (fatalRefreshCleared || !user?.id) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    const denyReason = fatalRefreshCleared
+      ? "fatal_refresh_cleared"
+      : authErrorMessage === "no_user" || !authErrorMessage
+        ? "no_authenticated_user"
+        : `getUser:${authErrorMessage}`;
+
+    return NextResponse.json(
+      routeHandlerAuthDiagEnabled()
+        ? { ok: false, error: "unauthorized", deny_reason: denyReason }
+        : { ok: false, error: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   let body: unknown;
