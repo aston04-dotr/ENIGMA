@@ -161,6 +161,18 @@ export function consumeSaveEnigmaContinuationRoute(): string | null {
   }
 }
 
+/** Текущий маршрут возврата после логина (без потребления). */
+export function peekSaveEnigmaContinuationRoute(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const route = String(window.localStorage.getItem(CONTINUATION_ROUTE_KEY) ?? "").trim();
+    if (!route.startsWith("/")) return null;
+    return route;
+  } catch {
+    return null;
+  }
+}
+
 type PendingChatIntent = {
   peerUserId: string;
   listingId: string | null;

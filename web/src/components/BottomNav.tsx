@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, type ComponentType, type ReactNode } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import {
   IconChat,
   IconHome,
@@ -71,14 +78,14 @@ function navChrome(theme: UiTheme): { navClass: string; bg: string; badgeRing: s
   if (theme === "light") {
     return {
       navClass:
-        "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
+        "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-neutral-100 safe-pb view-mode-nav sm:max-w-none",
       bg: "#FFFFFF",
       badgeRing: "#FFFFFF",
     };
   }
   return {
     navClass:
-      "bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-transparent safe-pb view-mode-nav sm:max-w-none",
+      "bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-stretch justify-around border-t border-transparent safe-pb view-mode-nav sm:max-w-none",
     bg: "#000000",
     badgeRing: "#000000",
   };
@@ -98,6 +105,10 @@ function tabColors(theme: UiTheme, active: boolean): { icon: string; label: stri
     : { icon: "text-[#72f3ff]/92", label: "text-[#72f3ff]/92" };
 }
 
+function isActiveChatRoomPath(pathname: string): boolean {
+  return /^\/chat\/[0-9a-f-]{36}$/i.test(pathname);
+}
+
 function BottomNavInner() {
   const { loading, session } = useAuth();
   const { theme } = useTheme();
@@ -105,6 +116,33 @@ function BottomNavInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const intent = searchParams.get("intent");
+  const chatOwnerId = session?.user?.id ?? null;
+  const unreadBaselineReadyRef = useRef(false);
+  const prevUnreadAfterReadyRef = useRef(0);
+  /** Инкремент только при реальном росте счётчика вне комнаты — remount включает одноразовую анимацию. */
+  const [chatBadgePulseGen, setChatBadgePulseGen] = useState(0);
+
+  useEffect(() => {
+    unreadBaselineReadyRef.current = false;
+    prevUnreadAfterReadyRef.current = 0;
+    setChatBadgePulseGen(0);
+  }, [chatOwnerId]);
+
+  useEffect(() => {
+    if (!chatReady) return;
+    if (!unreadBaselineReadyRef.current) {
+      unreadBaselineReadyRef.current = true;
+      prevUnreadAfterReadyRef.current = totalUnread;
+      return;
+    }
+    const prev = prevUnreadAfterReadyRef.current;
+    prevUnreadAfterReadyRef.current = totalUnread;
+
+    const inRoom = isActiveChatRoomPath(pathname);
+    if (!inRoom && totalUnread > prev && totalUnread > 0) {
+      setChatBadgePulseGen((n) => n + 1);
+    }
+  }, [chatReady, totalUnread, pathname]);
 
   const chrome = navChrome(theme);
 
@@ -120,14 +158,14 @@ function BottomNavInner() {
       {navEntries.map((entry) => {
         const t = entry;
         const isGuest = !session?.user;
-        const href =
-          isGuest && t.key === "create"
-            ? "/login?reason=save_enigma&source=create_tab"
-            : isGuest && t.key === "chat"
-              ? "/login?reason=save_enigma&source=chat_tab"
-            : isGuest && t.key === "profile"
-              ? "/login?reason=save_enigma&source=profile_tab"
-              : t.href;
+        const href = (() => {
+          if (!isGuest) return t.href;
+          const returnEnc = encodeURIComponent(t.href);
+          if (t.key === "create") return `/login?returnTo=${returnEnc}&source=guest_nav`;
+          if (t.key === "chat") return `/login?returnTo=${returnEnc}&source=guest_nav`;
+          if (t.key === "profile") return `/login?returnTo=${returnEnc}&source=guest_nav`;
+          return t.href;
+        })();
         const active = t.isActive(pathname, intent);
         const isChatTab = t.key === "chat";
         const isProfileTab = t.key === "profile";
@@ -149,7 +187,8 @@ function BottomNavInner() {
               <Icon className={`h-6 w-6 shrink-0 ${c.icon}`} />
               {isChatTab && unread > 0 ? (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white"
+                  key={chatBadgePulseGen}
+                  className={`absolute -right-2 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[10px] font-bold leading-none text-white ${chatBadgePulseGen > 0 ? "animate-chatBadgePulseOnce" : ""}`}
                   style={{ boxShadow: `0 0 0 2px ${chrome.badgeRing}` }}
                   aria-label={`Непрочитанных сообщений: ${unread}`}
                 >
@@ -175,7 +214,7 @@ function BottomNavInner() {
 function BottomNavFallback() {
   return (
     <nav
-      className="bottom-nav-root fixed bottom-0 left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-transparent safe-pb sm:max-w-none"
+      className="bottom-nav-root fixed left-1/2 z-50 flex h-[64px] w-full max-w-lg -translate-x-1/2 items-center justify-around border-t border-transparent safe-pb sm:max-w-none"
       style={{
         paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
         backgroundColor: "#000000",

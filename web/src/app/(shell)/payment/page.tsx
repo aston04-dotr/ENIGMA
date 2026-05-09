@@ -43,6 +43,7 @@ function PaymentInner() {
   const listingId = sp.get("listingId");
   const promoKindRaw = sp.get("promoKind");
   const uidParam = sp.get("uid");
+  const listingPackSlotsRaw = sp.get("listingPackSlots");
   const showBoostPreview = Boolean(listingId && isBoostTariff(promoKindRaw));
   const defaultBoostPrice = defaultBoostCtaPriceRub();
 
@@ -109,6 +110,7 @@ function PaymentInner() {
           user_id: uid,
           listing_id: lid ?? "",
           promoKind: promoKindRaw ?? "",
+          listing_pack_slots: listingPackSlotsRaw?.trim() ?? "",
         },
       );
 
@@ -168,12 +170,10 @@ function PaymentInner() {
       <h1 className="text-xl font-bold text-fg">Оплата</h1>
 
       {showBoostPreview ? (
-        <div className="mt-5 rounded-card border border-line bg-elevated p-4">
-          <p className="text-[16px] font-semibold text-fg">
-            Увеличьте отклик на объявление
-          </p>
-          <p className="mt-1 text-sm text-muted">
-            Поднимите объявление, чтобы его увидело больше людей
+        <div className="mt-5 rounded-card border border-line bg-main/40 p-4">
+          <p className="text-[15px] font-medium text-fg">Продвижение в ленте</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+            Ненавязчиво усилим видимость объявления другим пользователям
           </p>
         </div>
       ) : null}
@@ -227,17 +227,23 @@ function PaymentInner() {
               type="button"
               disabled={busy}
               onClick={() => void pay()}
-              className="flex h-[52px] w-full items-center justify-center rounded-card bg-gradient-to-r from-[#9353FF] via-[#7B4FE8] to-[#22d3ee] text-[15px] font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+              className={`flex h-[52px] w-full items-center justify-center rounded-card text-[15px] font-semibold transition-all duration-200 active:scale-[0.98] disabled:opacity-60 ${
+                showBoostPreview
+                  ? "border border-line bg-elevated text-fg hover:bg-elev-2"
+                  : "bg-gradient-to-r from-[#9353FF] via-[#7B4FE8] to-[#22d3ee] text-white hover:brightness-110"
+              }`}
             >
               {busy
                 ? "…"
                 : showBoostPreview
-                  ? `Поднять объявление - ${hasAmount ? amountNum : defaultBoostPrice} ₽`
+                  ? `Оплатить ${hasAmount ? amountNum : defaultBoostPrice} ₽`
                   : `Оплатить ${formatRub(amountNum)}`}
             </button>
-            <p className="mt-2 text-center text-[13px] text-muted/70">
-              Больше просмотров и откликов
-            </p>
+            {showBoostPreview ? (
+              <p className="mt-2 text-center text-[12px] leading-snug text-muted/65">
+                После оплаты объявление получит усиление в соответствии с выбранным тарифом
+              </p>
+            ) : null}
           </>
         ) : (
           <Link

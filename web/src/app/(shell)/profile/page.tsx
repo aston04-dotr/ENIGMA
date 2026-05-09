@@ -9,28 +9,25 @@ import { getMyListings, fetchFavoriteListingsForUser } from "@/lib/listings";
 import { FAVORITES_CHANGED_EVENT } from "@/lib/favoriteEvents";
 import { renewListingPublication } from "@/lib/listingRenewal";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
+import { clearSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import {
+  FREE_ACTIVE_LISTINGS_CAP,
+  LISTING_EXTRA_SLOT_PACKS,
+} from "@/lib/listingSlotPacks";
+import { maxAllowedActiveListings } from "@/lib/listingPublishQuota";
 import { deleteAccount } from "@/lib/deleteAccount";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
 import { listingEditPath } from "@/lib/mobileRuntime";
 import { persistProfileCacheOverlay } from "@/lib/profileLocalCache";
 import { supabase } from "@/lib/supabase";
 import { isValidRussianPhone, normalizeRussianPhone } from "@/lib/phoneUtils";
-import type { UserRow } from "@/lib/types";
+import type { ListingRow, UserRow } from "@/lib/types";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useCallback } from "react";
-import type { ListingRow } from "@/lib/types";
 
-type PackageSize = "small" | "base" | "pro";
-
-type PackageInfo = {
-  count: number;
-  price: number;
-  perAd: number;
-};
-
-/** Форматирование цены с пробелами и разделителем */
+type ListingPackSelection = { slots: number; priceRub: number };
 function formatPrice(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
@@ -67,51 +64,6 @@ const cardEntryAnimation = `
   }
 `;
 
-const packageInfo: Record<string, Record<PackageSize, PackageInfo>> = {
-  general: {
-    small: { count: 10, price: 1500, perAd: 150 },
-    base: { count: 25, price: 3500, perAd: 140 },
-    pro: { count: 50, price: 6000, perAd: 120 },
-  },
-  realty: {
-    small: { count: 3, price: 2000, perAd: 667 },
-    base: { count: 7, price: 4000, perAd: 571 },
-    pro: { count: 15, price: 9000, perAd: 600 },
-  },
-  auto: {
-    small: { count: 3, price: 1500, perAd: 500 },
-    base: { count: 7, price: 3900, perAd: 557 },
-    pro: { count: 15, price: 7900, perAd: 527 },
-  },
-};
-
-/** Расчет цены за кастомное количество - ТОЛЬКО цены из пакетов, без дробей */
-function calculateCustomPrice(type: string, quantity: number): { total: number; perAd: number } {
-  const packages = packageInfo[type];
-  if (!packages) return { total: 0, perAd: 0 };
-
-  // ЖЁСТКИЕ ЦЕНЫ ПАКЕТОВ (без расчётов)
-  if (type === "general") {
-    if (quantity <= 10) return { total: 1500, perAd: 150 }; // small
-    if (quantity <= 25) return { total: 3500, perAd: 140 }; // base
-    return { total: 6000, perAd: 120 }; // pro
-  }
-
-  if (type === "auto") {
-    if (quantity <= 3) return { total: 1500, perAd: 500 }; // small
-    if (quantity <= 7) return { total: 3900, perAd: 557 }; // base
-    return { total: 7900, perAd: 527 }; // pro
-  }
-
-  if (type === "realty") {
-    if (quantity <= 3) return { total: 2000, perAd: 667 }; // small
-    if (quantity <= 7) return { total: 4000, perAd: 571 }; // base
-    return { total: 9000, perAd: 600 }; // pro
-  }
-
-  return { total: 0, perAd: 0 };
-}
-
 export default function ProfilePage() {
   const { session, profile, signOut, authResolved, loading, refreshProfile } = useAuth();
   const { theme, mounted } = useTheme();
@@ -121,10 +73,9 @@ export default function ProfilePage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
-  const [selectedPackage, setSelectedPackage] = useState<{ type: string; size: PackageSize } | null>({ type: "general", size: "base" });
-  const [customQuantity, setCustomQuantity] = useState<string>("");
-  const [customType, setCustomType] = useState<string>("general");
-  const [isCustom, setIsCustom] = useState<boolean>(false);
+  const [selectedListingPack, setSelectedListingPack] = useState<ListingPackSelection | null>(
+    LISTING_EXTRA_SLOT_PACKS[0] ?? null,
+  );
   const [nameInput, setNameInput] = useState("");
   const [nameSaving, setNameSaving] = useState(false);
   const [nameMessage, setNameMessage] = useState<string | null>(null);
@@ -222,6 +173,18 @@ export default function ProfilePage() {
       ),
     [myListings],
   );
+
+  const listingExtraCapacity = useMemo(
+    () => Math.max(0, Math.floor(Number(profile?.listing_extra_slot_capacity ?? 0))),
+    [profile?.listing_extra_slot_capacity],
+  );
+
+  const placementQuota = useMemo(() => {
+    const max = maxAllowedActiveListings(profile ?? null);
+    const active = activeProfileListings.length;
+    const fillPct = max > 0 ? Math.min(100, (active / max) * 100) : 0;
+    return { max, active, fillPct };
+  }, [profile?.listing_extra_slot_capacity, activeProfileListings.length]);
 
   const shownProfileListings =
     listingProfileTab === "favorites"
@@ -757,26 +720,26 @@ export default function ProfilePage() {
             : "border-[rgba(15,23,42,0.05)] bg-[#fcfdff] shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
         }`}
       >
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Увеличьте просмотры</p>
+        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
+          Спокойное продвижение
+        </p>
         <p className={`mt-1 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
-          Продвигайте объявления и получайте больше откликов
+          Поднятие и приоритет в ленте — по желанию, отдельно от размещения
         </p>
         <Link
-          href="#packages-panel"
-          className={`mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-[13px] border px-3 text-[14px] font-medium transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
+          href="#promo-status-panel"
+          className={`mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-[13px] border px-3 text-[14px] font-medium transition-all duration-200 ease-in-out active:scale-[0.98] ${
             isDark
-              ? "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.12)] text-white hover:bg-[rgba(139,95,255,0.18)]"
-              : "border-[rgba(139,95,255,0.35)] bg-[rgba(139,95,255,0.10)] text-[#2d2159] hover:bg-[rgba(139,95,255,0.16)]"
+              ? "border-white/[0.12] bg-white/[0.05] text-fg/95 hover:bg-white/[0.08]"
+              : "border-black/[0.08] bg-white text-[#374151] shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-[#fafafa]"
           }`}
         >
-          <span className="mr-1" aria-hidden>
-            ⚡
-          </span>
-          Продвинуть объявление
+          Выбрать вариант
         </Link>
       </div>
 
       {/* ПАНЕЛЬ: МОЙ СТАТУС + МОИ ПАКЕТЫ */}
+      <div id="promo-status-panel" />
       <div className={`rounded-[18px] border p-4 card-animate ${
         isDark 
           ? "bg-white/5 border-white/10 shadow-[0_6px_16px_rgba(0,0,0,0.10)]" 
@@ -787,19 +750,17 @@ export default function ProfilePage() {
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <div className="flex items-center gap-3">
-              <span className="text-[18px]">🔥</span>
+            <div className="flex items-center gap-2.5">
               <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>Boost</span>
             </div>
-            <span className={`text-[12px] font-medium transition-colors duration-200 ${
-              isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
-            }`}>АКТИВЕН</span>
+            <span className={`text-[12px] font-medium ${isDark ? "text-muted/75" : "text-gray-500"}`}>
+              активен
+            </span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <div className="flex items-center gap-3">
-              <span className="text-[18px]">💎</span>
+            <div className="flex items-center gap-2.5">
               <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>VIP</span>
             </div>
             <span className={`text-[12px] font-medium transition-colors duration-200 ${
@@ -809,23 +770,26 @@ export default function ProfilePage() {
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <div className="flex items-center gap-3">
-              <span className="text-[18px]">🚀</span>
+            <div className="flex items-center gap-2.5">
               <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>TOP</span>
             </div>
-            <span className={`text-[12px] font-medium transition-colors duration-200 ${
-              isDark ? "text-accent" : "text-[#22c55e] hover:text-[#16a34a]"
-            }`}>АКТИВЕН</span>
+            <span className={`text-[12px] font-medium ${isDark ? "text-muted/75" : "text-gray-500"}`}>
+              активен
+            </span>
           </div>
         </div>
         <div className={`my-3 h-px ${isDark ? "bg-white/[0.08]" : "bg-black/[0.05]"}`} />
-        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Мои пакеты</p>
+        <p className={`mb-2.5 text-[15px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Балансы</p>
         <div className="space-y-1.5">
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
           }`}>
-            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>Поднятий</span>
-            <span className={`text-[18px] font-medium ${isDark ? "text-accent/95" : "text-[#6f56cf]"}`}>3</span>
+            <span className={`text-[14px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>
+              Доп. активных объявлений
+            </span>
+            <span className={`text-[18px] font-medium tabular-nums ${isDark ? "text-fg/90" : "text-[#374151]"}`}>
+              {Math.max(0, Math.floor(Number(profile?.listing_extra_slot_capacity ?? 0)))}
+            </span>
           </div>
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-200 ${
             isDark ? "hover:bg-white/5" : "hover:bg-black/[0.02]"
@@ -849,237 +813,114 @@ export default function ProfilePage() {
           : "bg-[#fbfcfe] border-[rgba(0,0,0,0.04)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]"
       }`}>
         <div id="packages-panel" />
-        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>Пакеты и размещение</p>
+        <p className={`text-[16px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
+          Размещение
+        </p>
 
-        {/* Бесплатные размещения */}
         <div className={`mt-3.5 rounded-xl p-3.5 ${isDark ? "bg-white/5" : "bg-[#f8fafc]"}`}>
           <p className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>
-            Бесплатные размещения
+            До {FREE_ACTIVE_LISTINGS_CAP} активных объявлений бесплатно
           </p>
-          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
-            До 2 объявлений бесплатно во всех категориях, кроме Авто и Недвижимости.
+          <p className={`mt-2 text-[13px] leading-[1.45] ${isDark ? "text-muted/85" : "text-gray-600/85"}`}>
+            Во всех категориях и городах, без платы за обычное размещение. Enigma помогает спокойно стартовать и
+            набрать живую ленту.
           </p>
-          <p className={`mt-1.5 text-[13px] leading-[1.35] ${isDark ? "text-muted/80" : "text-gray-600/80"}`}>
-            В Авто и Недвижимости - по 1 бесплатному объявлению.
+          <p className={`mt-3 text-[13px] tabular-nums tracking-tight ${isDark ? "text-fg/90" : "text-[#111]/90"}`}>
+            {placementQuota.active} из {placementQuota.max} активных объявлений
           </p>
-          <p className={`mt-3 text-[12px] ${isDark ? "text-accent/90" : "text-[#7c3aed]/90"}`}>
-            Следующее бесплатное в недвижимости - через 3 месяца.
-          </p>
-        </div>
-
-        {/* Якорь цены */}
-        <div className={`mt-3.5 rounded-xl border-l-4 p-3 ${isDark ? "bg-white/5 border-l-accent/50" : "bg-gray-50 border-l-[#8B5FFF]/50"}`}>
-          <p className={`text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>Размещение по одному</p>
-          <div className="mt-1">
-            <span className={`inline-flex items-baseline text-[18px] font-semibold tracking-tight ${isDark ? "text-white" : "text-[#111]"}`}>
-              <span>200</span>
-              <span className="text-[14px] ml-1 opacity-60">₽</span>
-            </span>
-            <span className={`ml-1 text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>/ объявление</span>
-          </div>
-        </div>
-
-        {/* Пакеты: 3 понятных блока без смешивания категорий */}
-        <div className="mt-5 rounded-2xl bg-elevated p-4">
-          {[
-            { type: "realty", title: "Недвижимость" },
-            { type: "auto", title: "Авто" },
-            { type: "general", title: "Общие пакеты" },
-          ].map((section) => (
+          <div
+            className={`mt-2 h-1.5 w-full overflow-hidden rounded-full ${
+              isDark ? "bg-white/[0.08]" : "bg-black/[0.06]"
+            }`}
+            role="presentation"
+          >
             <div
-              key={section.type}
-              className={`rounded-2xl border border-line bg-elevated p-3 ${section.type === "realty" ? "" : "mt-5"}`}
-            >
-              <h3 className="text-[16px] font-semibold tracking-tight text-fg">
-                {section.title}
-              </h3>
-              <div className="mt-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
-                {(Object.entries(packageInfo[section.type] || {}) as [PackageSize, PackageInfo][])
-                  .map(([size, info]) => {
-                    const selected =
-                      !isCustom &&
-                      selectedPackage?.type === section.type &&
-                      selectedPackage?.size === size;
-                    const isHitPackage =
-                      size === "base" &&
-                      (section.type === "general" ||
-                        section.type === "realty" ||
-                        section.type === "auto");
-                    return (
-                      <article
-                        key={`${section.type}-${size}`}
-                        className={`overflow-hidden rounded-xl border bg-elevated p-2.5 transition-all duration-200 ease-in-out hover:-translate-y-[2px] ${
-                          selected
-                            ? "border-accent shadow-md shadow-accent/20"
-                            : "border-line"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="min-w-0 truncate text-sm text-muted">{info.count} объявлений</span>
-                          {isHitPackage ? (
-                            <span className="badge-hit shrink-0">🔥 Хит</span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 text-fg">
-                          <PriceDisplay value={info.price} size="lg" />
-                        </div>
-                        <p className="mt-1 text-[12px] text-muted">
-                          Выгоднее, чем поштучно
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedPackage({ type: section.type, size });
-                            setIsCustom(false);
-                            setCustomQuantity("");
-                          }}
-                          className={`pressable mt-3 min-h-[42px] w-full rounded-lg border text-[13px] font-semibold transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] ${
-                            selected
-                              ? "border-green-500 bg-green-500 text-white"
-                              : "border-accent bg-accent text-white"
-                          }`}
-                        >
-                          {selected ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span aria-hidden>✔</span>
-                              <span>Выбрано</span>
-                            </span>
-                          ) : (
-                            "Выбрать"
-                          )}
-                        </button>
-                      </article>
-                    );
-                  })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Свое количество */}
-        <div className="mt-5 border-t border-dashed border-gray-300/50 pt-4 dark:border-gray-600/30">
-          <p className={`mb-4 text-[15px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>Свое количество</p>
-          
-          {/* Тип категории */}
-          <div className="mb-3 flex gap-2">
-            {[
-              { id: "general", label: "Общие" },
-              { id: "auto", label: "Авто" },
-              { id: "realty", label: "Недвижимость" },
-            ].map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => {
-                  setCustomType(t.id);
-                  setIsCustom(true);
-                  setSelectedPackage(null);
-                }}
-                className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
-                  isCustom && customType === t.id
-                    ? (isDark ? "bg-accent/20 text-accent border border-accent/30" : "bg-[#f3f0ff] text-[#7c3aed] border border-[#8B5FFF]/30")
-                    : (isDark ? "bg-white/5 text-muted border border-transparent hover:bg-white/10" : "bg-gray-100 text-gray-600 border border-transparent hover:bg-gray-200")
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          
-          {/* Input */}
-          <div className="relative">
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={customQuantity}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "" || (parseInt(val) >= 0 && parseInt(val) <= 500)) {
-                  setCustomQuantity(val);
-                  if (val && parseInt(val) > 0) {
-                    setIsCustom(true);
-                    setSelectedPackage(null);
-                  }
-                }
-              }}
-              onFocus={() => {
-                setIsCustom(true);
-                setSelectedPackage(null);
-              }}
-              placeholder="Введите количество"
-              className={`h-[46px] w-full rounded-xl px-4 text-[14px] font-medium outline-none transition-all duration-200 ${
-                isDark
-                  ? "bg-white/5 border border-white/10 text-white placeholder:text-muted/80 focus:border-accent/50 focus:bg-white/[0.07]"
-                  : "bg-elev-2 border border-line text-fg placeholder:text-muted/70 focus:border-accent/40 focus:bg-elevated"
+              className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+                isDark ? "bg-white/30" : "bg-[#1e293b]/20"
               }`}
+              style={{ width: `${placementQuota.fillPct}%` }}
             />
-            <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-[13px] ${isDark ? "text-muted/60" : "text-gray-400"}`}>шт</span>
           </div>
-          
-          {/* Расчет цены */}
-          {customQuantity && parseInt(customQuantity) > 0 && (
-            <div className="mt-3.5 rounded-xl border border-[#8B5FFF]/10 bg-gradient-to-br from-[#8B5FFF]/5 to-[#22d3ee]/5 p-3.5">
-              <div className="flex items-baseline gap-1">
-                <span className={`text-[12px] ${isDark ? "text-muted/80" : "text-gray-500/85"}`}>Итого:</span>
-                <span className={`text-[18px] font-semibold ${isDark ? "text-fg" : "text-[#111]"}`}>
-                  {formatPrice(calculateCustomPrice(customType, parseInt(customQuantity)).total)}
-                </span>
-                <span className={`text-[14px] ml-1 opacity-60 ${isDark ? "text-fg" : "text-[#111]"}`}>₽</span>
-              </div>
-              <p className={`mt-1 text-[12px] ${isDark ? "text-muted/75" : "text-gray-500/85"}`}>
-                {formatPrice(calculateCustomPrice(customType, parseInt(customQuantity)).perAd)} ₽ за размещение
-              </p>
-            </div>
-          )}
+          {listingExtraCapacity > 0 ? (
+            <p className={`mt-2 text-[12px] leading-relaxed ${isDark ? "text-muted/75" : "text-gray-500"}`}>
+              {FREE_ACTIVE_LISTINGS_CAP} бесплатно · +{listingExtraCapacity} по пакету
+            </p>
+          ) : null}
         </div>
 
-        {/* CTA */}
-        <button
-          type="button"
-          onClick={() => {
-            if (isCustom && customQuantity && parseInt(customQuantity) > 0) {
-              const qty = parseInt(customQuantity);
-              const { total } = calculateCustomPrice(customType, qty);
-              console.log("BUY CUSTOM", { type: customType, quantity: qty, total });
-              safePush(router, `/payment?type=${customType}&qty=${qty}&amount=${total}`);
-            } else if (selectedPackage) {
-              const pkg = packageInfo[selectedPackage.type]?.[selectedPackage.size as PackageSize];
-              const count = pkg?.count ?? 0;
-              const price = pkg?.price ?? 0;
-              console.log("BUY PACKAGE", { type: selectedPackage.type, size: selectedPackage.size, count, price });
-              safePush(
-                router,
-                `/payment?type=${selectedPackage.type}&size=${selectedPackage.size}&qty=${count}&amount=${price}`,
-              );
-            }
-          }}
-          className={`enigma-final-cta mt-5 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-in-out hover:brightness-105 active:scale-[0.98] ${
-            (selectedPackage || (isCustom && customQuantity && parseInt(customQuantity) > 0))
-              ? (isDark
-                  ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_8px_30px_rgba(139,95,255,0.35),0_0_40px_rgba(110,231,255,0.12)]"
-                  : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/20")
-              : (isDark
-                  ? "bg-white/10 text-muted hover:bg-white/15 border border-line/30"
-                  : "bg-elev-2 text-muted border border-line")
+        <div
+          className={`mt-4 rounded-xl border p-3.5 ${
+            isDark ? "border-white/10 bg-white/[0.03]" : "border-line/60 bg-elevated/40"
           }`}
         >
-          {(() => {
-            if (isCustom && customQuantity && parseInt(customQuantity) > 0) {
-              const qty = parseInt(customQuantity);
-              const { total } = calculateCustomPrice(customType, qty);
-              const label = customType === "realty" ? "размещений в недвижимости" : customType === "auto" ? "размещений в авто" : "размещений";
-              return `Купить ${qty} ${label} - ${formatPrice(total)} ₽`;
-            }
-            if (selectedPackage) {
-              const pkg = packageInfo[selectedPackage.type]?.[selectedPackage.size as PackageSize];
-              const count = pkg?.count ?? 0;
-              const price = pkg?.price ?? 0;
-              const label = selectedPackage.type === "realty" ? "размещений в недвижимости" : selectedPackage.type === "auto" ? "размещений в авто" : "размещений";
-              return `Купить ${count} ${label} - ${formatPrice(price)} ₽`;
-            }
-            return "Выбрать пакет";
-          })()}
+          <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-[#111]"}`}>
+            Нужно больше?
+          </p>
+          <p className={`mt-1.5 text-[12px] leading-relaxed ${isDark ? "text-muted/82" : "text-gray-600/85"}`}>
+            Пакеты дают дополнительные одновременно активные объявления поверх бесплатных {FREE_ACTIVE_LISTINGS_CAP}.
+            Платные продвижения (BOOST / TOP / VIP) — отдельно, как и раньше.
+          </p>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {LISTING_EXTRA_SLOT_PACKS.map((pack) => {
+              const selected = selectedListingPack?.slots === pack.slots;
+              return (
+                <button
+                  key={pack.slots}
+                  type="button"
+                  onClick={() => setSelectedListingPack(pack)}
+                  className={`rounded-xl border px-3 py-3 text-left transition-colors duration-200 ${
+                    selected
+                      ? isDark
+                        ? "border-accent/60 bg-accent/10"
+                        : "border-accent/50 bg-accent/[0.06]"
+                      : isDark
+                        ? "border-white/10 hover:bg-white/[0.05]"
+                        : "border-line hover:bg-elevated"
+                  }`}
+                >
+                  <span className={`text-[12px] ${isDark ? "text-muted/90" : "text-gray-500"}`}>
+                    +{pack.slots} к лимиту
+                  </span>
+                  <div className="mt-1">
+                    <PriceDisplay value={pack.priceRub} size="sm" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <p className={`mt-4 text-[11px] leading-relaxed ${isDark ? "text-muted/70" : "text-gray-500/90"}`}>
+          Мы мягко ограничиваем злоупотребления: уже сейчас аккаунт привязан к почте. Дальше — по мере роста сервиса —
+          подтверждение телефона, контекст устройства, лимиты при подозрительной активности — всё очень дозировано,
+          чтобы не мешать честным продавцам.
+        </p>
+
+        <button
+          type="button"
+          disabled={!selectedListingPack}
+          onClick={() => {
+            if (!selectedListingPack) return;
+            const title = encodeURIComponent(`Пакет +${selectedListingPack.slots} активных объявлений`);
+            safePush(
+              router,
+              `/payment?promoKind=listing_pack&listingPackSlots=${selectedListingPack.slots}&amount=${selectedListingPack.priceRub}&title=${title}`,
+            );
+          }}
+          className={`mt-4 w-full min-h-[48px] rounded-xl text-[14px] font-semibold transition-all duration-200 ease-out active:scale-[0.99] ${
+            selectedListingPack
+              ? isDark
+                ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-[0_8px_26px_rgba(139,95,255,0.28)] hover:brightness-[1.03]"
+                : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-white shadow-md shadow-purple-500/15 hover:brightness-[1.02]"
+              : isDark
+                ? "cursor-not-allowed bg-white/10 text-muted"
+                : "cursor-not-allowed bg-elev-2 text-muted"
+          }`}
+        >
+          {selectedListingPack
+            ? `Оформить ${formatPrice(selectedListingPack.priceRub)} ₽ · +${selectedListingPack.slots} слотов`
+            : "Выберите пакет"}
         </button>
       </div>
 
@@ -1109,7 +950,13 @@ export default function ProfilePage() {
 
       <button
         type="button"
-        onClick={() => void signOut()}
+        onClick={() => {
+          void (async () => {
+            clearSaveEnigmaContinuationRoute();
+            await signOut();
+            router.replace("/login?signed_out=1");
+          })();
+        }}
         className="mt-3 w-full min-h-[52px] rounded-card border border-line bg-elevated py-3.5 text-sm font-semibold text-fg transition-all duration-200 hover:bg-elev-2 active:scale-[0.98]"
       >
         Выйти

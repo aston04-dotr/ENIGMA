@@ -16,6 +16,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+type AuthFlowPhase = "fresh" | "returning_pick" | "returning_resume";
+
 function humanizeMagicLinkError(raw: string): string {
   const t = raw.toLowerCase();
   if (t.includes("security purposes") || t.includes("rate limit") || t.includes("too many")) {
@@ -39,44 +41,64 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [sent, setSent] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
-  const [saveMode, setSaveMode] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [flowPhase, setFlowPhase] = useState<AuthFlowPhase>("fresh");
+  const [saveContinuationMode, setSaveContinuationMode] = useState(false);
+  const initializedRef = useRef(false);
+
   const loginSuccessTrackedRef = useRef(false);
   const loginRedirectingRef = useRef(false);
 
   useEffect(() => {
+    if (typeof window === "undefined" || initializedRef.current) return;
+    initializedRef.current = true;
+
     if (consumeAccessDeniedMessage()) {
       setBanner("Доступ ограничен. Обратитесь в поддержку.");
+      setFlowPhase("fresh");
       return;
     }
-    if (typeof window === "undefined") return;
+
     const search = new URLSearchParams(window.location.search);
+
     const authError = search.get("auth_error");
     if (authError) {
       setBanner(`Ошибка авторизации: ${authError}`);
+      setFlowPhase("fresh");
       return;
     }
     if (search.get("deleted") === "1") {
       setBanner("Аккаунт удалён");
+      setFlowPhase("fresh");
       return;
     }
-    if (search.get("signed_out") === "1") {
+
+    const signedOut = search.get("signed_out") === "1";
+    const stale = search.get("reason") === "stale_refresh_token";
+    const saveEnigmaReason = search.get("reason") === "save_enigma";
+
+    const explicitReturning = signedOut || stale || saveEnigmaReason;
+
+    if (explicitReturning) {
+      setFlowPhase("returning_pick");
+    } else {
+      setFlowPhase("fresh");
+    }
+
+    if (signedOut) {
       setBanner("Вы вышли из аккаунта");
-      return;
     }
-    if (search.get("reason") === "stale_refresh_token") {
+    if (stale) {
       setBanner("Сессия устарела — вернитесь в аккаунт по почте.");
-      return;
     }
-    if (search.get("reason") === "save_enigma") {
-      setSaveMode(true);
+    if (saveEnigmaReason) {
+      setSaveContinuationMode(true);
       setBanner(
         "Подтвердите почту в аккаунте — чаты, избранное и активность останутся с вами.",
       );
     }
   }, []);
 
-  // Редирект если уже вошёл
   useEffect(() => {
     if (ready && session?.user) {
       if (loginRedirectingRef.current) return;
@@ -143,6 +165,27 @@ export default function LoginPage() {
     void send();
   }
 
+  const showReturningDual = flowPhase === "returning_pick";
+
+  const headline = (() => {
+    if (showReturningDual) return "Вход";
+    if (flowPhase === "returning_resume" && saveContinuationMode) return "Вернуться в аккаунт";
+    return "Вход";
+  })();
+
+  const lead = (() => {
+    if (showReturningDual) {
+      return "Выберите вариант или сразу введите почту — регистрация и вход по одному коду.";
+    }
+    if (flowPhase === "returning_resume" && saveContinuationMode) {
+      return "Код с почты вернёт вас в аккаунт — с чатами и избранным.";
+    }
+    if (flowPhase === "returning_resume") {
+      return "Отправим код на почту того же аккаунта или нового адреса.";
+    }
+    return "Отправим 8-значный код на почту. Введите его на следующем шаге.";
+  })();
+
   return (
     <main className="flex min-h-screen flex-col bg-main px-6 pb-12 pt-[max(2rem,env(safe-area-inset-top))]">
       <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-accent/80">ENIGMA</p>
@@ -152,15 +195,39 @@ export default function LoginPage() {
       {banner ? (
         <p className="mb-6 rounded-card border border-line bg-elevated px-4 py-3 text-sm text-fg">{banner}</p>
       ) : null}
-      <h1 className="text-[28px] font-bold tracking-tight text-fg">
-        {saveMode ? "Вернуться в аккаунт" : "Вход"}
-      </h1>
-      <p className="mt-3 max-w-[320px] text-[15px] leading-relaxed text-muted">
-        {saveMode
-          ? "Код с почты вернёт вас в аккаунт — с чатами и избранным."
-          : "Отправим 8-значный код на почту. Введите его на следующем шаге."}
-      </p>
-      <label className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted">
+      <h1 className="text-[28px] font-bold tracking-tight text-fg">{headline}</h1>
+      <p className="mt-3 max-w-[360px] text-[15px] leading-relaxed text-muted">{lead}</p>
+
+      {showReturningDual ? (
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => {
+              setFlowPhase("returning_resume");
+            }}
+            className="pressable min-h-[52px] rounded-card border border-line bg-elevated px-4 py-3 text-[15px] font-semibold text-fg shadow-sm ring-1 ring-fg/[0.04] transition-colors duration-ui hover:bg-elev-2"
+          >
+            Вернуться в аккаунт
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearSaveEnigmaContinuationRoute();
+              setSaveContinuationMode(false);
+              setFlowPhase("fresh");
+              setBanner(null);
+              router.replace("/login");
+            }}
+            className="pressable min-h-[52px] rounded-card border border-line bg-elevated px-4 py-3 text-[15px] font-semibold text-fg shadow-sm ring-1 ring-fg/[0.04] transition-colors duration-ui hover:bg-elev-2"
+          >
+            Войти в другой аккаунт
+          </button>
+        </div>
+      ) : null}
+
+      <label
+        className={`flex items-start gap-2.5 text-sm leading-relaxed text-muted ${showReturningDual ? "mt-8" : "mt-6"}`}
+      >
         <input
           type="checkbox"
           checked={acceptedTerms}
@@ -183,6 +250,7 @@ export default function LoginPage() {
           .
         </span>
       </label>
+
       <label className="mt-10 block text-[11px] font-semibold uppercase tracking-wider text-muted">Email</label>
       <input
         type="email"
@@ -195,6 +263,7 @@ export default function LoginPage() {
         className="mt-2 w-full min-h-[52px] rounded-card border border-line bg-elevated px-4 text-base text-fg placeholder:text-muted/70 transition-colors duration-ui focus:outline-none focus:ring-2 focus:ring-accent/35"
         placeholder="you@example.com"
       />
+
       {err ? <p className="mt-3 text-sm font-medium text-danger">{err}</p> : null}
       {sent ? (
         <div className="mt-6 space-y-2">
@@ -214,20 +283,6 @@ export default function LoginPage() {
       >
         {loading ? "Отправка…" : "Получить код"}
       </button>
-      {saveMode ? (
-        <button
-          type="button"
-          onClick={() => {
-            clearSaveEnigmaContinuationRoute();
-            setSaveMode(false);
-            setBanner(null);
-            router.replace("/login");
-          }}
-          className="mt-4 w-full py-2 text-center text-[15px] font-medium text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
-        >
-          Войти в другой аккаунт
-        </button>
-      ) : null}
       {(sent || err) && !loading ? (
         <p className="mt-3 text-center text-xs text-muted">Можно запросить код ещё раз.</p>
       ) : null}

@@ -1,21 +1,6 @@
 import { supabase } from "./supabase";
 import type { ListingRow } from "./types";
 
-/** Лимиты бесплатных объявлений по категориям (ключ = id категории в приложении). */
-export const CATEGORY_RULES: Record<
-  string,
-  { freeLimit: number; periodDays: number; priceRub: number }
-> = {
-  auto: { freeLimit: 1, periodDays: 30, priceRub: 1000 },
-  moto: { freeLimit: 1, periodDays: 30, priceRub: 1000 },
-  realestate: { freeLimit: 1, periodDays: 90, priceRub: 1500 },
-  default: { freeLimit: 2, periodDays: 30, priceRub: 200 },
-};
-
-export function getCategoryRule(categoryId: string) {
-  return CATEGORY_RULES[categoryId] ?? CATEGORY_RULES.default;
-}
-
 export function isTopActive(l: Pick<ListingRow, "is_top" | "top_until">): boolean {
   if (!l.is_top || !l.top_until) return false;
   return new Date(l.top_until).getTime() > Date.now();
@@ -256,22 +241,6 @@ function addDays(base: Date, days: number): Date {
   return d;
 }
 
-export async function countListingsInCategoryWindow(
-  userId: string,
-  category: string,
-  periodDays: number
-): Promise<number> {
-  const since = addDays(new Date(), -periodDays);
-  const { count, error } = await supabase
-    .from("listings")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("category", category)
-    .gte("created_at", since.toISOString());
-  if (error) return 0;
-  return count ?? 0;
-}
-
 // ─── Тарифы BOOST / VIP ─────────────────────────────────────────────
 
 export const BOOST_TARIFFS = [
@@ -285,7 +254,9 @@ export const VIP_TARIFFS = [
   { id: "vip_30" as const, days: 30, priceRub: 999 },
 ] as const;
 
-export type PromotionTariffKind = (typeof BOOST_TARIFFS)[number]["id"] | (typeof VIP_TARIFFS)[number]["id"];
+export type PromotionTariffKind =
+  | (typeof BOOST_TARIFFS)[number]["id"]
+  | (typeof VIP_TARIFFS)[number]["id"];
 
 export function parsePromotionTariffKind(s: string | undefined | null): PromotionTariffKind | null {
   const k = String(s ?? "").trim();

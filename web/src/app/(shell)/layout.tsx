@@ -14,7 +14,7 @@ export default function ShellLayout({
   return (
     <ShellGate>
       <div className="min-h-[100svh] bg-main">
-        <div className="pb-[calc(80px+env(safe-area-inset-bottom))]">
+        <div className="enigma-shell-pad pb-[calc(80px+env(safe-area-inset-bottom))]">
           {children}
         </div>
         <BottomNav />

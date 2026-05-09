@@ -3,6 +3,7 @@ import { markPaymentProcessed, isPaymentProcessed, logPaymentEvent } from "@/lib
 import { handleWebhook, verifySignature } from "@/lib/providers/yookassa";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { listingSlotPackValidates } from "@/lib/listingSlotPacks";
 
 type PaidServiceKind =
   | "renew_30"
@@ -11,7 +12,8 @@ type PaidServiceKind =
   | "vip_3"
   | "vip_7"
   | "vip_30"
-  | "top_7";
+  | "top_7"
+  | "listing_slot_pack";
 
 type ApplyPaidServiceResult = {
   ok: boolean;
@@ -59,6 +61,7 @@ function promoLabel(kind: PaidServiceKind | null): string {
   if (kind === "vip_7") return "VIP на 7 дней";
   if (kind === "vip_30") return "VIP на 30 дней";
   if (kind === "top_7") return "TOP на 7 дней";
+  if (kind === "listing_slot_pack") return "Пакет дополнительных активных объявлений";
   return "Платная услуга";
 }
 
@@ -240,6 +243,19 @@ async function applyPaidService(
   return { ok: false, userId, listingTitle, error: "unknown_service_kind" };
 }
 
+async function applyListingExtraSlotPack(
+  sb: NonNullable<ReturnType<typeof getServiceRoleSupabase>>,
+  userId: string,
+  slots: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { error } = await sb.rpc("add_listing_extra_slot_capacity_service", {
+    p_user_id: userId,
+    p_delta: slots,
+  });
+  if (error) return { ok: false, error: error.message || "rpc_failed" };
+  return { ok: true };
+}
+
 async function sendPaymentReceiptEmail(params: {
   sb: ReturnType<typeof getServiceRoleSupabase>;
   userId: string | null;
@@ -355,20 +371,54 @@ export async function POST(req: Request) {
         "",
     ).trim() || null;
 
-  const serviceKind = toPaidServiceKind(promoKind, serviceType);
+  const promoLower = String(promoKind ?? "").trim().toLowerCase();
+  const rawPackSlots = String(
+    metadata.listing_pack_slots ?? metadata.listingPackSlots ?? "",
+  ).trim();
+  const packSlotsParsed = Number.parseInt(rawPackSlots, 10);
+  const amountRubRounded = Math.round(Number(resolved.amount ?? 0));
 
-  let appliedUserId: string | null = metadataUserId;
+  const wantsListingPack =
+    promoLower === "listing_pack" || promoLower === "listing_slot_pack";
+
+  let resolvedServiceKind: PaidServiceKind | null = null;
   let listingTitle: string | null = null;
-  if (listingId && serviceKind) {
-    const applied = await applyPaidService(sb, listingId, serviceKind);
-    if (!applied.ok) {
+  let appliedUserId: string | null = metadataUserId;
+
+  if (wantsListingPack) {
+    if (!metadataUserId) {
+      return NextResponse.json({ ok: false, error: "missing_user_for_listing_pack" }, { status: 400 });
+    }
+    if (!Number.isFinite(packSlotsParsed) || packSlotsParsed <= 0) {
+      return NextResponse.json({ ok: false, error: "invalid_listing_pack_slots" }, { status: 400 });
+    }
+    if (!listingSlotPackValidates(packSlotsParsed, amountRubRounded)) {
+      return NextResponse.json({ ok: false, error: "listing_pack_amount_mismatch" }, { status: 400 });
+    }
+
+    const packRes = await applyListingExtraSlotPack(sb, metadataUserId, packSlotsParsed);
+    if (!packRes.ok) {
       return NextResponse.json(
-        { ok: false, error: applied.error || "apply_paid_service_failed" },
+        { ok: false, error: packRes.error || "listing_pack_apply_failed" },
         { status: 500 },
       );
     }
-    appliedUserId = applied.userId || appliedUserId;
-    listingTitle = applied.listingTitle;
+    resolvedServiceKind = "listing_slot_pack";
+    appliedUserId = metadataUserId;
+  } else {
+    const serviceKind = toPaidServiceKind(promoKind, serviceType);
+    resolvedServiceKind = serviceKind;
+    if (listingId && serviceKind) {
+      const applied = await applyPaidService(sb, listingId, serviceKind);
+      if (!applied.ok) {
+        return NextResponse.json(
+          { ok: false, error: applied.error || "apply_paid_service_failed" },
+          { status: 500 },
+        );
+      }
+      appliedUserId = applied.userId || appliedUserId;
+      listingTitle = applied.listingTitle;
+    }
   }
 
   await markPaymentProcessedPersistent(sb, paymentId, appliedUserId, listingId);
@@ -376,10 +426,10 @@ export async function POST(req: Request) {
   logPaymentEvent({
     user_id: appliedUserId ?? "webhook",
     listing_id: listingId,
-    promoKind: promoKind ?? serviceKind,
+    promoKind: promoKind ?? resolvedServiceKind,
     amount: Number(resolved.amount ?? 0),
     payment_id: paymentId,
-    status: serviceKind ? "applied" : "confirmed",
+    status: resolvedServiceKind ? "applied" : "confirmed",
   });
 
   await sendPaymentReceiptEmail({
@@ -388,7 +438,7 @@ export async function POST(req: Request) {
     paymentId,
     amount: resolved.amount,
     currency: resolved.currency,
-    serviceKind,
+    serviceKind: resolvedServiceKind,
     listingId,
     listingTitle,
   });
@@ -399,6 +449,6 @@ export async function POST(req: Request) {
     ok: true,
     processed: true,
     paymentId,
-    service: serviceKind,
+    service: resolvedServiceKind,
   });
 }

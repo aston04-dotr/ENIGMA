@@ -36,6 +36,7 @@ import type { UserRow } from "@/lib/types";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
 import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
 import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
+import { markUserReadyForPwaInstall, clearUserReadyForPwaInstall } from "@/lib/pwaInstallEligibility";
 
 const PROFILE_SYNC_TIMEOUT_MS = 24_000;
 
@@ -548,6 +549,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id, loadProfileForUser]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const uid = session?.user?.id;
+    if (!uid || loading || profileLoading || !profile) return;
+    markUserReadyForPwaInstall();
+  }, [session?.user?.id, profile, loading, profileLoading]);
+
   const signOut = useCallback(async () => {
     profileReqSeq.current += 1;
     setSessionRecovering(false);
@@ -559,6 +567,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     closeAuthCircuit();
     setHardAuthResetInFlight(false);
     resetAuthFaultWindow();
+    clearUserReadyForPwaInstall();
     try {
       await supabase.auth.signOut({ scope: "global" });
     } catch {

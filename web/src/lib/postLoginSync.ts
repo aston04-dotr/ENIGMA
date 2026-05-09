@@ -22,7 +22,9 @@ async function readProfileSnapshot(user: User): Promise<ProfileSnapshot> {
 
   let { data: p, error: pErr } = await supabase
     .from("profiles")
-    .select("phone, trust_score, updated_at, name, created_at, device_id, phone_updated_at")
+    .select(
+      "phone, trust_score, updated_at, name, created_at, device_id, phone_updated_at, listing_extra_slot_capacity",
+    )
     .eq("id", userId)
     .maybeSingle();
 
@@ -34,7 +36,9 @@ async function readProfileSnapshot(user: User): Promise<ProfileSnapshot> {
     await ensureProfileAndUserRow(user);
     const retry = await supabase
       .from("profiles")
-      .select("phone, trust_score, updated_at, name, created_at, device_id, phone_updated_at")
+      .select(
+        "phone, trust_score, updated_at, name, created_at, device_id, phone_updated_at, listing_extra_slot_capacity",
+      )
       .eq("id", userId)
       .maybeSingle();
     p = retry.data;
@@ -60,6 +64,7 @@ async function readProfileSnapshot(user: User): Promise<ProfileSnapshot> {
       name: p?.name ?? row.name,
       phone: p?.phone ?? row.phone,
       trust_score: p?.trust_score ?? row.trust_score,
+      listing_extra_slot_capacity: p?.listing_extra_slot_capacity ?? 0,
     },
   };
 }

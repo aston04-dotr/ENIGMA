@@ -8,7 +8,14 @@ import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { useAuth } from "@/context/auth-context";
 import { useTheme } from "@/context/theme-context";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
-import { webBoostPaymentQuery } from "@/lib/boostPay";
+import {
+  defaultBoostCtaPriceRub,
+  defaultTopCtaPriceRub,
+  defaultVipCtaPriceRub,
+  webBoostPaymentQuery,
+  webTopPaymentQuery,
+  webVipPaymentQuery,
+} from "@/lib/boostPay";
 import { getOrCreateChat } from "@/lib/chats";
 import {
   fetchListingFavoriteCounts,
@@ -17,6 +24,7 @@ import {
   normalizeListingImages,
   toggleFavorite,
 } from "@/lib/listings";
+import { tryLightVibrate } from "@/lib/nativeHaptics";
 import { renewListingPublication } from "@/lib/listingRenewal";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
@@ -284,7 +292,11 @@ export default function ListingDetailPage() {
         setIsFavoritedLocal(prev.isFavorited);
         setFavoriteCountLocal(prev.favoriteCount);
       },
-    }).finally(() => setFavoriteBusy(false));
+    })
+      .then((res) => {
+        if (res.ok && res.state.isFavorited) tryLightVibrate();
+      })
+      .finally(() => setFavoriteBusy(false));
   }, [
     favoriteBusy,
     favoriteCountLocal,
@@ -450,6 +462,15 @@ export default function ListingDetailPage() {
     viewerId && rowId
       ? `/payment?${webBoostPaymentQuery(String(rowId), viewerId)}`
       : "/login";
+  const topHref =
+    viewerId && rowId
+      ? `/payment?${webTopPaymentQuery(String(rowId), viewerId)}`
+      : "/login";
+  const vipHref =
+    viewerId && rowId
+      ? `/payment?${webVipPaymentQuery(String(rowId), viewerId)}`
+      : "/login";
+  const boostPriceRub = defaultBoostCtaPriceRub();
   const ownerName =
     typeof safeItem.seller?.name === "string" && safeItem.seller.name.trim()
       ? safeItem.seller.name.trim()
@@ -633,30 +654,81 @@ export default function ListingDetailPage() {
                   type="button"
                   disabled={renewingPublication}
                   onClick={() => void handleRenewPublication()}
-                  className="flex w-full min-h-[56px] items-center justify-center rounded-[16px] bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#dc2626] text-[16px] font-bold text-white shadow-[0_8px_28px_rgba(234,88,12,0.38)] transition-all duration-200 hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-amber-500/30 bg-amber-500/[0.08] py-4 text-[16px] font-semibold text-amber-900 dark:border-amber-400/35 dark:bg-amber-400/10 dark:text-amber-100 transition-all duration-200 hover:bg-amber-500/[0.12] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {renewingPublication ? "Продление…" : "Продлить публикацию"}
                 </button>
               ) : null}
               <Link
                 href={listingEditPath(String(rowId))}
-                className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-line bg-elevated py-4 text-[16px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-md active:scale-[0.98]"
+                className="flex w-full min-h-[56px] items-center justify-center rounded-card border border-line bg-elevated py-4 text-[16px] font-semibold text-fg transition-all duration-200 hover:bg-elev-2 hover:shadow-sm active:scale-[0.98]"
               >
-                ✏️ Редактировать объявление
+                Редактировать объявление
               </Link>
-              <Link
-                href={boostHref}
-                onClick={() =>
-                  trackBoostEvent("boost_click", {
-                    listingId: rowId,
-                    own: true,
-                    surface: "listing_detail",
-                  })
-                }
-                className="flex w-full min-h-[56px] items-center justify-center rounded-[16px] bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] text-[16px] font-bold text-white shadow-[0_8px_32px_rgba(139,92,246,0.4)] transition-all duration-200 hover:shadow-[0_12px_40px_rgba(139,92,246,0.5)] active:scale-[0.98]"
-              >
-                🚀 Продвинуть
-              </Link>
+              {!listingExpired ? (
+                <div className="space-y-2 pt-1">
+                  <p className="text-center text-[11px] font-medium uppercase tracking-wider text-muted">
+                    По желанию
+                  </p>
+                  <Link
+                    href={boostHref}
+                    onClick={() =>
+                      trackBoostEvent("boost_click", {
+                        listingId: rowId,
+                        own: true,
+                        surface: "listing_detail",
+                      })
+                    }
+                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="text-[15px] font-medium text-fg">Поднять в поиске</span>
+                      <span className="text-[15px] tabular-nums font-medium text-muted">{boostPriceRub} ₽</span>
+                    </span>
+                    <span className="mt-0.5 text-[12px] text-muted">
+                      Спокойно подсветим в ленте
+                    </span>
+                  </Link>
+                  <Link
+                    href={topHref}
+                    onClick={() =>
+                      trackBoostEvent("top_click", {
+                        listingId: rowId,
+                        own: true,
+                        surface: "listing_detail",
+                      })
+                    }
+                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="text-[15px] font-medium text-fg">Приоритет в ленте</span>
+                      <span className="text-[15px] tabular-nums font-medium text-muted">
+                        {defaultTopCtaPriceRub()} ₽
+                      </span>
+                    </span>
+                    <span className="mt-0.5 text-[12px] text-muted">Расширенная видимость в ленте</span>
+                  </Link>
+                  <Link
+                    href={vipHref}
+                    onClick={() =>
+                      trackBoostEvent("vip_click", {
+                        listingId: rowId,
+                        own: true,
+                        surface: "listing_detail",
+                      })
+                    }
+                    className="flex w-full min-h-[52px] flex-col justify-center rounded-card border border-line bg-main/40 px-4 py-3 text-left transition-colors hover:bg-elev-2 active:scale-[0.99]"
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="text-[15px] font-medium text-fg">VIP-зона</span>
+                      <span className="text-[15px] tabular-nums font-medium text-muted">
+                        {defaultVipCtaPriceRub()} ₽
+                      </span>
+                    </span>
+                    <span className="mt-0.5 text-[12px] text-muted">Максимальная заметность</span>
+                  </Link>
+                </div>
+              ) : null}
             </div>
           ) : (
             /* Others see: Write + Copy Phone */

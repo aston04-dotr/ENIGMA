@@ -14,6 +14,7 @@ import { trackBoostEvent } from "@/lib/boostAnalytics";
 import { isBoostActive } from "@/lib/monetization";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
+import { tryLightVibrate } from "@/lib/nativeHaptics";
 import type { ListingRow } from "@/lib/types";
 import { shareListingUrl } from "@/lib/shareListing";
 import {
@@ -259,6 +260,8 @@ export function ListingCard({
         setIsFavoritedLocal(prev.isFavorited);
         setFavoriteCountLocal(prev.favoriteCount);
       },
+    }).then((res) => {
+      if (res.ok && res.state.isFavorited) tryLightVibrate();
     }).finally(() => setFavoriteBusy(false));
   }
 
@@ -417,84 +420,70 @@ export function ListingCard({
         onClose={() => setActionsOpen(false)}
       />
       {isOwn && !partner ? (
-        <div className="space-y-2.5 px-[14px] pb-[14px] pt-1">
-          {/* 1. Boost - Базовый */}
+        <div className="space-y-2 px-[14px] pb-[14px] pt-1">
           <Link
             href={boostHref()}
             onClick={() => trackBoostEvent("boost_click", { listingId: lid, own: isOwn })}
-            className={`enigma-final-cta block rounded-xl px-3 py-2.5 text-white transition-all duration-200 hover:brightness-105 active:scale-[0.98] ${
+            className={`block rounded-xl border px-3 py-3 transition-colors duration-200 active:scale-[0.99] ${
               theme === "dark"
-                ? "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-lg shadow-purple-500/25"
-                : "bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] shadow-md shadow-purple-500/20"
+                ? "border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06]"
+                : "border-black/[0.06] bg-white hover:bg-[#fafafa]"
             }`}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[13px] font-semibold text-white">
-                Поднять объявление
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[13px] font-medium ${theme === "light" ? "text-[#0f172a]" : "text-white/92"}`}>
+                Поднять в поиске
               </span>
-              <span className="text-[13px] font-semibold text-white">
+              <span className={`text-[13px] tabular-nums font-medium ${theme === "light" ? "text-[#475569]" : "text-white/65"}`}>
                 {priceRub} ₽
               </span>
             </div>
-            <div className="mt-1 text-[12px] text-white/85">
-              Больше просмотров и откликов
+            <div className={`mt-0.5 text-[11px] leading-snug ${theme === "light" ? "text-slate-500" : "text-white/48"}`}>
+              Аккуратно выделим в общей ленте
             </div>
           </Link>
 
-          {/* 2. TOP - Средний уровень */}
           <Link
             href={topHref()}
             onClick={() => trackBoostEvent("top_click", { listingId: lid, own: isOwn })}
-            className={`block rounded-2xl border p-4 transition-all duration-200 active:scale-[0.98] ${
-              theme === "light"
-                ? "border-[rgba(90,140,255,0.35)] hover:bg-[rgba(90,140,255,0.15)]"
-                : "border-[rgba(110,168,255,0.25)] hover:bg-[rgba(110,168,255,0.15)]"
+            className={`block rounded-xl border px-3 py-3 transition-colors duration-200 active:scale-[0.99] ${
+              theme === "dark"
+                ? "border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06]"
+                : "border-black/[0.06] bg-white hover:bg-[#fafafa]"
             }`}
-            style={{
-              background: theme === "light"
-                ? "linear-gradient(135deg, rgba(90,140,255,0.12), rgba(0,180,255,0.10))"
-                : "linear-gradient(135deg, rgba(80,120,255,0.12), rgba(0,200,255,0.08))",
-              backdropFilter: "blur(10px)",
-            }}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`text-sm font-medium ${theme === "light" ? "text-[#2F5BFF]" : "text-[#6EA8FF]"}`}>
-                  TOP размещение
-                </span>
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                  theme === "light"
-                    ? "bg-[rgba(90,140,255,0.15)] text-[#2F5BFF]"
-                    : "bg-[rgba(110,168,255,0.15)] text-[#6EA8FF]"
-                }`}>
-                  Оптимальный
-                </span>
-              </div>
-              <span className={`text-sm font-semibold ${theme === "light" ? "text-[#0F172A]" : "text-white"}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[13px] font-medium ${theme === "light" ? "text-[#0f172a]" : "text-white/92"}`}>
+                Приоритет в ленте
+              </span>
+              <span className={`text-[13px] tabular-nums font-medium ${theme === "light" ? "text-[#475569]" : "text-white/65"}`}>
                 {defaultTopCtaPriceRub()} ₽
               </span>
             </div>
-            <div className={`mt-1 text-xs ${theme === "light" ? "text-[#2F5BFF]/70" : "text-[#6EA8FF]/70"}`}>
-              Выше в ленте и больше показов
+            <div className={`mt-0.5 text-[11px] leading-snug ${theme === "light" ? "text-slate-500" : "text-white/48"}`}>
+              TOP — без лишнего шума в интерфейсе
             </div>
           </Link>
 
-          {/* 3. VIP - Премиум */}
           <Link
             href={vipHref()}
             onClick={() => trackBoostEvent("vip_click", { listingId: lid, own: isOwn })}
-            className="block rounded-2xl border border-white/10 bg-gradient-to-br from-[#0f1115] to-[#1a1d23] p-4 transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+            className={`block rounded-xl border px-3 py-3 transition-colors duration-200 active:scale-[0.99] ${
+              theme === "dark"
+                ? "border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06]"
+                : "border-black/[0.06] bg-white hover:bg-[#fafafa]"
+            }`}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium bg-gradient-to-r from-[#f5d07a] via-[#e6b85c] to-[#c9972e] bg-clip-text text-transparent">
-                VIP Boost
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[13px] font-medium ${theme === "light" ? "text-[#0f172a]" : "text-white/92"}`}>
+                VIP-зона
               </span>
-              <span className="text-sm font-semibold text-white">
+              <span className={`text-[13px] tabular-nums font-medium ${theme === "light" ? "text-[#475569]" : "text-white/65"}`}>
                 {defaultVipCtaPriceRub()} ₽
               </span>
             </div>
-            <div className="mt-1 text-xs text-white/60">
-              Максимальный приоритет в ленте
+            <div className={`mt-0.5 text-[11px] leading-snug ${theme === "light" ? "text-slate-500" : "text-white/48"}`}>
+              Максимальная заметность, спокойная подача
             </div>
           </Link>
         </div>

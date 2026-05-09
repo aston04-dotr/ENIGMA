@@ -8,10 +8,7 @@ import { useAuth } from "@/context/auth-context";
 import { useChatUnread } from "@/context/chat-unread-context";
 import { getOrCreateChat } from "@/lib/chats";
 import { getActorScope, normalizeChatParticipantName } from "@/lib/guestIdentity";
-import {
-  rememberSaveEnigmaContinuationRoute,
-  clearSaveEnigmaContinuationRoute,
-} from "@/lib/saveEnigmaFlow";
+import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { chatPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +19,7 @@ import {
   postgrestIndicatesSchemaColumnMismatch,
 } from "@/lib/postgrestErrorLog";
 import { preferMobileSoftAuthPath } from "@/lib/authHardRecovery";
+import { tryLightVibrate } from "@/lib/nativeHaptics";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
@@ -243,7 +241,8 @@ const NEAR_BOTTOM_PX = 72;
 /** Дальше от низа — кнопка «к началу». */
 const FAR_FROM_BOTTOM_TOP_BTN_PX = 280;
 const NEAR_TOP_HIDE_TOP_BTN_PX = 64;
-const MAX_MESSAGE_ENTER_ANIM = 0;
+/** Входящие пузырьки: короткая анимация, без парада. */
+const MAX_MESSAGE_ENTER_ANIM = 14;
 /** Жёсткий лимит списка, чтобы длинные диалоги не ломали рендер. */
 const MESSAGE_LIST_MAX = 200;
 const MESSAGE_LIST_KEEP = 150;
@@ -535,7 +534,7 @@ const ChatListMessageRow = memo(function ChatListMessageRow({
       onPointerCancel={clearLongPress}
       onPointerMove={clearLongPress}
       className={`flex min-w-0 w-full ${
-        isAppearing ? "animate-messageAppear" : ""
+        isAppearing && !mine ? "animate-messageAppear" : ""
       } ${mine ? "justify-end" : "justify-start"}`}
     >
       <div
@@ -1297,15 +1296,15 @@ export default function ChatRoomPage() {
       messageAnimKnownIdsRef.current = new Set(messages.map((m) => m.id));
       return;
     }
-    const newIds: string[] = [];
+    const newIncomingIds: string[] = [];
     for (const m of messages) {
       if (!messageAnimKnownIdsRef.current.has(m.id)) {
-        newIds.push(m.id);
         messageAnimKnownIdsRef.current.add(m.id);
+        if (me && m.sender_id !== me) newIncomingIds.push(m.id);
       }
     }
-    if (newIds.length === 0) return;
-    const toAnimate = newIds.slice(0, MAX_MESSAGE_ENTER_ANIM);
+    if (newIncomingIds.length === 0) return;
+    const toAnimate = newIncomingIds.slice(0, MAX_MESSAGE_ENTER_ANIM);
     setAppearingMessageIds((prev) => {
       const next = new Set(prev);
       for (const id of toAnimate) next.add(id);
@@ -1317,9 +1316,9 @@ export default function ChatRoomPage() {
         for (const id of toAnimate) next.delete(id);
         return next;
       });
-    }, 200);
+    }, 260);
     return () => window.clearTimeout(t);
-  }, [chatId, messages]);
+  }, [chatId, messages, me]);
 
   const loadMessages = useCallback(
     async (opts?: { reason?: "initial" | "reconnect" }) => {
@@ -2179,6 +2178,7 @@ export default function ChatRoomPage() {
               : message,
           ),
         );
+        tryLightVibrate();
 
         try {
           await refreshChats({ silent: true });
@@ -2492,36 +2492,23 @@ export default function ChatRoomPage() {
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5">
         <div className="w-full max-w-sm rounded-card border border-line bg-elevated p-4">
           <p className="text-sm text-muted">
-            Здесь личные сообщения — откройте после возврата в аккаунт по почте.
+            Личный чат открывается после входа по почте — тот же шаг и для регистрации.
           </p>
-          <div className="mt-4 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  rememberSaveEnigmaContinuationRoute(
-                    `${window.location.pathname}${window.location.search}`,
-                  );
-                } else {
-                  rememberSaveEnigmaContinuationRoute(chatPath(chatId));
-                }
-                router.push("/login?reason=save_enigma&source=chat_room");
-              }}
-              className="pressable min-h-[48px] rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
-            >
-              Вернуться в аккаунт
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                clearSaveEnigmaContinuationRoute();
-                router.push("/login");
-              }}
-              className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-4 py-2 text-sm font-medium text-fg"
-            >
-              Войти в другой аккаунт
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const path =
+                typeof window !== "undefined"
+                  ? `${window.location.pathname}${window.location.search}`
+                  : chatPath(chatId);
+              rememberSaveEnigmaContinuationRoute(path);
+              const encoded = encodeURIComponent(path);
+              router.push(`/login?returnTo=${encoded}&source=guest_chat_room_gate`);
+            }}
+            className="pressable mt-4 min-h-[48px] w-full rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white"
+          >
+            Продолжить с почтой
+          </button>
         </div>
       </main>
     );
@@ -2678,7 +2665,12 @@ export default function ChatRoomPage() {
         </button>
       </div>
 
-      <div className="shrink-0 border-t border-line/80 bg-elevated safe-pb">
+      <div
+        className="shrink-0 border-t border-line/80 bg-elevated transition-[padding-bottom] duration-200 ease-out"
+        style={{
+          paddingBottom: `calc(max(env(safe-area-inset-bottom, 0px), 10px) + var(--enigma-vv-inset-bottom, 0px))`,
+        }}
+      >
         {sendErr ? (
           <button
             type="button"
@@ -2718,7 +2710,7 @@ export default function ChatRoomPage() {
             onChange={(e) => {
               handleComposerChange(e.target.value, text);
             }}
-            className="min-h-[42px] flex-1 rounded-2xl border border-line/80 bg-main px-3.5 py-2 text-[15px] leading-[1.35] text-fg placeholder:text-muted/65 focus:outline-none focus:ring-2 focus:ring-accent/30"
+            className="min-h-[42px] flex-1 rounded-2xl border border-line/80 bg-main px-3.5 py-2 text-[15px] leading-[1.35] text-fg placeholder:text-muted/65 focus:outline-none focus:ring-2 focus:ring-accent/30 enigma-keyboard-scroll-target"
             placeholder="Сообщение…"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

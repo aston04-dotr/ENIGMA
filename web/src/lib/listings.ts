@@ -1,4 +1,5 @@
 import { isValidListingUuid } from "./listingParams";
+import { FREE_ACTIVE_LISTINGS_CAP } from "./listingSlotPacks";
 import { isSchemaNotInCache, logRlsIfBlocked } from "./postgrestErrors";
 import { getListingsPageSize } from "./runtimeConfig";
 import { FAVORITES_CHANGED_EVENT } from "./favoriteEvents";
@@ -1316,7 +1317,12 @@ export async function fetchListingById(listingId: string): Promise<FetchListingD
   ]);
 }
 
-export type InsertListingRowResult = { id?: string; error?: string };
+export type InsertListingRowResult = {
+  id?: string;
+  error?: string;
+  /** Сработал лимит одновременно активных (см. миграция квоты). Удобно для мягкого UI без «красных» ошибок. */
+  activeQuotaExceeded?: boolean;
+};
 
 /**
  * Создаёт строку в `listings`. `id` не передаём — задаётся в БД.
@@ -1504,6 +1510,17 @@ export async function insertListingRow(payload: ListingInsertPayload): Promise<I
           (typeof error.message === "string" && 
            (error.message.includes("LISTING_DAILY_LIMIT") || error.message.includes("Maximum 5 listings")))) {
         return { error: "Не более 5 объявлений в сутки (UTC). Попробуй завтра." };
+      }
+
+      if (
+        typeof error.message === "string" &&
+        error.message.includes("LISTING_ACTIVE_QUOTA_EXCEEDED")
+      ) {
+        return {
+          error:
+            `Сейчас у вас максимум одновременно активных объявлений. До ${FREE_ACTIVE_LISTINGS_CAP} они бесплатны; нужно больше — см. профиль («Размещение») или перенесите часть объявлений в архив.`,
+          activeQuotaExceeded: true,
+        };
       }
       
       // FK violation - user not in users table

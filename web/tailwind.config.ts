@@ -33,8 +33,12 @@ const config: Config = {
           "100%": { opacity: "1", transform: "scale(1)" },
         },
         messageAppear: {
-          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "0%": { opacity: "0.88", transform: "translateY(3px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        chatBadgePulseOnce: {
+          "0%, 100%": { transform: "scale(1)" },
+          "45%": { transform: "scale(1.065)" },
         },
         listingSheetUp: {
           "0%": { opacity: "0", transform: "translate3d(0,100%,0)" },
@@ -51,7 +55,9 @@ const config: Config = {
       },
       animation: {
         receiptPop: "receiptPop 0.2s ease-out both",
-        messageAppear: "messageAppear 0.15s ease-out both",
+        messageAppear: "messageAppear 0.22s cubic-bezier(0.22, 1, 0.36, 1) both",
+        chatBadgePulseOnce:
+          "chatBadgePulseOnce 0.44s cubic-bezier(0.22, 1, 0.36, 1) 1 both",
         chatSheetUp: "chatSheetUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both",
         listingSheetUp: "listingSheetUp 0.36s cubic-bezier(0.22,1,0.36,1) both",
         listingBackdropIn: "listingBackdropIn 0.28s ease-out both",

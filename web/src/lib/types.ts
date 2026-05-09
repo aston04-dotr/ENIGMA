@@ -14,6 +14,8 @@ export type UserRow = {
   real_estate_package_count?: number | null;
   auto_package_count?: number | null;
   other_package_count?: number | null;
+  /** Дополнительные одновременно активные объявления сверх 15 бесплатных (см. миграцию 063). */
+  listing_extra_slot_capacity?: number | null;
   /** Уведомления о сообщениях в чате на email / push. */
   email_notifications?: boolean | null;
   /** Антискам: 100 по умолчанию, при 0 — авто-бан (см. миграцию 018). */

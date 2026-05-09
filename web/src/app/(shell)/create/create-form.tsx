@@ -12,7 +12,13 @@ import {
   type CityDistrictRow,
   type RegionRow,
 } from "@/lib/listings";
-import { getListingPublishBlockMessage } from "@/lib/trustPublishGate";
+import { FREE_ACTIVE_LISTINGS_CAP, LISTING_EXTRA_SLOT_PACKS } from "@/lib/listingSlotPacks";
+import {
+  getListingPublishQuotaDetail,
+  maxAllowedActiveListings,
+  type ActiveListingQuotaDetail,
+} from "@/lib/listingPublishQuota";
+import { assessListingPublishGate } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
 import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
@@ -44,10 +50,7 @@ import {
   LAND_PURPOSE_OPTIONS,
 } from "@/lib/realestateConstants";
 import Link from "next/link";
-import {
-  clearSaveEnigmaContinuationRoute,
-  rememberSaveEnigmaContinuationRoute,
-} from "@/lib/saveEnigmaFlow";
+import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AutoParamsShape, MotoParamsShape } from "@/lib/listingVehicleForm";
@@ -85,6 +88,10 @@ function parseUnknownError(error: unknown): string {
     }
   }
   return "Не удалось создать объявление. Попробуй снова.";
+}
+
+function formatRubInt(value: number): string {
+  return new Intl.NumberFormat("ru-RU").format(Math.round(Number(value)));
 }
 
 const inputClass =
@@ -405,6 +412,9 @@ export function CreateListingForm() {
   const [busy, setBusy] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "uploading" | "creating">("idle");
   const [err, setErr] = useState("");
+  /** Мягкий sheet при достижении лимита активных объявлений (не красная ошибка). */
+  const [activeQuotaSheet, setActiveQuotaSheet] = useState<ActiveListingQuotaDetail | null>(null);
+  const [quotaSheetPackIx, setQuotaSheetPackIx] = useState(0);
   const [showPhoneWarning, setShowPhoneWarning] = useState(false);
   const warningRef = useRef<HTMLDivElement | null>(null);
   const hasAnyParams = useMemo(() => {
@@ -1146,6 +1156,10 @@ export function CreateListingForm() {
     });
   }, [showPhoneWarning]);
 
+  useEffect(() => {
+    if (activeQuotaSheet) setQuotaSheetPackIx(0);
+  }, [activeQuotaSheet]);
+
   const photoSlotsRef = useRef(photoSlots);
   photoSlotsRef.current = photoSlots;
 
@@ -1168,9 +1182,14 @@ export function CreateListingForm() {
       setErr("Аккаунт ограничен.");
       return;
     }
-    const block = await getListingPublishBlockMessage(uid, profile ?? null);
-    if (block) {
-      setErr(block);
+    const gate = await assessListingPublishGate(uid, profile ?? null);
+    if (!gate.ok) {
+      if (gate.block === "active_listing_quota") {
+        setErr("");
+        setActiveQuotaSheet(gate.quota);
+        return;
+      }
+      setErr(gate.message);
       return;
     }
     if (title.trim().length < 2) {
@@ -1335,6 +1354,19 @@ export function CreateListingForm() {
         } catch (storageRollbackErr) {
           console.warn("LISTING STORAGE ROLLBACK", storageRollbackErr);
         }
+        if (res.activeQuotaExceeded && uid) {
+          setErr("");
+          const detail = await getListingPublishQuotaDetail(uid, profile ?? null);
+          const maxFb = maxAllowedActiveListings(profile ?? null);
+          setActiveQuotaSheet(
+            detail ?? {
+              active: maxFb,
+              max: maxFb,
+              message: res.error ?? "",
+            },
+          );
+          return;
+        }
         setErr(res.error);
         return;
       }
@@ -1435,29 +1467,17 @@ export function CreateListingForm() {
     return (
       <main className="safe-pt px-5 pb-8 pt-10">
         <p className="text-sm text-muted">
-          Публикация и черновики — в вашем аккаунте после возврата по почте.
+          Новое объявление — после короткой регистрации или входа по почте.
         </p>
-        <div className="mt-6 flex flex-col gap-2">
-          <Link
-            href="/login?reason=save_enigma&source=create_listing"
-            onClick={() => {
-              rememberSaveEnigmaContinuationRoute();
-            }}
-            className="pressable inline-flex min-h-[48px] items-center justify-center rounded-card bg-accent px-6 py-3 text-center text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
-          >
-            Вернуться в аккаунт
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
-              clearSaveEnigmaContinuationRoute();
-              router.push("/login");
-            }}
-            className="pressable min-h-[44px] rounded-card border border-line bg-elev-2 px-6 py-2.5 text-sm font-medium text-fg"
-          >
-            Войти в другой аккаунт
-          </button>
-        </div>
+        <Link
+          href="/login?returnTo=%2Fcreate&source=guest_create_gate"
+          onClick={() => {
+            rememberSaveEnigmaContinuationRoute("/create");
+          }}
+          className="mt-6 inline-flex min-h-[48px] items-center justify-center rounded-card bg-accent px-6 py-3 text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
+        >
+          Продолжить с почтой
+        </Link>
       </main>
     );
   }
@@ -2356,6 +2376,9 @@ export function CreateListingForm() {
         </div>
       ) : null}
       {err ? <p className="text-sm font-medium text-danger">{err}</p> : null}
+      <p className="text-center text-[12px] leading-relaxed text-muted/90">
+        До {FREE_ACTIVE_LISTINGS_CAP} активных объявлений можно размещать бесплатно — во всех категориях и городах.
+      </p>
       <button
         type="button"
         disabled={busy || !canSubmitBasic}
@@ -2498,6 +2521,86 @@ export function CreateListingForm() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {activeQuotaSheet ? (
+        <div
+          className="fixed inset-0 z-[105] flex items-end justify-center bg-main/50 p-4 backdrop-blur-sm sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-quota-title"
+          onClick={() => setActiveQuotaSheet(null)}
+        >
+          <div
+            className="max-h-[min(90vh,640px)] w-full max-w-md overflow-y-auto rounded-card border border-line bg-elevated p-5 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="create-quota-title" className="text-[17px] font-semibold leading-snug text-fg">
+              У вас уже {activeQuotaSheet.max} активных объявлений
+            </h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted">
+              Подключите пакет дополнительных слотов — и можно разместить ещё, не закрывая текущие. Обычное размещение по-прежнему без абонентской платы.
+            </p>
+            <p className="mt-3 text-[13px] tabular-nums text-fg/90">
+              Сейчас: {activeQuotaSheet.active} из {activeQuotaSheet.max}
+            </p>
+            <div className="mt-5 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Пакеты</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {LISTING_EXTRA_SLOT_PACKS.map((pack, ix) => {
+                  const sel = quotaSheetPackIx === ix;
+                  return (
+                    <button
+                      key={pack.slots}
+                      type="button"
+                      onClick={() => setQuotaSheetPackIx(ix)}
+                      className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                        sel
+                          ? "border-accent/45 bg-accent/[0.07]"
+                          : "border-line bg-main/30 hover:bg-elev-2"
+                      }`}
+                    >
+                      <span className="text-[12px] text-muted">+{pack.slots}</span>
+                      <p className="mt-1 text-[14px] font-semibold tabular-nums text-fg">
+                        {formatRubInt(pack.priceRub)} ₽
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  const pack = LISTING_EXTRA_SLOT_PACKS[quotaSheetPackIx];
+                  if (!pack) return;
+                  const title = encodeURIComponent(`Пакет +${pack.slots} активных объявлений`);
+                  safePush(
+                    router,
+                    `/payment?promoKind=listing_pack&listingPackSlots=${pack.slots}&amount=${pack.priceRub}&title=${title}`,
+                  );
+                }}
+                className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-fg/10 bg-fg/[0.06] px-4 text-[14px] font-semibold text-fg transition-colors hover:bg-fg/[0.09]"
+              >
+                Продолжить к оплате
+              </button>
+              <Link
+                href="/profile#packages-panel"
+                onClick={() => setActiveQuotaSheet(null)}
+                className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-line bg-elevated px-4 text-[14px] font-medium text-fg transition-colors hover:bg-elev-2"
+              >
+                Открыть профиль
+              </Link>
+            </div>
+            <button
+              type="button"
+              className="mt-3 w-full py-2.5 text-[13px] font-medium text-muted transition-colors hover:text-fg"
+              onClick={() => setActiveQuotaSheet(null)}
+            >
+              Закрыть
+            </button>
           </div>
         </div>
       ) : null}

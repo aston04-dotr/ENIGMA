@@ -361,6 +361,45 @@ textarea {
   background-color: #000000 !important;
 }
 
+/* VisualViewport: фиксированный таббар при клавиатуре (значение задаёт VisualViewportBridge). */
+.bottom-nav-root {
+  bottom: var(--enigma-vv-inset-bottom, 0px);
+  transition: bottom 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav-root {
+    transition: none;
+  }
+  html[data-enigma-standalone="1"] .bottom-nav-root {
+    transition: none;
+  }
+  .animate-chatBadgePulseOnce {
+    animation: none !important;
+  }
+  .animate-messageAppear {
+    animation: none !important;
+  }
+}
+
+/* Лёгкая плотнее «app mode» только в установленном PWA — без агрессивных отступов. */
+html[data-enigma-standalone="1"] .enigma-shell-pad {
+  padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-enigma-standalone="1"] .bottom-nav-root {
+  transition-duration: 160ms;
+}
+
+html[data-enigma-standalone="1"] .view-mode-frame {
+  transition: background-color 0.16s ease-out;
+}
+
+/* Поля ввода: меньше прыжка при фокусе с клавиатурой */
+.enigma-keyboard-scroll-target {
+  scroll-margin-bottom: min(28vh, 12rem);
+}
+
 /* Skeleton pulse — subtle */
 @keyframes skeleton-pulse {
   50% {

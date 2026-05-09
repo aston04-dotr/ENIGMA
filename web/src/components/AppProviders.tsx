@@ -10,7 +10,10 @@ import { AuthDebugTracker } from "@/components/AuthDebugTracker";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { AppVersionCheck } from "@/components/AppVersionCheck";
 import { DevCacheClear } from "@/components/DevCacheClear";
+import { VisualViewportBridge } from "@/components/VisualViewportBridge";
+import { EnigmaStandaloneRootAttrs } from "@/components/EnigmaStandaloneRootAttrs";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { StandaloneInstalledToast } from "@/components/StandaloneInstalledToast";
 import { SaveEnigmaPrompt } from "@/components/SaveEnigmaPrompt";
 import { OfflineGate } from "@/components/OfflineGate";
 import { GlobalErrorHandlers } from "@/components/GlobalErrorHandlers";
@@ -53,6 +56,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <AppVersionCheck />
       <DevCacheClear />
       <GuestPersistenceBootstrap />
+      <VisualViewportBridge />
+      <EnigmaStandaloneRootAttrs />
       <AuthDebugTracker />
       <GlobalErrorHandlers />
       <ThemeProvider>
@@ -63,6 +68,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <OfflineGate>
                 <ViewModeLayout>{children}</ViewModeLayout>
                 <InstallPrompt />
+                <StandaloneInstalledToast />
                 <SaveEnigmaPrompt />
               </OfflineGate>
             </ChatUnreadProvider>
