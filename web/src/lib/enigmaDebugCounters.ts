@@ -11,6 +11,13 @@ export type EnigmaDebugCounters = {
   reconcileStartCount: number;
   reconnectSuppressedSubscribedCount: number;
   strictModeDuplicateCount: number;
+  /** Диагностика mobile/PWA wake (см. enigmaDiag). */
+  authFlowDiagCount: number;
+  realtimeRoomConnectAttempts: number;
+  chatRoomRenderPasses: number;
+  sessionDiagRefreshAttempts: number;
+  profileDiagRefreshAttempts: number;
+  autoScrollAlignCount: number;
 };
 
 const zeroCounters = (): EnigmaDebugCounters => ({
@@ -22,6 +29,12 @@ const zeroCounters = (): EnigmaDebugCounters => ({
   reconcileStartCount: 0,
   reconnectSuppressedSubscribedCount: 0,
   strictModeDuplicateCount: 0,
+  authFlowDiagCount: 0,
+  realtimeRoomConnectAttempts: 0,
+  chatRoomRenderPasses: 0,
+  sessionDiagRefreshAttempts: 0,
+  profileDiagRefreshAttempts: 0,
+  autoScrollAlignCount: 0,
 });
 
 declare global {

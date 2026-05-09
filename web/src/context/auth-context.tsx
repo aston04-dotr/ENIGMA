@@ -31,6 +31,8 @@ import {
 import { subscribeEnigmaAuthSingleton } from "@/lib/supabaseAuthSingleton";
 import type { UserRow } from "@/lib/types";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
+import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
+import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
 
 const PROFILE_SYNC_TIMEOUT_MS = 24_000;
 
@@ -90,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const profileRef = useRef<UserRow | null>(null);
   const profileReqSeq = useRef(0);
+  const lastTokenRefreshDiagAtRef = useRef(0);
+  const lastProfileRefreshDiagAtRef = useRef(0);
 
   const assignProfileRow = useCallback((row: UserRow | null) => {
     profileRef.current = row;
@@ -183,6 +187,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshProfile = useCallback(async (): Promise<UserRow | null> => {
+    bumpEnigmaCounter("profileDiagRefreshAttempts");
+    if (enigmaDiagEnabled()) {
+      const now = Date.now();
+      if (now - lastProfileRefreshDiagAtRef.current > 2500) {
+        lastProfileRefreshDiagAtRef.current = now;
+        diagWarn("PROFILE_REFRESH", { phase: "start" });
+      }
+    }
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) return null;
     const u = data.user;
@@ -302,12 +314,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const next = nextSession ?? null;
         setRestAccessToken(next);
         if (event === "TOKEN_REFRESHED") {
+          bumpEnigmaCounter("sessionDiagRefreshAttempts");
+          if (enigmaDiagEnabled()) {
+            const now = Date.now();
+            if (now - lastTokenRefreshDiagAtRef.current > 4000) {
+              lastTokenRefreshDiagAtRef.current = now;
+              diagWarn("SESSION_REFRESH", { phase: "TOKEN_REFRESHED" });
+            }
+          }
           if (next?.user) {
             setSession(next);
             setUser(next.user);
           }
           setLoading(false);
           return;
+        }
+        if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
+          bumpEnigmaCounter("authFlowDiagCount");
+          if (enigmaDiagEnabled()) {
+            diagWarn("AUTH_FLOW", {
+              event,
+              hasUser: Boolean(next?.user?.id),
+            });
+          }
         }
         setSession(next);
         setUser(next?.user ?? null);
@@ -334,6 +363,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           resetAuthFaultWindow();
         }
         if (event === "SIGNED_OUT") {
+          if (enigmaDiagEnabled()) {
+            bumpEnigmaCounter("authFlowDiagCount");
+            diagWarn("AUTH_FLOW", {
+              event: "SIGNED_OUT",
+              transient: false,
+            });
+          }
           setHardAuthResetInFlight(false);
           closeAuthCircuit();
           resetAuthFaultWindow();
@@ -353,12 +389,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let debounced: number | undefined;
 
-    const scheduleSoftRefresh = () => {
+    const scheduleSoftRefresh = (trigger: string) => {
       if (debounced !== undefined) {
         window.clearTimeout(debounced);
       }
       debounced = window.setTimeout(() => {
         void (async () => {
+          bumpEnigmaCounter("sessionDiagRefreshAttempts");
+          if (enigmaDiagEnabled()) {
+            diagWarn("SESSION_REFRESH", { phase: "wake_getUser", trigger });
+          }
           const { data } = await supabase.auth.getUser();
           if (!data.user || data.user.id !== uid) return;
           await refreshProfile();
@@ -372,7 +412,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phase: "visibility_visible",
           userId: uid,
         });
-        scheduleSoftRefresh();
+        scheduleSoftRefresh("visibilitychange");
       }
     };
 
@@ -382,13 +422,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phase: "pageshow_bfcache",
           userId: uid,
         });
-        scheduleSoftRefresh();
+        scheduleSoftRefresh("pageshow_bfcache");
       }
     };
 
     const onOnline = () => {
       console.warn("[AUTH_MOBILE_WAKE]", { phase: "online", userId: uid });
-      scheduleSoftRefresh();
+      scheduleSoftRefresh("online");
     };
 
     window.addEventListener("visibilitychange", onVisibility);

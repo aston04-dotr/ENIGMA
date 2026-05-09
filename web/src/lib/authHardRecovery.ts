@@ -9,6 +9,8 @@ import {
 } from "@/lib/authCircuitState";
 import { purgeSupabaseAuthBrowserStorage } from "@/lib/purgeSupabaseBrowserAuth";
 import { setRestAccessToken, supabase } from "@/lib/supabase";
+import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
+import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
 
 /** Touch / standalone PWA — не делаем hard logout из транзиторных ошибок refresh. */
 export function preferMobileSoftAuthPath(): boolean {
@@ -51,6 +53,14 @@ export async function recoverSessionAfterTransientFault(context: string): Promis
   try {
     for (let attempt = 0; attempt < delays.length; attempt++) {
       console.warn("[AUTH_REFRESH_RETRY]", { context, attempt });
+      bumpEnigmaCounter("sessionDiagRefreshAttempts");
+      if (enigmaDiagEnabled()) {
+        diagWarn("SESSION_REFRESH", {
+          phase: "soft_recovery_attempt",
+          context,
+          attempt,
+        });
+      }
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (offline) {
         console.warn("[AUTH_NULL_SESSION_SOFT]", {

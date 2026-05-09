@@ -12,6 +12,8 @@ import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { canSendGuestMessage } from "@/lib/guestTrust";
 import { chatPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
 import { supabase } from "@/lib/supabase";
+import { bumpEnigmaCounter } from "@/lib/enigmaDebugCounters";
+import { diagWarn, enigmaDiagEnabled } from "@/lib/enigmaDiag";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MessageRow } from "@/lib/types";
 import Link from "next/link";
@@ -702,6 +704,10 @@ export default function ChatRoomPage() {
   const currentChatIdRef = useRef(chatId);
   const reconnectingTypingResetPendingRef = useRef(false);
   const lastRttLogAtRef = useRef(0);
+  /** Throttle diagWarn(REALTIME_RECONNECT) при серии reconnect. */
+  const lastRealtimeReconnectDiagAtRef = useRef(0);
+  /** Throttle diagWarn(AUTO_SCROLL). */
+  const lastAutoScrollDiagAtRef = useRef(0);
   const windowFocusedRef = useRef(true);
   const pageVisibleRef = useRef(true);
   /** Скролл вниз (auto) один раз при открытии чата, после загрузки сообщений. */
@@ -1127,11 +1133,6 @@ export default function ChatRoomPage() {
     };
   }, [chatId, setPeerTypingWithMinVisible]);
 
-  const latestMessageId = useMemo(
-    () => messages[messages.length - 1]?.id ?? null,
-    [messages],
-  );
-
   const isChatForeground = useCallback((): boolean => {
     if (typeof document === "undefined" || typeof window === "undefined") {
       return false;
@@ -1206,6 +1207,16 @@ export default function ChatRoomPage() {
   /** После commit DOM (новые узлы) — подождать кадр, затем мгновенно вниз. */
   const alignListToBottomAfterPaint = useCallback(() => {
     if (typeof window === "undefined") return;
+    bumpEnigmaCounter("autoScrollAlignCount");
+    if (enigmaDiagEnabled()) {
+      const now = Date.now();
+      if (now - lastAutoScrollDiagAtRef.current > 2500) {
+        lastAutoScrollDiagAtRef.current = now;
+        diagWarn("AUTO_SCROLL", {
+          chatId: currentChatIdRef.current ?? null,
+        });
+      }
+    }
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         alignListToBottom();
@@ -1320,8 +1331,9 @@ export default function ChatRoomPage() {
       if (!chatId || !me) return;
       if (!isChatForeground()) return;
 
-      const targetMessageId =
-        explicitMessageId ?? latestMessageId;
+      const latestFromRef =
+        messagesRef.current[messagesRef.current.length - 1]?.id ?? null;
+      const targetMessageId = explicitMessageId ?? latestFromRef;
       if (
         !targetMessageId ||
         !isUuid(targetMessageId) ||
@@ -1337,7 +1349,7 @@ export default function ChatRoomPage() {
         console.error("chat room mark read", error);
       }
     },
-    [chatId, isChatForeground, latestMessageId, markChatRead, me],
+    [chatId, isChatForeground, markChatRead, me],
   );
 
   const backfillAfterReconnect = useCallback(async () => {
@@ -1420,6 +1432,15 @@ export default function ChatRoomPage() {
     const connect = () => {
       if (cancelled) return;
       clearReconnect();
+
+      bumpEnigmaCounter("realtimeRoomConnectAttempts");
+      if (enigmaDiagEnabled()) {
+        const now = Date.now();
+        if (now - lastRealtimeReconnectDiagAtRef.current > 2500) {
+          lastRealtimeReconnectDiagAtRef.current = now;
+          diagWarn("REALTIME_RECONNECT", { chatId });
+        }
+      }
 
       if (channelRef.current) {
         void supabase.removeChannel(channelRef.current);
@@ -1679,6 +1700,13 @@ export default function ChatRoomPage() {
     setPeerTypingWithMinVisible,
     setPeerTypingStable,
   ]);
+
+  useEffect(() => {
+    bumpEnigmaCounter("chatRoomRenderPasses");
+    if (enigmaDiagEnabled()) {
+      diagWarn("CHAT_RENDER", { chatId: chatId ?? null, roomStatus });
+    }
+  }, [chatId, roomStatus]);
 
   /**
    * История: после валидного chatId. Realtime+typing — в эффекте **выше** (подписка
