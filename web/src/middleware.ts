@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { ENIGMA_SUPABASE_AUTH_STORAGE_KEY } from "@/lib/enigmaSupabaseStorageKey";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
 import { stripLegacySupabaseAuthCookiesMiddleware } from "@/lib/legacySupabaseCookies";
 import { hardenedServerGetSession } from "@/lib/serverSupabaseAuth";
@@ -51,6 +52,11 @@ async function updateSession(req: NextRequest) {
   });
 
   const supabase = createServerClient(url, anonKey, {
+    auth: {
+      storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
     cookies: {
       getAll() {
         return req.cookies.getAll();

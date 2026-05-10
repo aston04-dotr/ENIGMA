@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { ENIGMA_SUPABASE_AUTH_STORAGE_KEY } from "./enigmaSupabaseStorageKey";
 import { getSupabasePublicConfig } from "./runtimeConfig";
 
 const { url, anonKey } = getSupabasePublicConfig();
@@ -32,6 +33,11 @@ export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
 
   return createServerClient(url, anonKey, {
+    auth: {
+      storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

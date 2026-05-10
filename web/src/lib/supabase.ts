@@ -119,6 +119,12 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
   },
 });
 
+console.log("[SUPABASE_CLIENT_INIT]", {
+  storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
+  persistSession: true,
+  detectSessionInUrl: true,
+});
+
 export const isSupabaseConfigured = configured;
 
 let restAccessToken: string | null = null;
@@ -153,6 +159,12 @@ export function getSupabaseRestWithSession(): SupabaseClient<Database> | null {
       console.warn("[REST_CLIENT_CREATED]");
     }
     supabaseRestSingleton = createClient<Database>(url, anonKey, {
+      auth: {
+        storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
       global: {
         fetch: createInstrumentedSupabaseFetch(fetch),
       },
