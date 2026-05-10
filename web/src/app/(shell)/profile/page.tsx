@@ -505,8 +505,8 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-7">
-      <div className="space-y-5">
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[1fr_360px] lg:items-start lg:gap-7">
+      <div className="order-1 min-w-0 w-full space-y-5 lg:col-start-1 lg:row-start-1 lg:order-none">
       <div className="enigma-glass-sheet-soft px-5 py-5">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted/76">Имя</p>
         <input
@@ -602,7 +602,9 @@ export default function ProfilePage() {
         {deleteErr ? <p className="mt-2 text-sm text-danger">{deleteErr}</p> : null}
       </div>
 
-      <section className="enigma-glass-sheet-elevated px-5 py-6 sm:px-6 sm:py-7">
+      </div>
+
+      <section className="order-3 enigma-glass-sheet-elevated px-5 py-6 sm:px-6 sm:py-7 lg:order-none lg:col-start-1 lg:row-start-2 w-full min-w-0">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-fg sm:text-[21px]">Мои объявления</h2>
           <Link
@@ -758,9 +760,8 @@ export default function ProfilePage() {
           </div>
         )}
       </section>
-      </div>
 
-      <aside className="mt-8 space-y-4 lg:mt-0 lg:sticky lg:top-24 lg:self-start">
+      <aside className="order-2 w-full min-w-0 space-y-4 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-24 lg:self-start">
         <div
           className={`rounded-[22px] border p-5 backdrop-blur-xl ${
             isDark
