@@ -6,7 +6,8 @@
  * • `getSupabaseRestWithSession()` → **one** `createClient` PostgREST singleton with:
  *   – `global.fetch` → `createInstrumentedSupabaseFetch` (`[REST_OUTGOING]`, 401 → `[REST_AUTH_ACCESS_TOKEN]` storm)
  *   – `accessToken` → `createCachedRestAccessTokenProvider` **only** reads `restAccessToken` (sync), no auth/refresh/realtime calls.
- * Auth session sources: `supabase.auth.*` only in `AuthProvider` + routes; `subscribeEnigmaAuthSingleton`; middleware `getSession` (server).
+ * Auth session: cookie storage via `@supabase/ssr` defaults (`cookie` parse/serialize).
+ * Sources: `AuthProvider`, routes, `subscribeEnigmaAuthSingleton`, middleware `getSession` (server).
  */
 
 import { createClient, type SupabaseClient, type Session } from "@supabase/supabase-js";
@@ -24,66 +25,12 @@ import { getSupabasePublicConfig } from "./runtimeConfig";
 const { url, anonKey, configured } = getSupabasePublicConfig();
 export { ENIGMA_SUPABASE_AUTH_STORAGE_KEY };
 
-type CookieItem = { name: string; value: string };
-type BrowserCookieOptions = {
-  domain?: string;
-  path?: string;
-  maxAge?: number;
-  expires?: string | Date;
-  sameSite?: "lax" | "strict" | "none" | string;
-  secure?: boolean;
-};
-
-function getAllCookies(): CookieItem[] {
-  if (typeof document === "undefined") return [];
-  const raw = document.cookie ? document.cookie.split("; ") : [];
-  const out: CookieItem[] = [];
-  for (const row of raw) {
-    const idx = row.indexOf("=");
-    if (idx <= 0) continue;
-    const n = row.slice(0, idx);
-    const v = row.slice(idx + 1);
-    try {
-      out.push({
-        name: decodeURIComponent(n),
-        value: decodeURIComponent(v),
-      });
-    } catch {
-      out.push({ name: n, value: v });
-    }
-  }
-  return out;
-}
-
-function writeCookie(name: string, value: string, options: BrowserCookieOptions = {}) {
-  if (typeof document === "undefined") return;
-  const encodedName = encodeURIComponent(name);
-  const encodedValue = encodeURIComponent(value);
-  const parts: string[] = [
-    `${encodedName}=${encodedValue}`,
-    `path=${options.path ?? "/"}`,
-  ];
-  if (typeof options.maxAge === "number" && Number.isFinite(options.maxAge)) {
-    parts.push(`max-age=${Math.max(0, Math.floor(options.maxAge))}`);
-  }
-  if (options.expires) {
-    const exp =
-      options.expires instanceof Date
-        ? options.expires.toUTCString()
-        : String(options.expires);
-    parts.push(`expires=${exp}`);
-  }
-  if (options.domain) {
-    parts.push(`domain=${options.domain}`);
-  }
-  parts.push(`SameSite=${String(options.sameSite ?? "Lax")}`);
-  const shouldUseSecure =
-    options.secure ??
-    (typeof window !== "undefined" && window.location.protocol === "https:");
-  if (shouldUseSecure) parts.push("Secure");
-  document.cookie = parts.join("; ");
-}
-
+/**
+ * Browser auth storage: do **not** pass custom `cookies.getAll` / `setAll` here.
+ * `@supabase/ssr` then uses `cookie.parse` / `cookie.serialize` on `document.cookie`,
+ * matching what `createServerClient` expects (base64url chunks, same encoding as server).
+ * A hand-rolled adapter that URL-encodes cookie values corrupts the session payload.
+ */
 export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
     persistSession: true,
@@ -91,38 +38,7 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
     /** PKCE / magic-link fragments on /auth/*; safe on other routes (Supabase only parses when present). */
     detectSessionInUrl: true,
     storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
-    /** Синхронизация записи refresh/access между вкладками (BroadcastChannel) — снижает гонки ротации токенов. */
-    multiTab: true,
   },
-  cookies: {
-    getAll() {
-      return getAllCookies();
-    },
-    setAll(
-      cookiesToSet: Array<{
-        name: string;
-        value: string;
-        options?: BrowserCookieOptions & Record<string, unknown>;
-      }>,
-    ) {
-      cookiesToSet.forEach(({ name, value, options }) => {
-        writeCookie(name, value, {
-          path: (options?.path as string | undefined) ?? "/",
-          domain: options?.domain as string | undefined,
-          maxAge: typeof options?.maxAge === "number" ? options.maxAge : undefined,
-          expires: options?.expires as string | Date | undefined,
-          sameSite: (options?.sameSite as string | undefined) ?? "lax",
-          secure: typeof options?.secure === "boolean" ? options.secure : undefined,
-        });
-      });
-    },
-  },
-});
-
-console.log("[SUPABASE_CLIENT_INIT]", {
-  storageKey: ENIGMA_SUPABASE_AUTH_STORAGE_KEY,
-  persistSession: true,
-  detectSessionInUrl: true,
 });
 
 export const isSupabaseConfigured = configured;

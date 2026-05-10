@@ -176,7 +176,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, payment: payload });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "create_failed";
-    console.error("[api/payment/create]", msg);
+    console.error("[api/payment/create]", msg, e);
     const isMapped = typeof msg === "string" && msg.startsWith("YOOKASSA_CREATE_FAILED:");
     return NextResponse.json(
       { ok: false, error: isMapped ? "yookassa_upstream" : "payment_provider_error" },
