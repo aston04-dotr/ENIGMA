@@ -286,6 +286,27 @@ export default function LoginPage() {
       {(sent || err) && !loading ? (
         <p className="mt-3 text-center text-xs text-muted">Можно запросить код ещё раз.</p>
       ) : null}
+
+      <div
+        className="mt-10 max-w-md rounded-2xl border border-line/50 bg-elev-2/45 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        role="note"
+      >
+        <div className="flex items-start gap-3.5">
+          <span
+            className="mt-px flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-line/50 bg-elevated/70 text-fg/38 shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:border-white/[0.08] dark:bg-black/25 dark:text-fg/45"
+            aria-hidden
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-[22px] w-[22px]" stroke="currentColor" strokeWidth={1.35}>
+              <rect x="4.5" y="5" width="11.5" height="11.5" rx="2.85" strokeLinejoin="round" opacity={0.9} />
+              <circle cx="17" cy="17" r="3.65" opacity={0.85} />
+              <path d="M17 15.4v3.2M15.4 17h3.2" strokeLinecap="round" opacity={0.95} />
+            </svg>
+          </span>
+          <p className="min-w-0 pt-1 text-[15px] font-medium leading-snug tracking-[-0.015em] text-fg/55 dark:text-fg/50">
+            Добавьте ENIGMA на рабочий стол для быстрого доступа
+          </p>
+        </div>
+      </div>
     </main>
   );
 }
