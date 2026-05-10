@@ -169,28 +169,40 @@ export async function fetchPayment(paymentId: string): Promise<YooKassaPaymentRe
   }
 }
 
+/** Single receipt line item: exactly four keys (no spreads, no optional merges). */
+function buildYooKassaReceiptLineItem(input: { amountRub: number; itemDescription: string }) {
+  const description = input.itemDescription.slice(0, 100);
+  const value = input.amountRub.toFixed(2);
+  const item: {
+    description: string;
+    quantity: string;
+    amount: { value: string; currency: string };
+    vat_code: number;
+  } = {
+    description,
+    quantity: "1.00",
+    amount: {
+      value,
+      currency: "RUB",
+    },
+    vat_code: 1,
+  };
+  return item;
+}
+
 function buildYooKassaReceipt(input: {
   amountRub: number;
   customerEmail: string;
   itemDescription: string;
 }) {
   const { amountRub, customerEmail, itemDescription } = input;
+  const lineItem = buildYooKassaReceiptLineItem({ amountRub, itemDescription });
   return {
     customer: {
       email: customerEmail.trim().toLowerCase(),
     },
     tax_system_code: 1,
-    items: [
-      {
-        description: itemDescription.slice(0, 100),
-        quantity: "1.00",
-        amount: {
-          value: amountRub.toFixed(2),
-          currency: "RUB",
-        },
-        vat_code: 1,
-      },
-    ],
+    items: [lineItem],
   };
 }
 
@@ -228,7 +240,7 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
     metadata,
     receipt,
   };
-  console.log("[YOOKASSA_REQUEST_BODY]", JSON.stringify(body, null, 2));
+  console.log(JSON.stringify(body.receipt.items[0], null, 2));
 
   let payment: YooKassaApiPayment;
   try {
