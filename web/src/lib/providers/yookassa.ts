@@ -169,23 +169,26 @@ export async function fetchPayment(paymentId: string): Promise<YooKassaPaymentRe
   }
 }
 
-/** Single receipt line item: exactly four keys (no spreads, no optional merges). */
+/** Single receipt line item: explicit fields only (no spreads). */
 function buildYooKassaReceiptLineItem(input: { amountRub: number; itemDescription: string }) {
-  const description = input.itemDescription.slice(0, 100);
-  const value = input.amountRub.toFixed(2);
+  const amountValue = input.amountRub.toFixed(2);
   const item: {
     description: string;
     quantity: string;
     amount: { value: string; currency: string };
     vat_code: number;
+    payment_subject: string;
+    payment_mode: string;
   } = {
-    description,
+    description: input.itemDescription.slice(0, 100),
     quantity: "1.00",
     amount: {
-      value,
+      value: amountValue,
       currency: "RUB",
     },
     vat_code: 1,
+    payment_subject: "service",
+    payment_mode: "full_payment",
   };
   return item;
 }
