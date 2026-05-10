@@ -11,6 +11,7 @@ import {
   routeHandlerAuthDiagEnabled,
 } from "@/lib/routeHandlerAuthDiag";
 import { resolveRouteHandlerSupabaseUser } from "@/lib/serverSupabaseAuth";
+import { createServerSupabase } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,12 +46,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "supabase_unconfigured" }, { status: 503 });
   }
 
+  console.log("[PAYMENT_DEBUG] headers.cookie =", request.headers.get("cookie"));
+
+  const debugSupabase = await createServerSupabase();
+  const sessionResult = await debugSupabase.auth.getSession();
+  console.log("[PAYMENT_DEBUG] session =", {
+    hasSession: !!sessionResult.data.session,
+    userId: sessionResult.data.session?.user?.id ?? null,
+    error: sessionResult.error?.message ?? null,
+  });
+
   if (routeHandlerAuthDiagEnabled()) {
     await logRouteHandlerAuthProbe("api:payment:create:pre");
   }
 
   const { supabase, user, fatalRefreshCleared, authErrorMessage } =
     await resolveRouteHandlerSupabaseUser("api:payment:create");
+
+  console.log("[PAYMENT_DEBUG] resolvedUser =", {
+    hasUser: !!user,
+    userId: user?.id ?? null,
+  });
 
   if (routeHandlerAuthDiagEnabled()) {
     console.warn("[payment-create-auth-resolve]", {
@@ -67,6 +83,8 @@ export async function POST(request: Request) {
       : authErrorMessage === "no_user" || !authErrorMessage
         ? "no_authenticated_user"
         : `getUser:${authErrorMessage}`;
+
+    console.log("[PAYMENT_DEBUG] RETURNING_401");
 
     return NextResponse.json(
       routeHandlerAuthDiagEnabled()
