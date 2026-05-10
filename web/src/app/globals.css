@@ -669,6 +669,23 @@ html[data-enigma-standalone="1"] .view-mode-frame {
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
 
+.enigma-listing-photo-hold {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    145deg,
+    rgba(14, 20, 32, 0.97) 0%,
+    rgba(16, 24, 38, 0.95) 50%,
+    rgba(14, 20, 32, 0.97) 100%
+  );
+}
+
+html[data-theme="light"] .enigma-listing-photo-hold {
+  background: linear-gradient(145deg, #c9d5e8 0%, #bdcce2 48%, #d2deef 100%);
+}
+
 /* Shimmer поверх фото карточки до загрузки */
 @keyframes enigma-photo-shimmer {
   0% {

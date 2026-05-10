@@ -378,7 +378,7 @@ export function ListingCard({
         {listingCardImgSrc && !heroFatal ? (
           <>
             <div
-              className={`enigma-listing-photo-shimmer pointer-events-none absolute inset-0 z-0 transition-[opacity] duration-500 ease-out ${heroLoaded ? "opacity-0" : "opacity-100"}`}
+              className={`enigma-listing-photo-hold pointer-events-none absolute inset-0 z-0 transition-[opacity] duration-500 ease-out ${heroLoaded ? "opacity-0" : "opacity-100"}`}
               aria-hidden
             />
             <Image
@@ -391,8 +391,8 @@ export function ListingCard({
                 transition:
                   "opacity 480ms cubic-bezier(0.22, 1, 0.36, 1), transform 145ms ease-out",
               }}
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 640px, 800px"
-              priority={index < 6}
+              sizes="(max-width: 640px) 92vw, (max-width: 1024px) 680px, 800px"
+              priority={index < 10}
               onLoad={() => setHeroLoaded(true)}
               onError={() => {
                 if (uri && thumbCandidate && !heroFallbackTriedRef.current) {
@@ -407,7 +407,7 @@ export function ListingCard({
             />
           </>
         ) : (
-          <div className="enigma-listing-photo-shimmer z-0" aria-hidden />
+          <div className="enigma-listing-photo-hold z-0" aria-hidden />
         )}
         <Link
           href={listingPath(lid)}

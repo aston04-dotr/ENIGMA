@@ -30,6 +30,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   images: {
     formats: ["image/avif", "image/webp"],
+    /** Дольше держим оптимизированные remote-изображения в кэше Image — меньше повторных качаний при смене ленты. */
+    minimumCacheTTL: 60 * 60 * 24 * 30,
     remotePatterns: [
       { protocol: "https", hostname: "**", pathname: "/**" },
       { protocol: "http", hostname: "**", pathname: "/**" },

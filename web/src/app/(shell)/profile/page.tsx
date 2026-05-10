@@ -639,8 +639,8 @@ export default function ProfilePage() {
                 key={`sk-${sk}`}
                 className="overflow-hidden rounded-[22px] border border-black/[0.035] bg-[var(--enigma-surface-3)] shadow-[0_22px_52px_rgba(0,0,0,0.14),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-[2px] ring-1 ring-black/[0.035] dark:border-white/[0.06] dark:bg-[linear-gradient(172deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.025)_52%,transparent_100%)] dark:shadow-[0_28px_56px_rgba(0,0,0,0.42)] dark:ring-white/[0.05]"
               >
-                <div className="aspect-[16/11] w-full overflow-hidden rounded-t-[22px] sm:aspect-[16/10]">
-                  <div className="enigma-listing-photo-shimmer h-full w-full rounded-none" aria-hidden />
+                <div className="relative aspect-[16/11] w-full overflow-hidden rounded-t-[22px] sm:aspect-[16/10]">
+                  <div className="enigma-listing-photo-hold rounded-none" aria-hidden />
                 </div>
                   <div className="space-y-2.5 p-4 pb-5">
                   <div className="h-[14px] w-[68%] max-w-[220px] rounded-[7px] bg-fg/[0.06] animate-skeleton dark:bg-white/[0.07]" />

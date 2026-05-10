@@ -36,6 +36,11 @@ import {
   sortListingsByPromotionTierForFeed,
 } from "@/lib/monetization";
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
+import {
+  collectHeroThumbUrls,
+  collectHeroThumbUrlsNearVirtualWindow,
+  scheduleFeedThumbnailPrewarm,
+} from "@/lib/feedImagePrewarm";
 import type { ListingRow } from "@/lib/types";
 import { useTheme } from "@/context/theme-context";
 import { useFormattedIntegerInput } from "@/hooks/useFormattedIntegerInput";
@@ -357,6 +362,7 @@ export function FeedPage({
   const [feedNonce, setFeedNonce] = useState(0);
   /** Реактивировать сортировку/бейджи по времени истечения `*_until` без перезапроса ленты. */
   const [promotionTimeTick, setPromotionTimeTick] = useState(0);
+  const cacheThumbPrewarmOnceRef = useRef(false);
   const previousRegionIdRef = useRef<string>("");
   const regionSeedRef = useRef({
     regionId: seededRegionId,
@@ -367,6 +373,21 @@ export function FeedPage({
     const id = window.setInterval(() => setPromotionTimeTick((t) => t + 1), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  /** Первый вход: уже показали кэш из state — немного прогреваем thumbs, чтобы было ближе к «нативному» старту. */
+  useEffect(() => {
+    if (cacheThumbPrewarmOnceRef.current) return;
+    cacheThumbPrewarmOnceRef.current = true;
+    try {
+      const raw = readFeedCache(cacheStorageKey);
+      const capped = trimFeedItemsTail(raw.items);
+      if (capped.length > 0) {
+        scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(capped, 22));
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+  }, [cacheStorageKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -800,8 +821,38 @@ export function FeedPage({
   const rowVirtualizer = useWindowVirtualizer({
     count: filtered.length,
     estimateSize: () => FEED_VIRTUAL_ESTIMATE_PX,
-    overscan: 6,
+    overscan: 9,
   });
+
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const scrollPrewarmTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const scheduleViewportPrewarm = () => {
+      if (scrollPrewarmTimeoutRef.current != null) return;
+      scrollPrewarmTimeoutRef.current = window.setTimeout(() => {
+        scrollPrewarmTimeoutRef.current = null;
+        const list = filteredRef.current;
+        if (list.length === 0) return;
+        const vis = rowVirtualizerRef.current.getVirtualItems();
+        if (vis.length === 0) return;
+        const urls = collectHeroThumbUrlsNearVirtualWindow(list, vis, 8, 18);
+        scheduleFeedThumbnailPrewarm(urls, { max: 18, batchSize: 3 });
+      }, 260);
+    };
+    window.addEventListener("scroll", scheduleViewportPrewarm, { passive: true });
+    scheduleViewportPrewarm();
+    return () => {
+      window.removeEventListener("scroll", scheduleViewportPrewarm);
+      if (scrollPrewarmTimeoutRef.current != null) {
+        window.clearTimeout(scrollPrewarmTimeoutRef.current);
+        scrollPrewarmTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const applyRes = useCallback(
     (
@@ -818,6 +869,7 @@ export function FeedPage({
           setItems(capped);
           setNextCursor(res.nextCursor ?? null);
           persistFeed(capped, res.nextCursor ?? null, cacheStorageKey);
+          scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(capped, 22));
         }
         return;
       }
@@ -832,13 +884,20 @@ export function FeedPage({
         setItems(capped);
         setNextCursor(serverNext);
         persistFeed(capped, serverNext, cacheStorageKey);
+        scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(capped, 22));
       } else {
+        let appended: ListingRow[] = [];
         setItems((prev) => {
           const seen = new Set(prev.map((x) => x.id));
           const add = mix.filter((x) => !seen.has(x.id));
+          appended = add;
           const merged = trimFeedItemsTail([...prev, ...add]);
           persistFeed(merged, serverNext, cacheStorageKey);
           return merged;
+        });
+        scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(appended, 14), {
+          max: 14,
+          batchSize: 3,
         });
         setNextCursor(serverNext);
       }
@@ -880,6 +939,7 @@ export function FeedPage({
             setItems(capped);
             setNextCursor(res.nextCursor ?? null);
             persistFeed(capped, res.nextCursor ?? null, cacheStorageKey);
+            scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(capped, 22));
             return;
           }
           prefetchedRef.current = null;
@@ -892,6 +952,7 @@ export function FeedPage({
           setItems(capped);
           setNextCursor(serverNext);
           persistFeed(capped, serverNext, cacheStorageKey);
+          scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(capped, 22));
         } catch (e) {
           if (cancelled) return;
           console.error("LISTINGS INITIAL FETCH ERROR", e);
@@ -933,6 +994,10 @@ export function FeedPage({
       const c = res.nextCursor ?? null;
       prefetchedRef.current = { items: mix, nextCursor: c };
       prefetchKeyRef.current = key;
+      scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(mix, 12), {
+        max: 12,
+        batchSize: 3,
+      });
       console.log("LISTINGS PREFETCH STORED", {
         count: mix.length,
         nextCursor: c,
@@ -959,12 +1024,18 @@ export function FeedPage({
     if (!p) return false;
     prefetchedRef.current = null;
     prefetchKeyRef.current = null;
+    let appended: ListingRow[] = [];
     setItems((prev) => {
       const seen = new Set(prev.map((x) => x.id));
       const add = p.items.filter((x) => !seen.has(x.id));
+      appended = add;
       const merged = trimFeedItemsTail([...prev, ...add]);
       persistFeed(merged, p.nextCursor, cacheStorageKey);
       return merged;
+    });
+    scheduleFeedThumbnailPrewarm(collectHeroThumbUrls(appended, 14), {
+      max: 14,
+      batchSize: 3,
     });
     setNextCursor(p.nextCursor);
     return true;
@@ -1341,10 +1412,17 @@ export function FeedPage({
       ) : null}
 
       <div
-        className={`relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 transition-opacity duration-200 sm:px-6 lg:max-w-[760px] lg:px-0 xl:max-w-[800px] ${
-          isFeedRefreshing ? "pointer-events-none opacity-50" : "opacity-100"
-        }`}
+        className="relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 sm:px-6 lg:max-w-[760px] lg:px-0 xl:max-w-[800px]"
+        aria-busy={isFeedRefreshing}
       >
+        {isFeedRefreshing ? (
+          <div
+            className="pointer-events-none absolute left-4 right-4 top-0 z-20 sm:left-6 sm:right-6 lg:left-1/2 lg:right-auto lg:w-[min(100%,760px)] lg:-translate-x-1/2"
+            aria-hidden
+          >
+            <div className="h-0.5 w-full rounded-full bg-accent/45" />
+          </div>
+        ) : null}
         {filtered.length > 0 ? (
           <div
             className="w-full"
@@ -1392,22 +1470,6 @@ export function FeedPage({
             actionLabel={feedVariant === "seeking" ? "Разместить запрос" : "Создать"}
             actionHref={feedVariant === "seeking" ? "/create?role=seeking" : "/create"}
           />
-        ) : null}
-        {isFeedRefreshing ? (
-          <div className="pointer-events-none absolute inset-0 z-10 px-1 pt-2">
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, idx) => (
-                <div
-                  key={`feed-refresh-skeleton-${idx}`}
-                  className="overflow-hidden rounded-card border border-line/70 bg-elevated/80 p-3"
-                >
-                  <div className="h-40 animate-skeleton rounded-xl bg-elev-2/85" />
-                  <div className="mt-3 h-4 w-2/3 animate-skeleton rounded bg-elev-2/85" />
-                  <div className="mt-2 h-4 w-1/3 animate-skeleton rounded bg-elev-2/85" />
-                </div>
-              ))}
-            </div>
-          </div>
         ) : null}
       </div>
 
