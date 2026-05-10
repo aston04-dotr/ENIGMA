@@ -744,7 +744,7 @@ export default function ProfilePage() {
                   активен
                 </span>
               </div>
-              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-white/48">Больше показов</p>
+              <p className="mt-1 text-[10.5px] leading-[1.35] tracking-wide text-sky-100/90 drop-shadow-[0_1px_12px_rgba(0,0,0,0.45)]">Больше показов</p>
             </div>
             <div className="rounded-[11px] border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-3 py-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(38,46,62,0.1),0_8px_22px_rgba(12,18,32,0.08)] ring-1 ring-black/[0.06]">
               <div className="flex items-baseline justify-between gap-2">

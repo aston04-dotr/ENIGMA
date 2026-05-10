@@ -799,7 +799,7 @@ export default function ListingDetailPage() {
                         {boostPriceRub} ₽
                       </span>
                     </span>
-                    <span className="mt-1 text-[11px] leading-[1.28] tracking-tight text-white/48">
+                    <span className="mt-1 text-[11px] leading-[1.28] tracking-tight text-sky-100/90 drop-shadow-[0_1px_12px_rgba(0,0,0,0.45)]">
                       Больше показов
                     </span>
                   </Link>

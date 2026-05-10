@@ -572,7 +572,7 @@ export function ListingCard({
                 {priceRub} ₽
               </span>
             </div>
-            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-white/48">
+            <p className="mt-0.5 text-[10.5px] leading-[1.28] tracking-wide text-sky-100/90 drop-shadow-[0_1px_12px_rgba(0,0,0,0.45)]">
               Больше показов
             </p>
           </Link>
