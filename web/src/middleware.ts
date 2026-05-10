@@ -29,6 +29,15 @@ async function updateSession(req: NextRequest) {
     return NextResponse.next();
   }
 
+  /** Route Handlers сами обновляют сессию (createServerSupabase + getSession). Пропуск уменьшает гонку с middleware на одном XHR-запросе. */
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next({
+      request: {
+        headers: req.headers,
+      },
+    });
+  }
+
   const { url, anonKey, configured } = getSupabasePublicConfig();
   if (!configured || !url || !anonKey) {
     return NextResponse.next();

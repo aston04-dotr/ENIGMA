@@ -112,11 +112,43 @@ export async function hardenedServerGetUser(
   }
 }
 
-/** Один импорт в `route.ts`: клиент + user с hardened-семантикой. */
 export async function resolveRouteHandlerSupabaseUser(trace: string): Promise<{
   supabase: SupabaseClient;
 } & HardenedServerUserOutcome> {
   const supabase = await createServerSupabase();
-  const outcome = await hardenedServerGetUser(supabase, trace);
-  return { supabase, ...outcome };
+
+  /**
+   * Важно: до getUser() нужно вызвать getSession() в этом же клиенте.
+   * Иначе SSR storage может быть пустым, а getUser() отдаёт в т.ч. "Auth session missing!",
+   * хотя Cookie заголовок с sb-* уже есть (middleware не пишет в Request, только в Response).
+   */
+  const sessionFirst = await hardenedServerGetSession(supabase, trace);
+  if (sessionFirst.fatalRefreshCleared) {
+    return {
+      supabase,
+      user: null,
+      fatalRefreshCleared: true,
+      authErrorMessage: "fatal_refresh_cleared",
+    };
+  }
+
+  const userOutcome = await hardenedServerGetUser(supabase, trace);
+  if (userOutcome.user) {
+    return { supabase, ...userOutcome };
+  }
+
+  const sessionUser = sessionFirst.session?.user ?? null;
+  if (sessionUser?.id && !userOutcome.fatalRefreshCleared) {
+    return {
+      supabase,
+      user: sessionUser,
+      fatalRefreshCleared: false,
+      authErrorMessage:
+        userOutcome.authErrorMessage != null
+          ? `${userOutcome.authErrorMessage}|session_user_fallback`
+          : "session_user_fallback",
+    };
+  }
+
+  return { supabase, ...userOutcome };
 }

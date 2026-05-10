@@ -7,8 +7,8 @@ import {
 } from "@/lib/paymentValidation";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
 import {
+  logRouteHandlerAuthProbe,
   routeHandlerAuthDiagEnabled,
-  summarizeCookieHeader,
 } from "@/lib/routeHandlerAuthDiag";
 import { resolveRouteHandlerSupabaseUser } from "@/lib/serverSupabaseAuth";
 
@@ -45,30 +45,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "supabase_unconfigured" }, { status: 503 });
   }
 
+  if (routeHandlerAuthDiagEnabled()) {
+    await logRouteHandlerAuthProbe("api:payment:create:pre");
+  }
+
   const { supabase, user, fatalRefreshCleared, authErrorMessage } =
     await resolveRouteHandlerSupabaseUser("api:payment:create");
 
   if (routeHandlerAuthDiagEnabled()) {
-    const rawCookie = request.headers.get("cookie");
-    const dbg = summarizeCookieHeader(rawCookie);
-    const {
-      data: { user: verifyUser },
-      error: verifyUserError,
-    } = await supabase.auth.getUser();
-
-    console.warn("[payment-create-auth]", {
-      cookie: dbg,
-      resolve: {
-        hasUser: Boolean(user?.id),
-        userId: user?.id ?? null,
-        fatalRefreshCleared,
-        authErrorMessage: authErrorMessage ?? null,
-      },
-      verify_getUser: {
-        hasUser: Boolean(verifyUser?.id),
-        userId: verifyUser?.id ?? null,
-        error: verifyUserError?.message ?? null,
-      },
+    console.warn("[payment-create-auth-resolve]", {
+      hasUser: Boolean(user?.id),
+      userId: user?.id ?? null,
+      fatalRefreshCleared,
+      authErrorMessage: authErrorMessage ?? null,
     });
   }
 
