@@ -3,6 +3,10 @@
 import { useAuth } from "@/context/auth-context";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import {
+  extractIntegerDigitsBounded,
+  useFormattedIntegerInput,
+} from "@/hooks/useFormattedIntegerInput";
+import {
   fetchListingById,
   getCitiesFromDb,
   getCityByNameFromDb,
@@ -201,6 +205,7 @@ export default function EditListingPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const { formattedProps: priceInputProps } = useFormattedIntegerInput(price, setPrice);
   const [listingCategory, setListingCategory] = useState("");
   const [categoryParams, setCategoryParams] = useState<CategoryEditParams>(() =>
     structuredClone(EMPTY_CATEGORY_EDIT_PARAMS),
@@ -259,7 +264,11 @@ export default function EditListingPage() {
         
         setTitle(res.row.title);
         setDescription(res.row.description);
-        setPrice(String(res.row.price));
+        setPrice(
+          Number.isFinite(Number(res.row.price))
+            ? extractIntegerDigitsBounded(String(Math.round(Number(res.row.price))), 18)
+            : "",
+        );
         const urls = (res.row.images ?? [])
           .map((img) => String(img?.url ?? "").trim())
           .filter(Boolean);
@@ -511,7 +520,7 @@ export default function EditListingPage() {
     const titleTrim = title.trim();
     let descriptionTrim = description.trim();
     const priceNum = Number(price);
-    const normalizedPrice = toIntOrNull(price.trim());
+    const normalizedPrice = toIntOrNull(price.replace(/\s/g, "").trim());
 
     if (!titleTrim) {
       setToast({ message: "Введите название", type: "error" });
@@ -1061,12 +1070,9 @@ export default function EditListingPage() {
         <div className="space-y-2">
           <label className="text-sm font-medium text-muted">Цена (₽)</label>
           <input
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            className={inputClass}
+            {...priceInputProps}
+            className={`${inputClass} tabular-nums tracking-tight`}
             placeholder="0"
-            type="number"
-            inputMode="numeric"
             disabled={saving}
           />
         </div>

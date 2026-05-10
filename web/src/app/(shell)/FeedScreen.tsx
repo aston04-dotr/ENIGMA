@@ -38,6 +38,7 @@ import {
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
 import type { ListingRow } from "@/lib/types";
 import { useTheme } from "@/context/theme-context";
+import { useFormattedIntegerInput } from "@/hooks/useFormattedIntegerInput";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -131,7 +132,9 @@ function parseStoredCursor(raw: unknown): FeedListingsCursor | null {
 }
 
 function parseIntOrNull(raw: string): number | null {
-  const normalized = String(raw ?? "").trim();
+  const normalized = String(raw ?? "")
+    .replace(/\s/g, "")
+    .trim();
   if (!/^\d+$/.test(normalized)) return null;
   const value = Number.parseInt(normalized, 10);
   return Number.isFinite(value) ? value : null;
@@ -321,6 +324,8 @@ export function FeedPage({
   });
   const [priceFrom, setPriceFrom] = useState("");
   const [priceTo, setPriceTo] = useState("");
+  const { formattedProps: priceFromInput } = useFormattedIntegerInput(priceFrom, setPriceFrom);
+  const { formattedProps: priceToInput } = useFormattedIntegerInput(priceTo, setPriceTo);
   const [autoYearFrom, setAutoYearFrom] = useState("");
   const [autoYearTo, setAutoYearTo] = useState("");
   const [autoMileageFrom, setAutoMileageFrom] = useState("");
@@ -353,6 +358,10 @@ export function FeedPage({
   /** Реактивировать сортировку/бейджи по времени истечения `*_until` без перезапроса ленты. */
   const [promotionTimeTick, setPromotionTimeTick] = useState(0);
   const previousRegionIdRef = useRef<string>("");
+  const regionSeedRef = useRef({
+    regionId: seededRegionId,
+    citySeed: seededCity,
+  });
 
   useEffect(() => {
     const id = window.setInterval(() => setPromotionTimeTick((t) => t + 1), 60_000);
@@ -365,12 +374,15 @@ export function FeedPage({
       const dbRegions = await getRegionsFromDb();
       if (cancelled) return;
       setRegions(dbRegions);
-      if (!selectedRegionId && dbRegions.length > 0) {
-        const mappedRegionId = seededCity
-          ? await getRegionIdByCityName(seededCity)
-          : null;
+      const { regionId: seedR, citySeed } = regionSeedRef.current;
+      let nextRegion = String(seedR ?? "").trim();
+      if (!nextRegion && citySeed.trim()) {
+        const mapped = await getRegionIdByCityName(citySeed.trim());
         if (cancelled) return;
-        setSelectedRegionId(mappedRegionId || dbRegions[0]!.id);
+        nextRegion = String(mapped ?? "").trim();
+      }
+      if (nextRegion) {
+        setSelectedRegionId((prev) => (String(prev ?? "").trim() ? prev : nextRegion));
       }
     })();
     return () => {
@@ -1069,6 +1081,10 @@ export function FeedPage({
     () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
     [regions, selectedRegionId],
   );
+  const allCitiesFilterActive = useMemo(
+    () => !city.trim() && !selectedCityId.trim() && !selectedRegionId.trim(),
+    [city, selectedCityId, selectedRegionId],
+  );
 
   const resetFilters = useCallback(() => {
     trackEvent("filters_reset", {
@@ -1077,6 +1093,7 @@ export function FeedPage({
     });
     setCity("");
     setSelectedCityId("");
+    setSelectedRegionId("");
     setDistrict("");
     setDistricts([]);
     setSelectedCategory(ALL_CATEGORY);
@@ -1508,6 +1525,30 @@ export function FeedPage({
                     Выберите регион
                   </p>
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1 [-webkit-overflow-scrolling:touch]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        trackEvent("city_select", { scope: "all_cities", feedVariant });
+                        setSelectedRegionId("");
+                        setCity("");
+                        setSelectedCityId("");
+                        setDistrict("");
+                        setDistricts([]);
+                        setCitySheetOpen(false);
+                      }}
+                      className={`pressable mb-2 flex w-full flex-col gap-0.5 rounded-card border px-3 py-3 text-left transition-colors ${
+                        allCitiesFilterActive
+                          ? "border-accent/40 bg-accent/12 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                          : "border-line/80 bg-elev-2/40 text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span className="text-[13px] font-semibold leading-tight tracking-tight">
+                        Все города
+                      </span>
+                      <span className="text-[11px] font-normal leading-snug text-muted">
+                        Объявления по всей России
+                      </span>
+                    </button>
                     {regions.map((region) => (
                       <button
                         key={region.id}
@@ -1517,13 +1558,13 @@ export function FeedPage({
                           setCitySheetStep(2);
                         }}
                         className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
-                          selectedRegionId === region.id
+                          !allCitiesFilterActive && selectedRegionId === region.id
                             ? "bg-accent/10 text-accent"
                             : "text-fg hover:bg-elev-2"
                         }`}
                       >
                         <span>{region.name}</span>
-                        {selectedRegionId === region.id ? <span>✓</span> : null}
+                        {!allCitiesFilterActive && selectedRegionId === region.id ? <span>✓</span> : null}
                       </button>
                     ))}
                   </div>
@@ -1610,18 +1651,14 @@ export function FeedPage({
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <input
-                  value={priceFrom}
-                  onChange={(e) => setPriceFrom(e.target.value)}
-                  inputMode="numeric"
+                  {...priceFromInput}
                   placeholder="От"
-                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm tabular-nums tracking-tight text-fg placeholder:text-muted"
                 />
                 <input
-                  value={priceTo}
-                  onChange={(e) => setPriceTo(e.target.value)}
-                  inputMode="numeric"
+                  {...priceToInput}
                   placeholder="До"
-                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted"
+                  className="w-full rounded-card border border-line bg-elevated px-3 py-2 text-sm tabular-nums tracking-tight text-fg placeholder:text-muted"
                 />
               </div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-muted">

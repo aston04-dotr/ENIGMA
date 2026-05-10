@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/auth-context";
+import { useFormattedIntegerInput } from "@/hooks/useFormattedIntegerInput";
 import { CATEGORIES } from "@/lib/categories";
 import {
   getCitiesByRegionFromDb,
@@ -392,6 +393,7 @@ export function CreateListingForm() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const { formattedProps: priceInputProps } = useFormattedIntegerInput(price, setPrice);
   const [city, setCity] = useState<string>("");
   const [selectedCityId, setSelectedCityId] = useState<string>("");
   const [district, setDistrict] = useState<string>("");
@@ -586,12 +588,17 @@ export function CreateListingForm() {
     () => regions.find((r) => r.id === selectedRegionId)?.name ?? "",
     [regions, selectedRegionId],
   );
+  const createLocationGlobalActive = useMemo(
+    () => !String(selectedRegionId ?? "").trim(),
+    [selectedRegionId],
+  );
   const resetCreateFormState = useCallback(() => {
     setTitle("");
     setDescription("");
     setPrice("");
     setCity("");
     setSelectedCityId("");
+    setSelectedRegionId("");
     setDistrict("");
     setSelectedDistrictId("");
     setCategory("other");
@@ -608,9 +615,6 @@ export function CreateListingForm() {
       try {
         const dbRegions = await getRegionsFromDb();
         setRegions(dbRegions);
-        if (dbRegions.length > 0) {
-          setSelectedRegionId((prev) => prev || dbRegions[0]!.id);
-        }
       } catch (loadError) {
         console.error("CREATE PAGE CRASH", loadError);
         setRegions([]);
@@ -1639,11 +1643,9 @@ export function CreateListingForm() {
       <div>
         <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Цена</label>
         <input
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          inputMode="decimal"
+          {...priceInputProps}
           placeholder="Цена"
-          className={`mt-2 ${inputClass}`}
+          className={`mt-2 ${inputClass} tabular-nums tracking-tight`}
         />
       </div>
       <div>
@@ -2458,6 +2460,25 @@ export function CreateListingForm() {
                     Выберите регион
                   </p>
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1 [-webkit-overflow-scrolling:touch]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegionId("");
+                        setLocationSheetOpen(false);
+                      }}
+                      className={`pressable mb-2 flex w-full flex-col gap-0.5 rounded-card border px-3 py-3 text-left transition-colors ${
+                        createLocationGlobalActive
+                          ? "border-accent/40 bg-accent/12 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                          : "border-line/80 bg-elev-2/40 text-fg hover:bg-elev-2"
+                      }`}
+                    >
+                      <span className="text-[13px] font-semibold leading-tight tracking-tight">
+                        Все города
+                      </span>
+                      <span className="text-[11px] font-normal leading-snug text-muted">
+                        Выберите регион и город позже или ниже по списку
+                      </span>
+                    </button>
                     {regionOptions.map((region) => (
                       <button
                         key={region.value}
@@ -2467,13 +2488,15 @@ export function CreateListingForm() {
                           setLocationSheetStep(2);
                         }}
                         className={`pressable mb-1 flex w-full items-center justify-between rounded-card px-3 py-2.5 text-left text-sm transition-colors ${
-                          selectedRegionId === region.value
+                          !createLocationGlobalActive && selectedRegionId === region.value
                             ? "bg-accent/10 text-accent"
                             : "text-fg hover:bg-elev-2"
                         }`}
                       >
                         <span>{region.label}</span>
-                        {selectedRegionId === region.value ? <span>✓</span> : null}
+                        {!createLocationGlobalActive && selectedRegionId === region.value ? (
+                          <span>✓</span>
+                        ) : null}
                       </button>
                     ))}
                   </div>
