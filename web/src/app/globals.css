@@ -653,6 +653,10 @@ html[data-enigma-standalone="1"] .view-mode-frame {
   transition: background-color 0.16s ease-out;
 }
 
+html[data-enigma-standalone="1"] .animate-enigma-feed-loader-vehicle {
+  animation: none;
+}
+
 /* Поля ввода: меньше прыжка при фокусе с клавиатурой */
 .enigma-keyboard-scroll-target {
   scroll-margin-bottom: min(28vh, 12rem);
@@ -684,6 +688,28 @@ html[data-enigma-standalone="1"] .view-mode-frame {
 
 html[data-theme="light"] .enigma-listing-photo-hold {
   background: linear-gradient(145deg, #c9d5e8 0%, #bdcce2 48%, #d2deef 100%);
+}
+
+@keyframes enigma-feed-loader-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(7px, -1px, 0);
+  }
+}
+
+.animate-enigma-feed-loader-vehicle {
+  animation: enigma-feed-loader-float 2.35s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-enigma-feed-loader-vehicle {
+    animation: none;
+  }
 }
 
 /* Shimmer поверх фото карточки до загрузки */

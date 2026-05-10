@@ -2,6 +2,7 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { EmptyState } from "@/components/EmptyState";
+import { FeedListingsLoadingState } from "@/components/FeedListingsLoadingState";
 import {
   ErrorUi,
   FETCH_ERROR_MESSAGE,
@@ -56,6 +57,16 @@ const FILTERS_DEBOUNCE_MS = 350;
 const TEXT_SEARCH_DEBOUNCE_MS = 300;
 /** Приблизительная высота карточки в ленте для window virtualizer (уточняется measureElement). */
 const FEED_VIRTUAL_ESTIMATE_PX = 400;
+/**
+ * Ключ выравнивания UI с ответом ленты: пока не совпадает с последним settle — не показываем «пусто».
+ */
+function feedListingsRequestKey(
+  filters: Parameters<typeof fetchListings>[0],
+  nonce: number,
+): string {
+  return `${JSON.stringify(filters)}\0${String(nonce)}`;
+}
+
 /**
  * Мягкий предел карточек в памяти (новые в начале; при переполнении отбрасываем самые старые с конца).
  */
@@ -629,6 +640,15 @@ export function FeedPage({
     return f;
   }, [city, district, selectedCategory, feedDealSegment, feedVariant, searchQuery]);
 
+  const feedListingsFetchKey = useMemo(
+    () => feedListingsRequestKey(feedFilters, feedNonce),
+    [feedFilters, feedNonce],
+  );
+  const [appliedFeedListingsFetchKey, setAppliedFeedListingsFetchKey] = useState<string | null>(null);
+
+  const feedAwaitingServerListings =
+    appliedFeedListingsFetchKey === null || appliedFeedListingsFetchKey !== feedListingsFetchKey;
+
   useEffect(() => {
     let cancelled = false;
     const t = window.setTimeout(() => {
@@ -818,6 +838,11 @@ export function FeedPage({
         feedVariant,
       ]);
 
+  const showFriendlyFeedLoading =
+    Boolean(!feedError && filtered.length === 0 && feedAwaitingServerListings);
+  const showConfirmedFeedEmpty =
+    Boolean(!feedError && filtered.length === 0 && !feedAwaitingServerListings);
+
   const rowVirtualizer = useWindowVirtualizer({
     count: filtered.length,
     estimateSize: () => FEED_VIRTUAL_ESTIMATE_PX,
@@ -925,6 +950,7 @@ export function FeedPage({
     debounceRef.current = setTimeout(() => {
       if (cancelled) return;
       fetchStarted = true;
+      const settleKey = feedListingsRequestKey(feedFilters, feedNonce);
       setIsFeedRefreshing(true);
       void (async () => {
         try {
@@ -960,6 +986,7 @@ export function FeedPage({
         } finally {
           if (!cancelled) {
             setIsFeedRefreshing(false);
+            setAppliedFeedListingsFetchKey(settleKey);
           }
         }
       })();
@@ -974,7 +1001,13 @@ export function FeedPage({
         setIsFeedRefreshing(false);
       }
     };
-  }, [feedFilters, session?.user?.id, feedNonce, debugLogFeedFetch]);
+  }, [
+    feedFilters,
+    feedNonce,
+    session?.user?.id,
+    cacheStorageKey,
+    debugLogFeedFetch,
+  ]);
 
   useEffect(() => {
     return subscribeListingPromotionApplied(() => {
@@ -1413,9 +1446,9 @@ export function FeedPage({
 
       <div
         className="relative mx-auto w-full max-w-none scroll-smooth px-4 pb-8 pt-6 sm:px-6 lg:max-w-[760px] lg:px-0 xl:max-w-[800px]"
-        aria-busy={isFeedRefreshing}
+        aria-busy={isFeedRefreshing || showFriendlyFeedLoading}
       >
-        {isFeedRefreshing ? (
+        {isFeedRefreshing || showFriendlyFeedLoading ? (
           <div
             className="pointer-events-none absolute left-4 right-4 top-0 z-20 sm:left-6 sm:right-6 lg:left-1/2 lg:right-auto lg:w-[min(100%,760px)] lg:-translate-x-1/2"
             aria-hidden
@@ -1459,7 +1492,8 @@ export function FeedPage({
             })}
           </div>
         ) : null}
-        {filtered.length === 0 ? (
+        {showFriendlyFeedLoading ? <FeedListingsLoadingState /> : null}
+        {showConfirmedFeedEmpty ? (
           <EmptyState
             title={feedVariant === "seeking" ? "Запросов нет" : "Лента пуста"}
             subtitle={
