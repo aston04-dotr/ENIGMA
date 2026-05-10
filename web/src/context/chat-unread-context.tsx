@@ -12,7 +12,6 @@ import React, {
 import {
   getRestAccessToken,
   getSupabaseRestWithSession,
-  setRestAccessToken,
   supabase,
 } from "@/lib/supabase";
 import { isSupabaseReachable, withPostgrestBackoff } from "@/lib/supabaseHealth";
@@ -464,7 +463,6 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     stableSessionRef.current = session ?? null;
-    setRestAccessToken(session ?? null);
   }, [session]);
   const lastPresenceStormLogAtRef = useRef(0);
   const realtimeConnectOwnerRef = useRef(0);
@@ -504,6 +502,7 @@ export function ChatUnreadProvider({
   const authResolvedRef = useRef(authResolved);
   authResolvedRef.current = authResolved;
   useEffect(() => {
+    if (!DEV_CHAT_DEBUG) return;
     console.warn("[CHAT_PROVIDER_MOUNT]");
     return () => {
       console.warn("[CHAT_PROVIDER_UNMOUNT]");
@@ -528,10 +527,8 @@ export function ChatUnreadProvider({
     return subscribeEnigmaAuthSingleton((event, sessionSnap) => {
       if (sessionSnap) {
         stableSessionRef.current = sessionSnap;
-        setRestAccessToken(sessionSnap);
       } else if (event === "SIGNED_OUT") {
         stableSessionRef.current = null;
-        setRestAccessToken(null);
       }
 
       const uid = sessionSnap?.user?.id ?? null;
@@ -1354,7 +1351,8 @@ export function ChatUnreadProvider({
 
   useEffect(() => {
     if (typeof window !== "undefined" && isAuthCircuitOpen()) return;
-    if (loading || !authResolved) return;
+    const jwtReady = Boolean(session?.access_token?.trim());
+    if (!jwtReady && (loading || !authResolved)) return;
     if (!authLifecycleReady) {
       chatDebugLog("realtime:init:blocked:auth-not-ready", { userId: userId ?? null });
       return;
@@ -1395,6 +1393,7 @@ export function ChatUnreadProvider({
     authResolved,
     authStabilizedState,
     loading,
+    session?.access_token,
     userId,
   ]);
 

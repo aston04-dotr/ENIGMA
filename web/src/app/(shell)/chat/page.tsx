@@ -9,7 +9,7 @@ import { normalizeChatParticipantName } from "@/lib/guestIdentity";
 import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 function formatTimeLabel(value: string | null): string {
   if (!value) return "";
@@ -111,12 +111,14 @@ export default function ChatsPage() {
   const router = useRouter();
   const { session } = useAuth();
   const { rows, loading, ready: chatReady, error, refreshChats } = useChatUnread();
+  const refreshChatsRef = useRef(refreshChats);
+  refreshChatsRef.current = refreshChats;
   const [systemNotices, setSystemNotices] = useState<
     import("@/lib/listingNotices").ListingOwnerNoticeRow[]
   >([]);
   const [noticesLoading, setNoticesLoading] = useState(false);
 
-  const loadNotices = async () => {
+  const loadNotices = useCallback(async () => {
     if (!session?.user?.id) {
       setSystemNotices([]);
       return;
@@ -129,7 +131,7 @@ export default function ChatsPage() {
     } finally {
       setNoticesLoading(false);
     }
-  };
+  }, [session?.user?.id]);
 
   const sortedRows = useMemo(
     () =>
@@ -145,14 +147,14 @@ export default function ChatsPage() {
 
   useEffect(() => {
     if (!session?.user) return;
-    void refreshChats();
+    void refreshChatsRef.current();
     void loadNotices();
-  }, [refreshChats, session?.user]);
+  }, [loadNotices, session?.user]);
 
   useEffect(() => {
     if (!session?.user) return;
     const onFocusLike = () => {
-      void refreshChats({ silent: true });
+      void refreshChatsRef.current({ silent: true });
       void loadNotices();
     };
     const onVisibility = () => {
@@ -170,7 +172,7 @@ export default function ChatsPage() {
       window.removeEventListener("online", onFocusLike);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [loadNotices, refreshChats, session?.user]);
+  }, [loadNotices, session?.user]);
 
   if (!session?.user) {
     return (

@@ -380,11 +380,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
 
         if (next?.user) {
-          if (
-            event === "SIGNED_IN" ||
-            event === "INITIAL_SESSION" ||
-            event === "USER_UPDATED"
-          ) {
+          // INITIAL_SESSION дублирует bootstrap getSession() → лишний профиль/рендеры.
+          // Профиль подтягиваем из bootstrap и из SIGNED_IN / USER_UPDATED.
+          if (event === "SIGNED_IN" || event === "USER_UPDATED") {
             void loadProfileForUser(next.user);
           }
         } else if (event === "SIGNED_OUT") {
@@ -584,11 +582,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       needsPhone,
       needsName,
       loading,
-      authResolved: !loading && !sessionRecovering,
+      // Мягкое восстановление JWT не должно «гасить» UI как гостя при живой сессии в памяти.
+      authResolved:
+        !loading && (!sessionRecovering || Boolean(session?.user?.id)),
       authSessionRecovering: sessionRecovering,
       profileLoading,
       onboardingResolved,
-      ready: !loading && !sessionRecovering,
+      ready: !loading && (!sessionRecovering || Boolean(session?.user?.id)),
       signOut,
       refreshProfile,
     }),

@@ -490,6 +490,8 @@ export default function ChatRoomPage() {
   const { markChatRead, setActiveChatId, getChatRow, refreshChats } = useChatUnread();
 
   const me = session?.user?.id ?? null;
+  /** Пока есть JWT в памяти — не гасим экран чата из‑за jitter authResolved/loading. */
+  const accessTokenReady = Boolean(session?.access_token?.trim());
   const chatId = resolveRuntimeRouteId(routeId, searchParams.get("id"));
   const isGuestRoute = String(searchParams.get("guest") ?? "") === "1";
   const guestPeerUserId = String(searchParams.get("peer") ?? "").trim();
@@ -1422,7 +1424,7 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!chatId) return;
     if (!isUuid(chatId)) return;
-    if (!authResolved || loading) return;
+    if (!accessTokenReady && (loading || !authResolved)) return;
     if (!session?.user?.id && !isGuestRoute) return;
     if (isGuestRoute && resolvingGuestRoute) return;
 
@@ -1713,8 +1715,10 @@ export default function ChatRoomPage() {
   }, [
     chatId,
     me,
-    authResolved,
+    accessTokenReady,
     loading,
+    authResolved,
+    session?.access_token,
     session?.user?.id,
     isGuestRoute,
     resolvingGuestRoute,
@@ -1744,7 +1748,7 @@ export default function ChatRoomPage() {
       return;
     }
 
-    if (!authResolved || loading) {
+    if (!accessTokenReady && (loading || !authResolved)) {
       setRoomStatus("connecting");
       return;
     }
@@ -1768,8 +1772,10 @@ export default function ChatRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMessages только через ref, чтобы не дергать историю на каждом смещении identity
   }, [
     chatId,
-    authResolved,
+    accessTokenReady,
     loading,
+    authResolved,
+    session?.access_token,
     session?.user?.id,
     isGuestRoute,
     resolvingGuestRoute,
@@ -1778,7 +1784,7 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!chatId || !isUuid(chatId)) return;
-    if (!authResolved || loading) return;
+    if (!accessTokenReady && (loading || !authResolved)) return;
     if (!session?.user?.id && !isGuestRoute) return;
     if (isGuestRoute && resolvingGuestRoute) return;
 
@@ -1807,6 +1813,7 @@ export default function ChatRoomPage() {
       }
     };
   }, [
+    accessTokenReady,
     authResolved,
     chatId,
     isGuestRoute,
@@ -1814,6 +1821,7 @@ export default function ChatRoomPage() {
     loadMessages,
     refreshChats,
     resolvingGuestRoute,
+    session?.access_token,
     session?.user?.id,
   ]);
 
@@ -2356,7 +2364,12 @@ export default function ChatRoomPage() {
     }
   }
 
-  if (loading || !authResolved || resolvingGuestRoute) {
+  /** Гостевая переадресация — короткий сплэш; залогиненный с JWT не должен моргать экран при refresh токена. */
+  const blockingAuthSplash =
+    resolvingGuestRoute ||
+    (!isGuestRoute && !accessTokenReady && (loading || !authResolved));
+
+  if (blockingAuthSplash) {
     return (
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5 text-sm text-muted">
         Подключение...
