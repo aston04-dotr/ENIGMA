@@ -80,6 +80,8 @@ export type CategoryEditParams = {
 
 export const EMPTY_CATEGORY_EDIT_PARAMS: CategoryEditParams = {
   auto: {
+    carBodyClassId: "",
+    carBodyClass: "",
     carCountryId: "",
     carBrandId: "",
     carModelId: "",

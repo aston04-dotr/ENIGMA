@@ -61,7 +61,7 @@ import {
   buildAutoSpecsSection,
   buildMotoParamsRecord,
   buildMotoSpecsSection,
-  isAutoCatalogTripleComplete,
+  isAutoCatalogQuadComplete,
   validateEngineHp,
   validateEngineVolumeAuto,
   validateEngineVolumeMoto,
@@ -169,6 +169,8 @@ type CategoryFormParams = {
 
 const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
   auto: {
+    carBodyClassId: "",
+    carBodyClass: "",
     carCountryId: "",
     carBrandId: "",
     carModelId: "",
@@ -754,13 +756,13 @@ export function CreateListingForm() {
     if (category === "auto") {
       const p = categoryParams.auto;
       if (
-        !isAutoCatalogTripleComplete(p) ||
+        !isAutoCatalogQuadComplete(p) ||
         !p.brand.trim() ||
         !p.model.trim() ||
         !p.year.trim() ||
         !p.mileage.trim()
       ) {
-        return "Выберите страну, марку и модель из каталога и заполните год и пробег";
+        return "Выберите тип кузова, страну, марку и модель из каталога и заполните год и пробег";
       }
       const hpErr = validateEngineHp(p.enginePowerHp);
       if (hpErr) return hpErr;

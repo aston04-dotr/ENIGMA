@@ -2,27 +2,30 @@
 
 import type { AutoParamsShape } from "@/lib/listingVehicleForm";
 import {
+  fetchVehicleCatalogBodyClasses,
   fetchVehicleCatalogBrands,
   fetchVehicleCatalogCountries,
   fetchVehicleCatalogModels,
   type VehicleCatalogBrand,
+  type VehicleCatalogBodyClass,
   type VehicleCatalogCountry,
   type VehicleCatalogModel,
   vehicleCatalogHaystack,
 } from "@/lib/vehicleCatalog";
 import { SearchablePickerSheet, type SearchablePickerOption } from "@/components/vehicle/SearchablePickerSheet";
+import { VehicleBrandGlyph } from "@/components/vehicle/VehicleBrandGlyph";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type SheetKind = "country" | "brand" | "model";
+type SheetKind = "body_class" | "country" | "brand" | "model";
 
 const ROW_BASE =
-  "pressable mt-2 flex min-h-[52px] w-full flex-col justify-center rounded-card border px-4 py-3 text-left transition-[transform,border-color,background-color] duration-ui active:scale-[0.993] disabled:opacity-45 disabled:pointer-events-none";
+  "pressable mt-2 flex min-h-[56px] w-full flex-col justify-center rounded-card border px-4 py-3.5 text-left transition-[transform,border-color,background-color,box-shadow] duration-[200ms] active:scale-[0.993] disabled:opacity-45 disabled:pointer-events-none";
 
 function rowClass(active: boolean): string {
   return `${ROW_BASE} ${
     active
-      ? "border-accent/40 bg-accent/[0.10] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-      : "border-line bg-elevated hover:bg-elev-2/55"
+      ? "border-accent/40 bg-gradient-to-br from-accent/[0.11] via-accent/[0.06] to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+      : "border-line bg-elevated hover:border-line/90 hover:bg-elev-2/45"
   }`;
 }
 
@@ -33,6 +36,10 @@ function countryLabelRu(c?: VehicleCatalogCountry | null): string {
   return [emoji, name].filter(Boolean).join(" ");
 }
 
+function modelsCacheKey(bodyClassId: string, brandId: string): string {
+  return `${bodyClassId.trim()}:${brandId.trim()}`;
+}
+
 type Props = {
   value: AutoParamsShape;
   onPatch: (patch: Partial<AutoParamsShape>) => void;
@@ -40,14 +47,32 @@ type Props = {
 };
 
 export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: Props) {
+  const [bodyClasses, setBodyClasses] = useState<VehicleCatalogBodyClass[]>([]);
+  const [bodyLoad, setBodyLoad] = useState(false);
+
   const [countries, setCountries] = useState<VehicleCatalogCountry[]>([]);
   const [countryLoading, setCountryLoading] = useState(false);
   const [brandLists, setBrandLists] = useState<Record<string, VehicleCatalogBrand[]>>({});
   const [modelLists, setModelLists] = useState<Record<string, VehicleCatalogModel[]>>({});
+
   const [brandFetchLoading, setBrandFetchLoading] = useState(false);
   const [modelFetchLoading, setModelFetchLoading] = useState(false);
 
   const [sheetOpen, setSheetOpen] = useState<SheetKind | null>(null);
+
+  useEffect(() => {
+    let dead = false;
+    setBodyLoad(true);
+    void fetchVehicleCatalogBodyClasses().then((rows) => {
+      if (!dead) {
+        setBodyClasses(rows);
+        setBodyLoad(false);
+      }
+    });
+    return () => {
+      dead = true;
+    };
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -63,15 +88,20 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
     };
   }, []);
 
-  const resolvedCountry = useMemo(
-    () => countries.find((c) => c.id === value.carCountryId.trim()) ?? null,
-    [countries, value.carCountryId],
-  );
+  useEffect(() => {
+    setModelLists({});
+  }, [value.carBodyClassId]);
+
+  const resolvedBody =
+    bodyClasses.find((x) => x.id === value.carBodyClassId.trim()) ?? null;
+  const resolvedCountry = countries.find((c) => c.id === value.carCountryId.trim()) ?? null;
 
   const brandsForPick = brandLists[value.carCountryId.trim()] ?? [];
   const resolvedBrand =
     brandsForPick.find((b) => b.id === value.carBrandId.trim()) ?? null;
-  const modelsForPick = modelLists[value.carBrandId.trim()] ?? [];
+
+  const mKey = modelsCacheKey(value.carBodyClassId, value.carBrandId);
+  const modelsForPick = modelLists[mKey] ?? [];
   const resolvedModel =
     modelsForPick.find((m) => m.id === value.carModelId.trim()) ?? null;
 
@@ -93,19 +123,21 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
 
   useEffect(() => {
     const bid = value.carBrandId.trim();
-    if (!bid || modelLists[bid]) return;
+    const bod = value.carBodyClassId.trim();
+    const key = modelsCacheKey(bod, bid);
+    if (!bid || !bod || modelLists[key]) return;
     let dead = false;
     setModelFetchLoading(true);
-    void fetchVehicleCatalogModels(bid).then((rows) => {
+    void fetchVehicleCatalogModels(bid, bod).then((rows) => {
       if (!dead) {
-        setModelLists((prev) => ({ ...prev, [bid]: rows }));
+        setModelLists((prev) => ({ ...prev, [key]: rows }));
         setModelFetchLoading(false);
       }
     });
     return () => {
       dead = true;
     };
-  }, [value.carBrandId, modelLists]);
+  }, [value.carBrandId, value.carBodyClassId, modelLists]);
 
   const prefetchBrandsThenOpenSheet = useCallback(async () => {
     const cid = value.carCountryId.trim();
@@ -121,15 +153,31 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
 
   const prefetchModelsThenOpenSheet = useCallback(async () => {
     const bid = value.carBrandId.trim();
-    if (!bid.trim()) return;
-    if (!modelLists[bid]) {
+    const bod = value.carBodyClassId.trim();
+    if (!bid.trim() || !bod.trim()) return;
+    const key = modelsCacheKey(bod, bid);
+    if (!modelLists[key]) {
       setModelFetchLoading(true);
-      const rows = await fetchVehicleCatalogModels(bid);
-      setModelLists((prev) => ({ ...prev, [bid]: rows }));
+      const rows = await fetchVehicleCatalogModels(bid, bod);
+      setModelLists((prev) => ({ ...prev, [key]: rows }));
       setModelFetchLoading(false);
     }
     setSheetOpen("model");
-  }, [value.carBrandId, modelLists]);
+  }, [value.carBrandId, value.carBodyClassId, modelLists]);
+
+  const bodyOptions: SearchablePickerOption[] = useMemo(
+    () =>
+      bodyClasses.map((c) => ({
+        id: c.id,
+        label: String(c.name_ru ?? "").trim(),
+        description:
+          String(c.name_en ?? "").trim() && String(c.name_en ?? "").trim() !== String(c.name_ru ?? "").trim()
+            ? String(c.name_en ?? "").trim()
+            : undefined,
+        searchHaystack: vehicleCatalogHaystack([c.name_ru, c.name_en], []),
+      })),
+    [bodyClasses],
+  );
 
   const countryOptions: SearchablePickerOption[] = useMemo(
     () =>
@@ -152,6 +200,7 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       label: String(b.name_ru ?? "").trim(),
       description: String(b.name_en ?? "").trim() || undefined,
       searchHaystack: vehicleCatalogHaystack([b.name_ru, b.name_en], b.aliases),
+      leading: <VehicleBrandGlyph logoKey={b.logo_key} slugFallback={b.slug} />,
     }));
   }, [brandsForPick]);
 
@@ -165,20 +214,43 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
     }));
   }, [modelsForPick]);
 
-  const catalogUnreachable = !countryLoading && countries.length === 0;
+  const bodyUnreachable = !bodyLoad && bodyClasses.length === 0;
+  const geoCatalogUnreachable = !countryLoading && countries.length === 0;
+  const catalogUnreachable = bodyUnreachable || geoCatalogUnreachable;
+
+  let catalogHint =
+    bodyUnreachable || geoCatalogUnreachable ? (
+      <p className="rounded-[18px] border border-amber-500/35 bg-amber-500/[0.07] px-3 py-2.5 text-[12.5px] leading-relaxed text-fg">
+        Не удалось загрузить справочник авто из базы. Убедитесь, что на Supabase применены миграции каталога
+        (минимум до 068). После синхронизации выбор класса, страны, марки и модели появится автоматически.
+      </p>
+    ) : null;
 
   return (
     <div className="space-y-1">
-      {catalogUnreachable ? (
-        <p className="rounded-card border border-amber-500/35 bg-amber-500/[0.07] px-3 py-2.5 text-[12.5px] leading-relaxed text-fg">
-          Не удалось загрузить справочник авто из базы (проверьте миграции Supabase 064–065). После их
-          применения выбор страны, марки и модели появится автоматически.
-        </p>
-      ) : null}
+      {catalogHint}
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || countryLoading}
+        disabled={disabled || catalogUnreachable || bodyLoad}
+        onClick={() => setSheetOpen("body_class")}
+        className={rowClass(Boolean(resolvedBody))}
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+          Тип авто / кузов *
+        </span>
+        <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
+          {resolvedBody
+            ? String(resolvedBody.name_ru ?? "").trim()
+            : bodyLoad
+              ? "Загрузка классов…"
+              : "Выберите перед маркой"}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        disabled={disabled || catalogUnreachable || !value.carBodyClassId.trim() || countryLoading}
         onClick={() => setSheetOpen("country")}
         className={rowClass(Boolean(resolvedCountry))}
       >
@@ -186,11 +258,13 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
           Страна производителя *
         </span>
         <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {resolvedCountry
-            ? countryLabelRu(resolvedCountry)
-            : countryLoading
-              ? "Загрузка каталога…"
-              : "Выбрать из списка"}
+          {!value.carBodyClassId.trim()
+            ? "Сначала выберите тип кузова"
+            : resolvedCountry
+              ? countryLabelRu(resolvedCountry)
+              : countryLoading
+                ? "Загрузка каталога…"
+                : "Выбрать из списка"}
         </span>
       </button>
 
@@ -201,39 +275,71 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
         className={rowClass(Boolean(value.carBrandId.trim()))}
       >
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Марка *</span>
-        <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {!value.carCountryId.trim()
-            ? "Сначала выберите страну"
-            : value.carBrandId.trim()
-              ? resolvedBrand
-                ? String(resolvedBrand.name_ru ?? "").trim() || value.brand.trim()
-                : value.brand.trim() || "Марка"
-              : "Выбрать из списка"}
+        <span className="mt-1 flex min-h-[22px] items-center gap-2.5 text-[15px] font-semibold leading-snug text-fg">
+          {!value.carCountryId.trim() ? (
+            "Сначала выберите страну"
+          ) : resolvedBrand ? (
+            <>
+              <VehicleBrandGlyph logoKey={resolvedBrand.logo_key} slugFallback={resolvedBrand.slug} />
+              <span className="min-w-0 break-words">
+                {String(resolvedBrand.name_ru ?? "").trim() || value.brand.trim()}
+              </span>
+            </>
+          ) : value.carBrandId.trim() ? (
+            value.brand.trim() || "Марка"
+          ) : (
+            "Выбрать из списка"
+          )}
         </span>
       </button>
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || !value.carBrandId.trim()}
+        disabled={disabled || catalogUnreachable || !value.carBrandId.trim() || !value.carBodyClassId.trim()}
         onClick={() => void prefetchModelsThenOpenSheet()}
         className={rowClass(Boolean(value.carModelId.trim()))}
       >
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Модель *</span>
         <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {!value.carBrandId.trim()
-            ? "Сначала выберите марку"
-            : value.carModelId.trim()
-              ? resolvedModel
-                ? String(resolvedModel.name_ru ?? "").trim() || value.model.trim()
-                : value.model.trim() || "Модель"
-              : "Выбрать из списка"}
+          {!value.carBodyClassId.trim()
+            ? "Сначала укажите тип кузова"
+            : !value.carBrandId.trim()
+              ? "Сначала выберите марку"
+              : value.carModelId.trim()
+                ? resolvedModel
+                  ? String(resolvedModel.name_ru ?? "").trim() || value.model.trim()
+                  : value.model.trim() || "Модель"
+                : "Выбрать из списка"}
         </span>
       </button>
 
       <SearchablePickerSheet
+        open={sheetOpen === "body_class"}
+        title="Тип кузова / класс"
+        subtitle="Сначала задаём контекст, затем марка и модель — меньше «плоских» каталогов"
+        searchPlaceholder="SUV, седан, спорт…"
+        options={bodyOptions}
+        loading={bodyLoad && bodyClasses.length === 0}
+        onClose={() => setSheetOpen(null)}
+        onSelect={(id) => {
+          const row = bodyClasses.find((x) => x.id === id);
+          const lab = row ? String(row.name_ru ?? "").trim() : "";
+          onPatch({
+            carBodyClassId: id,
+            carBodyClass: lab || value.carBodyClass,
+            carCountryId: "",
+            carBrandId: "",
+            carModelId: "",
+            brand: "",
+            model: "",
+          });
+        }}
+      />
+
+      <SearchablePickerSheet
         open={sheetOpen === "country"}
         title="Страна производителя"
-        subtitle="Где исторически зарегистрирован основной автомобильный бренд"
+        subtitle={resolvedBody ? String(resolvedBody.name_ru ?? "").trim() : undefined}
         searchPlaceholder="Поиск по стране — RU или EN…"
         options={countryOptions}
         loading={countryLoading && countries.length === 0}
@@ -272,7 +378,9 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       <SearchablePickerSheet
         open={sheetOpen === "model"}
         title="Модель"
-        subtitle={value.brand.trim() ? value.brand.trim() : undefined}
+        subtitle={
+          [value.carBodyClass.trim(), value.brand.trim()].filter(Boolean).join(" · ") || undefined
+        }
         searchPlaceholder="Например: X5, Camry…"
         options={modelOptions}
         loading={modelFetchLoading && modelsForPick.length === 0}

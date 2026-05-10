@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState, type ReactNode } from "react";
 
 export type SearchablePickerOption = {
   id: string;
@@ -9,6 +9,8 @@ export type SearchablePickerOption = {
   description?: string;
   /** Нижний регистр, для фильтра включая aliases извне */
   searchHaystack: string;
+  /** Компактный элемент слева (иконка, глиф бренда) */
+  leading?: ReactNode;
 };
 
 type Props = {
@@ -60,30 +62,30 @@ export function SearchablePickerSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-main/40 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-main/[0.52] p-3 backdrop-blur-md sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="searchable-picker-title"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[min(88vh,640px)] w-full max-w-md flex-col rounded-card border border-line bg-elevated shadow-soft animate-enigma-sheet-panel"
+        className="animate-enigma-sheet-panel flex max-h-[min(91vh,680px)] w-full max-w-md flex-col rounded-[26px] border border-line/[0.88] bg-gradient-to-b from-elevated via-elevated to-elev-2/[0.38] shadow-[0_22px_64px_-32px_rgba(0,0,0,.75)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 border-b border-line/80 px-4 pb-3 pt-3.5">
+        <div className="shrink-0 border-b border-line/70 bg-gradient-to-b from-elev-2/[0.12] via-transparent px-4 pb-3.5 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 id="searchable-picker-title" className="text-[17px] font-semibold leading-tight text-fg">
+              <h2 id="searchable-picker-title" className="text-[17.5px] font-semibold leading-tight tracking-[-0.01em] text-fg">
                 {title}
               </h2>
               {subtitle ? (
-                <p className="mt-1 text-[12.5px] leading-snug text-muted/90">{subtitle}</p>
+                <p className="mt-1 max-w-[290px] text-[13px] leading-snug text-muted/[0.95]">{subtitle}</p>
               ) : null}
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="pressable shrink-0 rounded-full border border-line/80 bg-elev-2/50 px-3 py-1.5 text-[12px] font-semibold text-muted transition-colors hover:bg-elev-2 hover:text-fg"
+              className="pressable shrink-0 rounded-full border border-line/85 bg-gradient-to-br from-elev-2/70 to-transparent px-3 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted transition-[transform,color,background] duration-ui hover:bg-elev-2 hover:text-fg active:scale-[0.985]"
             >
               Закрыть
             </button>
@@ -91,7 +93,7 @@ export function SearchablePickerSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
-          <div className="sticky top-0 z-10 border-b border-line/70 bg-elevated/96 px-4 py-2.5 backdrop-blur-md supports-[backdrop-filter]:bg-elevated/88">
+          <div className="sticky top-0 z-10 border-b border-line/[0.72] bg-elevated/92 px-4 py-3 backdrop-blur-lg supports-[backdrop-filter]:bg-elevated/[0.82]">
             <input
               ref={searchRef}
               value={query}
@@ -100,23 +102,23 @@ export function SearchablePickerSheet({
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              className="w-full min-h-[48px] rounded-card border border-line bg-elev-2/35 px-3.5 text-[15px] text-fg placeholder:text-muted/55 outline-none ring-offset-elevated transition-[box-shadow,border-color] duration-150 focus:border-accent/35 focus:ring-2 focus:ring-accent/28"
+              className="w-full min-h-[52px] rounded-[16px] border border-line/[0.85] bg-gradient-to-br from-elev-2/45 to-transparent px-4 py-3 text-[15.5px] text-fg placeholder:text-muted/[0.5] outline-none ring-offset-elevated transition-[box-shadow,border-color,background] duration-200 focus:border-accent/40 focus:bg-elevated/92 focus:ring-2 focus:ring-accent/28"
             />
           </div>
-          <div className="px-2 pb-4 pt-1">
+          <div className="px-3 pb-5 pt-2">
           {loading ? (
-            <div className="flex flex-col gap-2 px-2 py-6">
+            <div className="flex flex-col gap-2.5 px-1 py-5">
               {[0, 1, 2, 3, 4].map((i) => (
                 <div
                   key={`sk-${i}`}
-                  className="h-[52px] animate-pulse rounded-card bg-elev-2/60"
+                  className="h-[61px] animate-pulse rounded-[18px] border border-transparent bg-gradient-to-br from-elev-2/75 to-transparent"
                 />
               ))}
             </div>
           ) : filtered.length === 0 ? (
             <p className="px-3 py-10 text-center text-[14px] leading-relaxed text-muted">{emptyText}</p>
           ) : (
-            <ul className="pb-2">
+            <ul className="space-y-1.5 pb-2">
               {filtered.map((opt) => (
                 <li key={opt.id}>
                   <button
@@ -125,16 +127,19 @@ export function SearchablePickerSheet({
                       onSelect(opt.id);
                       onClose();
                     }}
-                    className="pressable mb-1 flex min-h-[54px] w-full flex-col justify-center rounded-card px-3 py-2.5 text-left transition-colors duration-150 hover:bg-accent/8 active:scale-[0.99]"
+                    className="pressable group flex min-h-[60px] w-full gap-3.5 rounded-[18px] border border-transparent bg-gradient-to-r from-transparent to-transparent px-3.5 py-3 text-left outline-none ring-accent/35 transition-[transform,background,border-color,box-shadow] duration-200 hover:border-accent/[0.16] hover:from-accent/[0.065] hover:via-accent/[0.03] hover:to-transparent hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] active:scale-[0.987] focus-visible:ring-[3px]"
                   >
-                    <span className="text-[15px] font-semibold leading-snug tracking-tight text-fg">
-                      {opt.label}
-                    </span>
-                    {opt.description ? (
-                      <span className="mt-0.5 text-[12px] leading-snug text-muted/85">
-                        {opt.description}
+                    {opt.leading != null ? (
+                      <span className="relative flex shrink-0 items-center after:pointer-events-none after:absolute after:inset-[-7px] after:rounded-2xl after:bg-gradient-to-b after:from-white/[0.05] after:to-transparent after:opacity-0 after:transition-opacity group-hover:after:opacity-100">
+                        {opt.leading}
                       </span>
                     ) : null}
+                    <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                      <span className="text-[15.5px] font-semibold leading-snug tracking-[-0.014em] text-fg">{opt.label}</span>
+                      {opt.description ? (
+                        <span className="mt-px text-[12.35px] leading-snug text-muted/[0.9]">{opt.description}</span>
+                      ) : null}
+                    </span>
                   </button>
                 </li>
               ))}

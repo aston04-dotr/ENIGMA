@@ -1,6 +1,10 @@
 import type { ListingRow } from "./types";
 
 export type AutoParamsShape = {
+  /** Класс / сегмент (кузов до марки): UUID строки каталога */
+  carBodyClassId: string;
+  /** Отображаемое имя класса RU для описания / подсказок */
+  carBodyClass: string;
   /** UUID страны производителя (spravochnik) */
   carCountryId: string;
   /** UUID марки */
@@ -43,6 +47,16 @@ export function isAutoCatalogTripleComplete(p: AutoParamsShape): boolean {
   return looksLikeUuid(p.carCountryId) && looksLikeUuid(p.carBrandId) && looksLikeUuid(p.carModelId);
 }
 
+/** Полный шаг каталога (класс + страна + марка + модель). Для новых объявлений. Редактор совместимо оставляет «тройку». */
+export function isAutoCatalogQuadComplete(p: AutoParamsShape): boolean {
+  return (
+    looksLikeUuid(p.carBodyClassId) &&
+    looksLikeUuid(p.carCountryId) &&
+    looksLikeUuid(p.carBrandId) &&
+    looksLikeUuid(p.carModelId)
+  );
+}
+
 export function stripSpecsFromDescription(desc: string): string {
   const idx = desc.indexOf(SPECS_MARKER);
   if (idx < 0) return desc;
@@ -67,6 +81,7 @@ function formatSpecsBlock(pairs: Array<[string, string]>): string {
 
 export function buildAutoSpecsSection(p: AutoParamsShape): string {
   return formatSpecsBlock([
+    ["Класс / тип кузова", p.carBodyClass],
     ["Марка", p.brand],
     ["Модель", p.model],
     ["Год выпуска", p.year],
@@ -120,6 +135,8 @@ export function hydrateAutoParamsShape(row: ListingRow): AutoParamsShape {
   }
 
   return {
+    carBodyClassId: g("car_body_class_id"),
+    carBodyClass: g("car_body_class"),
     carCountryId: g("car_country_id"),
     carBrandId: g("car_brand_id"),
     carModelId: g("car_model_id"),
@@ -176,6 +193,8 @@ export function buildAutoParamsRecord(
   normalizedPrice: number | null,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {
+    car_body_class_id: p.carBodyClassId.trim() || null,
+    car_body_class: p.carBodyClass.trim() || null,
     car_country_id: p.carCountryId.trim() || null,
     car_brand_id: p.carBrandId.trim() || null,
     car_model_id: p.carModelId.trim() || null,

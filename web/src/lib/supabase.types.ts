@@ -32,6 +32,36 @@ export type Database = {
         }
         Relationships: []
       }
+      car_catalog_body_classes: {
+        Row: {
+          id: string
+          slug: string
+          name_ru: string
+          name_en: string
+          sort_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          name_ru: string
+          name_en?: string
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          name_ru?: string
+          name_en?: string
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       car_catalog_brands: {
         Row: {
           id: string
@@ -39,6 +69,7 @@ export type Database = {
           slug: string
           name_ru: string
           name_en: string
+          logo_key: string | null
           aliases: Json
           sort_order: number
           is_active: boolean
@@ -50,6 +81,7 @@ export type Database = {
           slug: string
           name_ru: string
           name_en?: string
+          logo_key?: string | null
           aliases?: Json
           sort_order?: number
           is_active?: boolean
@@ -61,6 +93,7 @@ export type Database = {
           slug?: string
           name_ru?: string
           name_en?: string
+          logo_key?: string | null
           aliases?: Json
           sort_order?: number
           is_active?: boolean
@@ -122,6 +155,7 @@ export type Database = {
           slug: string
           name_ru: string
           name_en: string
+          body_class_id: string | null
           aliases: Json
           sort_order: number
           is_active: boolean
@@ -133,6 +167,7 @@ export type Database = {
           slug: string
           name_ru: string
           name_en?: string
+          body_class_id?: string | null
           aliases?: Json
           sort_order?: number
           is_active?: boolean
@@ -144,12 +179,20 @@ export type Database = {
           slug?: string
           name_ru?: string
           name_en?: string
+          body_class_id?: string | null
           aliases?: Json
           sort_order?: number
           is_active?: boolean
           created_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "car_catalog_models_body_class_id_fkey"
+            columns: ["body_class_id"]
+            isOneToOne: false
+            referencedRelation: "car_catalog_body_classes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "car_catalog_models_brand_id_fkey"
             columns: ["brand_id"]
