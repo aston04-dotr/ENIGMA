@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isInvalidLocalRefreshTokenError, peekAuthApiErrorParts } from "@/lib/authRefreshErrors";
+import { stripLegacySupabaseAuthCookiesNextHeaders } from "@/lib/legacySupabaseCookies";
 
 export { isInvalidLocalRefreshTokenError, peekAuthApiErrorParts };
 
@@ -31,4 +32,5 @@ export async function serverSignOutLocalStaleSession(
       ...peekAuthApiErrorParts(e),
     });
   }
+  await stripLegacySupabaseAuthCookiesNextHeaders();
 }

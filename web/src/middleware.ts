@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSupabasePublicConfig } from "@/lib/runtimeConfig";
+import { stripLegacySupabaseAuthCookiesMiddleware } from "@/lib/legacySupabaseCookies";
 import { hardenedServerGetSession } from "@/lib/serverSupabaseAuth";
 
 function normalizeCookieOptions(
@@ -89,23 +90,23 @@ async function updateSession(req: NextRequest) {
 }
 
 export default async function middleware(req: NextRequest) {
-  const res = await updateSession(req);
+  let res = await updateSession(req);
   const location = res.headers.get("location");
   if (location) {
     try {
       const target = new URL(location, req.url);
       if (target.pathname === req.nextUrl.pathname) {
-        return NextResponse.next({
+        res = NextResponse.next({
           request: {
             headers: req.headers,
           },
         });
       }
     } catch {
-      return res;
+      /* keep res */
     }
   }
-  return res;
+  return stripLegacySupabaseAuthCookiesMiddleware(req, res);
 }
 
 export const config = {
