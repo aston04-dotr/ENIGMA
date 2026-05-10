@@ -564,6 +564,44 @@ export default function ProfilePage() {
         ) : null}
       </div>
 
+      <div className="enigma-glass-sheet-soft p-5">
+        <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Настройки</p>
+        <ThemeToggle />
+        <Link
+          href="/support"
+          className={`pressable mt-4 flex min-h-[50px] w-full items-center justify-between rounded-xl border border-line px-4 py-3 text-left transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.04]`}
+        >
+          <span className="text-sm font-medium text-fg">Поддержка</span>
+          <span className="text-sm text-muted">→</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              clearSaveEnigmaContinuationRoute();
+              await signOut();
+              router.replace("/login?signed_out=1");
+            })();
+          }}
+          className={`mt-4 w-full rounded-xl border py-3.5 text-sm font-semibold transition-all hover:bg-black/[0.04] dark:hover:bg-white/[0.05] active:scale-[0.98] ${
+            isDark ? "border-white/[0.1] text-white/90" : "border-slate-300/75 text-fg"
+          }`}
+        >
+          Выйти
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setDeleteErr(null);
+            setConfirmOpen(true);
+          }}
+          className="mt-3 w-full rounded-xl border border-danger/35 bg-transparent py-3.5 text-sm font-semibold text-danger transition-all hover:bg-danger/[0.06] active:scale-[0.98]"
+        >
+          Удалить аккаунт
+        </button>
+        {deleteErr ? <p className="mt-2 text-sm text-danger">{deleteErr}</p> : null}
+      </div>
+
       <section className="enigma-glass-sheet-elevated px-5 py-6 sm:px-6 sm:py-7">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-fg sm:text-[21px]">Мои объявления</h2>
@@ -947,45 +985,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="enigma-glass-sheet-soft p-5">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Настройки</p>
-          <ThemeToggle />
-          <Link
-            href="/support"
-            className={`pressable mt-4 flex min-h-[50px] w-full items-center justify-between rounded-xl border border-line px-4 py-3 text-left transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.04]`}
-          >
-            <span className="text-sm font-medium text-fg">Поддержка</span>
-            <span className="text-sm text-muted">→</span>
-          </Link>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setDeleteErr(null);
-            setConfirmOpen(true);
-          }}
-          className="w-full rounded-xl border border-danger/35 bg-transparent py-3.5 text-sm font-semibold text-danger transition-all hover:bg-danger/[0.06] active:scale-[0.98]"
-        >
-          Удалить аккаунт
-        </button>
-        {deleteErr ? <p className="text-sm text-danger">{deleteErr}</p> : null}
-
-        <button
-          type="button"
-          onClick={() => {
-            void (async () => {
-              clearSaveEnigmaContinuationRoute();
-              await signOut();
-              router.replace("/login?signed_out=1");
-            })();
-          }}
-          className={`w-full rounded-xl border py-3.5 text-sm font-semibold transition-all hover:bg-black/[0.04] dark:hover:bg-white/[0.05] active:scale-[0.98] ${
-            isDark ? "border-white/[0.1] text-white/90" : "border-slate-300/75 text-fg"
-          }`}
-        >
-          Выйти
-        </button>
       </aside>
       </div>
       </main>

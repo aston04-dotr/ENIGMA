@@ -13,20 +13,35 @@ import {
   vehicleCatalogHaystack,
 } from "@/lib/vehicleCatalog";
 import { SearchablePickerSheet, type SearchablePickerOption } from "@/components/vehicle/SearchablePickerSheet";
-import { VehicleBrandGlyph } from "@/components/vehicle/VehicleBrandGlyph";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type SheetKind = "body_class" | "country" | "brand" | "model";
 
 const ROW_BASE =
-  "pressable mt-2 flex min-h-[56px] w-full flex-col justify-center rounded-card border px-4 py-3.5 text-left transition-[transform,border-color,background-color,box-shadow] duration-[200ms] active:scale-[0.993] disabled:opacity-45 disabled:pointer-events-none";
+  "pressable mt-2 flex min-h-[60px] w-full flex-col justify-center rounded-[18px] border px-5 py-4 text-left transition-[transform,border-color,background-color,opacity] duration-200 disabled:pointer-events-none";
 
-function rowClass(active: boolean): string {
+function rowClass(active: boolean, enabled: boolean): string {
+  if (!enabled) {
+    return `${ROW_BASE} cursor-not-allowed border-line/55 bg-elevated/65 opacity-[0.44] saturate-[0.65]`;
+  }
   return `${ROW_BASE} ${
     active
-      ? "border-accent/40 bg-gradient-to-br from-accent/[0.11] via-accent/[0.06] to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-      : "border-line bg-elevated hover:border-line/90 hover:bg-elev-2/45"
+      ? "border-accent/[0.32] bg-gradient-to-br from-accent/[0.08] via-transparent to-transparent"
+      : "border-line/[0.9] bg-elevated hover:border-line hover:bg-elev-2/[0.42]"
   }`;
+}
+
+function pickValue(opts: {
+  loading?: boolean;
+  resolved: string | null;
+  staleLabel?: string;
+  staleId?: string;
+}): { text: string; muted: boolean } {
+  const { loading, resolved, staleLabel, staleId } = opts;
+  if (loading) return { text: "…", muted: true };
+  if (resolved?.trim()) return { text: resolved.trim(), muted: false };
+  if (staleId?.trim() && staleLabel?.trim()) return { text: staleLabel.trim(), muted: false };
+  return { text: "—", muted: true };
 }
 
 function countryLabelRu(c?: VehicleCatalogCountry | null): string {
@@ -200,7 +215,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       label: String(b.name_ru ?? "").trim(),
       description: String(b.name_en ?? "").trim() || undefined,
       searchHaystack: vehicleCatalogHaystack([b.name_ru, b.name_en], b.aliases),
-      leading: <VehicleBrandGlyph logoKey={b.logo_key} slugFallback={b.slug} />,
     }));
   }, [brandsForPick]);
 
@@ -218,106 +232,121 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
   const geoCatalogUnreachable = !countryLoading && countries.length === 0;
   const catalogUnreachable = bodyUnreachable || geoCatalogUnreachable;
 
-  let catalogHint =
+  const step1Blocked = disabled || catalogUnreachable || bodyLoad;
+  const step2Blocked = disabled || catalogUnreachable || !value.carBodyClassId.trim() || countryLoading;
+  const step3Blocked = disabled || catalogUnreachable || !value.carCountryId.trim();
+  const step4Blocked =
+    disabled || catalogUnreachable || !value.carBrandId.trim() || !value.carBodyClassId.trim();
+
+  const catalogHint =
     bodyUnreachable || geoCatalogUnreachable ? (
-      <p className="rounded-[18px] border border-amber-500/35 bg-amber-500/[0.07] px-3 py-2.5 text-[12.5px] leading-relaxed text-fg">
-        Не удалось загрузить справочник авто из базы. Убедитесь, что на Supabase применены миграции каталога
-        (минимум до 068). После синхронизации выбор класса, страны, марки и модели появится автоматически.
+      <p className="rounded-[18px] border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-[13px] leading-snug text-fg">
+        Не удалось загрузить справочник. Проверьте миграции каталога на Supabase.
       </p>
     ) : null;
 
+  const bodyVal = pickValue({
+    loading: bodyLoad && !resolvedBody,
+    resolved: resolvedBody ? String(resolvedBody.name_ru ?? "").trim() : "",
+  });
+
+  const countryVal = pickValue({
+    loading: countryLoading && !resolvedCountry && !step2Blocked,
+    resolved: resolvedCountry ? countryLabelRu(resolvedCountry) : "",
+  });
+
+  const brandVal = pickValue({
+    resolved: resolvedBrand ? String(resolvedBrand.name_ru ?? "").trim() : "",
+    staleLabel: value.brand,
+    staleId: value.carBrandId,
+  });
+
+  const modelVal = pickValue({
+    resolved: resolvedModel ? String(resolvedModel.name_ru ?? "").trim() : "",
+    staleLabel: value.model,
+    staleId: value.carModelId,
+  });
+
   return (
-    <div className="space-y-1">
+    <div className="space-y-2.5">
       {catalogHint}
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || bodyLoad}
+        disabled={step1Blocked}
         onClick={() => setSheetOpen("body_class")}
-        className={rowClass(Boolean(resolvedBody))}
+        className={rowClass(Boolean(resolvedBody), !step1Blocked)}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Тип авто / кузов *
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/95">
+          Тип авто / кузов
         </span>
-        <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {resolvedBody
-            ? String(resolvedBody.name_ru ?? "").trim()
-            : bodyLoad
-              ? "Загрузка классов…"
-              : "Выберите перед маркой"}
+        <span
+          className={`mt-1.5 block text-[16px] font-medium leading-snug tracking-[-0.02em] ${
+            bodyVal.muted ? "text-muted/[0.65]" : "text-fg"
+          }`}
+        >
+          {bodyVal.text}
         </span>
       </button>
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || !value.carBodyClassId.trim() || countryLoading}
+        disabled={step2Blocked}
         onClick={() => setSheetOpen("country")}
-        className={rowClass(Boolean(resolvedCountry))}
+        className={rowClass(Boolean(resolvedCountry), !step2Blocked)}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Страна производителя *
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/95">
+          Страна
         </span>
-        <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {!value.carBodyClassId.trim()
-            ? "Сначала выберите тип кузова"
-            : resolvedCountry
-              ? countryLabelRu(resolvedCountry)
-              : countryLoading
-                ? "Загрузка каталога…"
-                : "Выбрать из списка"}
+        <span
+          className={`mt-1.5 block text-[16px] font-medium leading-snug tracking-[-0.02em] ${
+            step2Blocked || countryVal.muted ? "text-muted/[0.65]" : "text-fg"
+          }`}
+        >
+          {step2Blocked ? "—" : countryVal.text}
         </span>
       </button>
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || !value.carCountryId.trim()}
+        disabled={step3Blocked}
         onClick={() => void prefetchBrandsThenOpenSheet()}
-        className={rowClass(Boolean(value.carBrandId.trim()))}
+        className={rowClass(Boolean(value.carBrandId.trim()), !step3Blocked)}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Марка *</span>
-        <span className="mt-1 flex min-h-[22px] items-center gap-2.5 text-[15px] font-semibold leading-snug text-fg">
-          {!value.carCountryId.trim() ? (
-            "Сначала выберите страну"
-          ) : resolvedBrand ? (
-            <>
-              <VehicleBrandGlyph logoKey={resolvedBrand.logo_key} slugFallback={resolvedBrand.slug} />
-              <span className="min-w-0 break-words">
-                {String(resolvedBrand.name_ru ?? "").trim() || value.brand.trim()}
-              </span>
-            </>
-          ) : value.carBrandId.trim() ? (
-            value.brand.trim() || "Марка"
-          ) : (
-            "Выбрать из списка"
-          )}
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/95">
+          Марка
+        </span>
+        <span
+          className={`mt-1.5 block min-h-[22px] break-words text-[16px] font-medium leading-snug tracking-[-0.02em] ${
+            step3Blocked || brandVal.muted ? "text-muted/[0.65]" : "text-fg"
+          }`}
+        >
+          {step3Blocked ? "—" : brandVal.text}
         </span>
       </button>
 
       <button
         type="button"
-        disabled={disabled || catalogUnreachable || !value.carBrandId.trim() || !value.carBodyClassId.trim()}
+        disabled={step4Blocked}
         onClick={() => void prefetchModelsThenOpenSheet()}
-        className={rowClass(Boolean(value.carModelId.trim()))}
+        className={rowClass(Boolean(value.carModelId.trim()), !step4Blocked)}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Модель *</span>
-        <span className="mt-1 text-[15px] font-semibold leading-snug text-fg">
-          {!value.carBodyClassId.trim()
-            ? "Сначала укажите тип кузова"
-            : !value.carBrandId.trim()
-              ? "Сначала выберите марку"
-              : value.carModelId.trim()
-                ? resolvedModel
-                  ? String(resolvedModel.name_ru ?? "").trim() || value.model.trim()
-                  : value.model.trim() || "Модель"
-                : "Выбрать из списка"}
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/95">
+          Модель
+        </span>
+        <span
+          className={`mt-1.5 block min-h-[22px] break-words text-[16px] font-medium leading-snug tracking-[-0.02em] ${
+            step4Blocked || modelVal.muted ? "text-muted/[0.65]" : "text-fg"
+          }`}
+        >
+          {step4Blocked ? "—" : modelVal.text}
         </span>
       </button>
 
       <SearchablePickerSheet
         open={sheetOpen === "body_class"}
-        title="Тип кузова / класс"
-        subtitle="Сначала задаём контекст, затем марка и модель — меньше «плоских» каталогов"
-        searchPlaceholder="SUV, седан, спорт…"
+        title="Тип авто / кузов"
+        searchPlaceholder="Поиск…"
         options={bodyOptions}
         loading={bodyLoad && bodyClasses.length === 0}
         onClose={() => setSheetOpen(null)}
@@ -338,9 +367,9 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
 
       <SearchablePickerSheet
         open={sheetOpen === "country"}
-        title="Страна производителя"
+        title="Страна"
         subtitle={resolvedBody ? String(resolvedBody.name_ru ?? "").trim() : undefined}
-        searchPlaceholder="Поиск по стране — RU или EN…"
+        searchPlaceholder="Поиск…"
         options={countryOptions}
         loading={countryLoading && countries.length === 0}
         onClose={() => setSheetOpen(null)}
@@ -359,7 +388,7 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
         open={sheetOpen === "brand"}
         title="Марка"
         subtitle={resolvedCountry ? countryLabelRu(resolvedCountry) : undefined}
-        searchPlaceholder="Audi, Toyota, BMW…"
+        searchPlaceholder="Поиск…"
         options={brandOptions}
         loading={brandFetchLoading && brandsForPick.length === 0}
         onClose={() => setSheetOpen(null)}
@@ -378,10 +407,8 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       <SearchablePickerSheet
         open={sheetOpen === "model"}
         title="Модель"
-        subtitle={
-          [value.carBodyClass.trim(), value.brand.trim()].filter(Boolean).join(" · ") || undefined
-        }
-        searchPlaceholder="Например: X5, Camry…"
+        subtitle={value.brand.trim() || undefined}
+        searchPlaceholder="Поиск…"
         options={modelOptions}
         loading={modelFetchLoading && modelsForPick.length === 0}
         onClose={() => setSheetOpen(null)}
