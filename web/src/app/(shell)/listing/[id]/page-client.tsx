@@ -42,7 +42,7 @@ import {
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { reportListingTrustPenalty } from "@/lib/trust";
 import { categoryLabel } from "@/lib/categories";
-import { shareListingUrl } from "@/lib/shareListing";
+import { buildListingShareUrl, shareListingUrl } from "@/lib/shareListing";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
 import { usePromotionImpressionRef } from "@/lib/usePromotionImpression";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
@@ -380,8 +380,7 @@ export default function ListingDetailPage() {
   const listingSheetActions = useMemo((): ListingMenuAction[] => {
     const id = String(rowId ?? "").trim();
     if (!id) return [];
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const shareUrl = `${origin}/listing/${id}`;
+    const shareUrl = buildListingShareUrl(id);
     const shareTitle =
       typeof safeItem.title === "string" && safeItem.title.trim()
         ? safeItem.title.trim()

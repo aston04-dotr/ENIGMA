@@ -24,7 +24,7 @@ import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import { tryLightVibrate } from "@/lib/nativeHaptics";
 import type { ListingRow } from "@/lib/types";
-import { shareListingUrl } from "@/lib/shareListing";
+import { buildListingShareUrl, shareListingUrl } from "@/lib/shareListing";
 import {
   recordMeaningfulAction,
   rememberSaveEnigmaContinuationRoute,
@@ -215,8 +215,7 @@ export function ListingCard({
   const listingSheetActions = useMemo((): ListingMenuAction[] => {
     const id = String(lid ?? "").trim();
     if (!id) return [];
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const shareUrl = `${origin}/listing/${id}`;
+    const shareUrl = buildListingShareUrl(id);
     const shareAction: ListingMenuAction = {
       id: "share",
       label: "Поделиться",
