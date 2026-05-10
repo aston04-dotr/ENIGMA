@@ -763,32 +763,7 @@ export default function ProfilePage() {
 
       <aside className="order-2 w-full min-w-0 space-y-4 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-24 lg:self-start">
         <div
-          className={`rounded-[22px] border p-5 backdrop-blur-xl ${
-            isDark
-              ? "border-[rgba(120,200,255,0.12)] bg-[linear-gradient(158deg,rgba(22,32,54,0.96)_0%,rgba(12,17,28,0.98)_52%,rgba(8,11,18,1)_100%)] shadow-[0_26px_64px_rgba(0,0,0,0.5),0_0_48px_rgba(84,169,255,0.06)]"
-              : "border-[rgba(29,118,232,0.22)] bg-gradient-to-br from-[#f6f9ff] via-[#eaf1fc] to-[#e4edf8] shadow-[0_22px_50px_rgba(15,50,105,0.11),0_0_36px_rgba(29,118,232,0.06)] ring-1 ring-[rgba(29,118,232,0.08)]"
-          }`}
-        >
-          <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-[#8ecfff]/72" : "text-[#1d76e8]/75"}`}>
-            Продвижение
-          </p>
-          <p className={`mt-2 text-[17px] font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
-            Выше в ленте
-          </p>
-          <Link
-            href="#promo-status-panel"
-            className={`mt-5 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border px-3 text-[13px] font-semibold tracking-tight transition-[border-color,background-color,transform,opacity] duration-150 ease-out active:scale-[0.985] ${
-              isDark
-                ? "border-[rgba(120,200,255,0.18)] bg-white/[0.05] text-white/92 hover:bg-white/[0.09]"
-                : "border-[rgba(29,118,232,0.35)] bg-white/95 text-[#0b3d8a] shadow-[inset_0_1px_0_rgba(255,255,255,1)] hover:border-[#1d76e8]/55 hover:bg-[#f8fbff]"
-            }`}
-          >
-            Статус продвижений
-          </Link>
-        </div>
-
-      <div id="promo-status-panel" />
-        <div
+          id="promo-status-panel"
           className={`rounded-[22px] border p-5 backdrop-blur-xl ${
             isDark
               ? "border-[rgba(120,200,255,0.1)] bg-[linear-gradient(168deg,rgba(18,26,44,0.92)_0%,rgba(10,14,24,0.96)_100%)] shadow-[0_22px_56px_rgba(0,0,0,0.46),0_0_44px_rgba(84,169,255,0.045)]"
@@ -860,7 +835,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
-      {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
+        {/* ПАКЕТЫ И РАЗМЕЩЕНИЕ */}
         <div
           id="packages-panel"
           className={`relative overflow-hidden rounded-[22px] border backdrop-blur-xl ${
