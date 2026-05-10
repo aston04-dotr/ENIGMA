@@ -46,6 +46,7 @@ import type { ListingRow } from "@/lib/types";
 import { useTheme } from "@/context/theme-context";
 import { useFormattedIntegerInput } from "@/hooks/useFormattedIntegerInput";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const CACHE_KEY = "cached_listings";
@@ -296,6 +297,9 @@ export function FeedPage({
   feedVariant?: "offers" | "seeking";
 }) {
   const { theme } = useTheme();
+  const pathname = usePathname();
+  /** Нижняя вкладка «Поиск» → /wanted: тот же конвейер ленты, отдельный заголовок. */
+  const isSearchTabSurface = pathname === "/wanted";
   const cacheStorageKey = feedVariant === "seeking" ? CACHE_KEY_WANTED : CACHE_KEY;
   const feedSeed = useMemo(() => {
     const raw = readFeedCache(cacheStorageKey);
@@ -842,6 +846,7 @@ export function FeedPage({
     Boolean(!feedError && filtered.length === 0 && feedAwaitingServerListings);
   const showConfirmedFeedEmpty =
     Boolean(!feedError && filtered.length === 0 && !feedAwaitingServerListings);
+  const searchTokensActiveCount = tokenizeSearchQuery(searchQuery).length;
 
   const rowVirtualizer = useWindowVirtualizer({
     count: filtered.length,
@@ -1271,7 +1276,19 @@ export function FeedPage({
       <header className="border-b border-line bg-main">
         <div className="mx-auto w-full max-w-none px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4">
-            {feedVariant !== "seeking" ? (
+            {isSearchTabSurface ? (
+              <div>
+                <h1
+                  className={
+                    theme === "light"
+                      ? "relative -top-0.5 pb-0.5 text-[28px] font-bold leading-none tracking-tight text-[#111827]"
+                      : "relative -top-0.5 pb-0.5 text-[28px] font-bold leading-none tracking-tight text-white"
+                  }
+                >
+                  Поиск
+                </h1>
+              </div>
+            ) : feedVariant !== "seeking" ? (
               <div>
                 <h1 className="relative -top-0.5 pb-0.5 bg-gradient-to-r from-[#8B5FFF] via-[#7B4FE8] to-[#22d3ee] bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent">
                   Enigma
@@ -1495,11 +1512,23 @@ export function FeedPage({
         {showFriendlyFeedLoading ? <FeedListingsLoadingState /> : null}
         {showConfirmedFeedEmpty ? (
           <EmptyState
-            title={feedVariant === "seeking" ? "Запросов нет" : "Лента пуста"}
+            title={
+              feedVariant === "seeking"
+                ? "Запросов нет"
+                : searchTokensActiveCount > 0
+                  ? "Ничего не найдено"
+                  : items.length > 0
+                    ? "Нет объявлений по фильтрам"
+                    : "Лента пуста"
+            }
             subtitle={
               feedVariant === "seeking"
                 ? "В этом городе пока нет объявлений «сниму», «куплю» и похожих."
-                : undefined
+                : searchTokensActiveCount > 0
+                  ? "Попробуйте другие слова или снимите ограничения — в ленте могут быть подходящие объявления."
+                  : items.length > 0
+                    ? "Ослабьте фильтры или смените категорию."
+                    : undefined
             }
             actionLabel={feedVariant === "seeking" ? "Разместить запрос" : "Создать"}
             actionHref={feedVariant === "seeking" ? "/create?role=seeking" : "/create"}

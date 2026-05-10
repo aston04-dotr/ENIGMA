@@ -8,7 +8,8 @@ export default function WantedFeedPage() {
 
   return (
     <div className="min-h-screen bg-main">
-      <FeedPage session={session} feedVariant="seeking" />
+      {/** Таб «Поиск» в нижнем меню — та же лента предложений, что на главной; фильтрация по вводу, не экран запросов «сниму». */}
+      <FeedPage session={session} />
     </div>
   );
 }
