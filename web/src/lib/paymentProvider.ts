@@ -109,12 +109,14 @@ const yookassaProvider: PaymentProvider = {
     if (!receipt?.customerEmail?.trim() || !receipt?.tariffName?.trim()) {
       throw new Error("YOOKASSA_CREATE_FAILED:receipt_fields_required");
     }
+    const listingId = String(metadata.listing_id ?? metadata.listingId ?? "").trim();
     const created = await createYooKassaPayment({
       amountRub: amount,
       currency,
       metadata,
       customerEmail: receipt.customerEmail.trim(),
       itemDescription: receipt.tariffName.trim(),
+      listingId: listingId || null,
     });
     return {
       paymentId: created.paymentId,

@@ -25,13 +25,26 @@ import {
   toggleFavorite,
 } from "@/lib/listings";
 import { tryLightVibrate } from "@/lib/nativeHaptics";
-import { isBoostActive, isTopActive } from "@/lib/monetization";
+import { isBoostActive, isTopActive, isVipActive } from "@/lib/monetization";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
+import { renewListingPublication } from "@/lib/listingRenewal";
+import {
+  promotionTierForAnalytics,
+  trackPromotionAnalytics,
+  type PromotionAnalyticsTier,
+} from "@/lib/promotionAnalytics";
+import {
+  PROMOTION_LABEL,
+  PROMO_HERO_CLASS,
+  promoHeroBoostTop,
+  promoHeroLeftTop,
+} from "@/lib/promotionUi";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
 import { reportListingTrustPenalty } from "@/lib/trust";
 import { categoryLabel } from "@/lib/categories";
 import { shareListingUrl } from "@/lib/shareListing";
 import { useListingFavoriteRealtime } from "@/lib/useListingFavoriteRealtime";
+import { usePromotionImpressionRef } from "@/lib/usePromotionImpression";
 import { formatRealEstateListingFacts } from "@/lib/realEstateDisplay";
 import {
   chatPath,
@@ -55,6 +68,7 @@ const FEED_STATE_KEY = "feed_state";
 export default function ListingDetailPage() {
   const params = useParams<{ id?: string | string[] }>();
   const searchParams = useSearchParams();
+  const promoSuccessReturn = searchParams.get("promo_success") === "1";
   const rawRouteId = Array.isArray(params?.id) ? params?.id?.[0] : params?.id;
   const id = resolveRuntimeRouteId(rawRouteId, searchParams.get("id"));
   const { session } = useAuth();
@@ -75,6 +89,14 @@ export default function ListingDetailPage() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const listingActionsAnchorRef = useRef<HTMLButtonElement>(null);
   const meaningfulViewTrackedRef = useRef<string>("");
+  const [promotionTimeTick, setPromotionTimeTick] = useState(0);
+
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      setPromotionTimeTick((t) => t + 1);
+    }, 60_000);
+    return () => window.clearInterval(handle);
+  }, []);
 
   useEffect(() => {
     if (!id) {
@@ -133,6 +155,41 @@ export default function ListingDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    if (!id?.trim() || !promoSuccessReturn) return;
+    let cancelled = false;
+    let attempt = 0;
+    let lastLoaded: typeof row = null;
+    async function sweepPromoApplied() {
+      while (!cancelled && attempt < 8) {
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, 420));
+        const res = await fetchListingById(String(id));
+        if (cancelled) return;
+        if (res.row) {
+          lastLoaded = res.row;
+          setRow(res.row);
+          const r = res.row;
+          if (isBoostActive(r) || isTopActive(r) || isVipActive(r)) {
+            break;
+          }
+        }
+      }
+      if (!cancelled) {
+        trackPromotionAnalytics("promotion_return_landing", {
+          listingId: String(id),
+          tier: lastLoaded ? promotionTierForAnalytics(lastLoaded) : "none",
+          pollingAttempts: attempt,
+        });
+        router.replace(listingPath(String(id)), { scroll: false });
+      }
+    }
+    void sweepPromoApplied();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, promoSuccessReturn, router]);
+
+  useEffect(() => {
     setCurrentImageIndex(0);
   }, [row?.id]);
 
@@ -163,7 +220,19 @@ export default function ListingDetailPage() {
   const partnerListing = safeItem?.is_partner_ad === true;
   const topActive = row ? isTopActive(row) : false;
   const boosted = row ? isBoostActive(row) : false;
+  const vipActive = row ? isVipActive(row) : false;
   const listingExpired = String(safeItem.status ?? "") === "expired";
+
+  const listingPromoTierForImpression = useMemo((): PromotionAnalyticsTier => {
+    return row ? promotionTierForAnalytics(row) : "none";
+  }, [row, promotionTimeTick]);
+
+  const listingHeroPromoRef = usePromotionImpressionRef({
+    listingId: id,
+    tier: listingPromoTierForImpression,
+    surface: "listing_detail",
+    enabled: Boolean(id?.trim() && row != null && listingPromoTierForImpression !== "none"),
+  });
 
   const handleRenewPublication = useCallback(async () => {
     if (!rowId) return;
@@ -384,6 +453,11 @@ export default function ListingDetailPage() {
   if (loading) {
     return (
       <main className="p-5">
+        {promoSuccessReturn && id ? (
+          <p className="mb-4 rounded-xl border border-accent/30 bg-accent/12 px-3 py-2.5 text-center text-sm leading-snug text-fg">
+            Активируем продвижение… Обновляем статус после оплаты.
+          </p>
+        ) : null}
         <div className="aspect-[4/3] animate-skeleton rounded-card bg-elev-2" />
         <div className="mt-6 space-y-3">
           <div className="h-8 w-40 animate-skeleton rounded bg-elev-2" />
@@ -507,11 +581,14 @@ export default function ListingDetailPage() {
 
   try {
     return (
-      <main
-        className="safe-pt pb-8"
-      >
+      <main className="safe-pt pb-8" data-promotion-tick={promotionTimeTick}>
         {toast ? (
           <SimpleToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        ) : null}
+        {promoSuccessReturn ? (
+          <div className="mx-5 mt-3 rounded-xl border border-accent/30 bg-accent/12 px-3 py-2.5 text-center text-sm leading-snug text-fg">
+            Активируем продвижение… Это займёт обычно до нескольких секунд.
+          </div>
         ) : null}
         <ListingActionsMenu
           open={actionsOpen}
@@ -520,7 +597,7 @@ export default function ListingDetailPage() {
           actions={listingSheetActions}
           onClose={() => setActionsOpen(false)}
         />
-        <div className="relative aspect-[4/3] w-full bg-elev-2">
+        <div ref={listingHeroPromoRef} className="relative aspect-[4/3] w-full bg-elev-2">
           {uri ? (
             <picture className="absolute inset-0 block h-full w-full">
               {heroAvif ? <source srcSet={heroAvif} type="image/avif" /> : null}
@@ -543,16 +620,31 @@ export default function ListingDetailPage() {
               {safeIndex + 1} из {imgs.length}
             </div>
           ) : null}
+          {vipActive ? (
+            <div
+              className={`left-3 ${PROMO_HERO_CLASS.vip} ${promoHeroLeftTop("vip", {
+                hasGalleryCounter: imgs.length > 0,
+                vipActive: true,
+              })}`}
+            >
+              {PROMOTION_LABEL.vip}
+            </div>
+          ) : null}
           {topActive ? (
             <div
-              className={`pointer-events-none absolute left-3 z-[25] rounded-md border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(38,46,62,0.08)] ring-1 ring-black/[0.06] backdrop-blur-sm ${imgs.length > 0 ? "top-11" : "top-3"}`}
+              className={`left-3 ${PROMO_HERO_CLASS.top} ${promoHeroLeftTop("top", {
+                hasGalleryCounter: imgs.length > 0,
+                vipActive,
+              })}`}
             >
-              TOP
+              {PROMOTION_LABEL.top}
             </div>
           ) : null}
           {boosted ? (
-            <div className="pointer-events-none absolute right-3 top-14 z-[25] rounded-md border border-[rgba(110,188,255,0.38)] bg-[linear-gradient(152deg,rgba(18,38,74,0.96)_0%,rgba(8,14,32,1)_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#b8dcff] shadow-[0_0_16px_rgba(84,169,255,0.22)] ring-1 ring-[rgba(110,188,255,0.2)] backdrop-blur-sm">
-              BOOST
+            <div
+              className={`${PROMO_HERO_CLASS.boost} ${promoHeroBoostTop(imgs.length > 0, vipActive, topActive)}`}
+            >
+              {PROMOTION_LABEL.boost}
             </div>
           ) : null}
           <div

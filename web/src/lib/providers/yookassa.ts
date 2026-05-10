@@ -8,6 +8,8 @@ export type YooKassaCreatePaymentInput = {
   customerEmail: string;
   /** Line item title on the receipt (e.g. tariff / product name). */
   itemDescription: string;
+  /** When paid for a listing promotion, redirect back to the listing (else `/payment`). */
+  listingId?: string | null;
 };
 
 export type YooKassaPaymentResult = {
@@ -230,6 +232,12 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
     itemDescription,
   });
 
+  const origin = appUrl.replace(/\/+$/, "");
+  const promoListingId = String(input.listingId ?? "").trim();
+  const returnUrl = promoListingId
+    ? `${origin}/listing/${encodeURIComponent(promoListingId)}?promo_success=1`
+    : `${origin}/payment`;
+
   const body = {
     amount: {
       value: amountRub.toFixed(2),
@@ -238,7 +246,7 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
     capture: true,
     confirmation: {
       type: "redirect",
-      return_url: `${appUrl.replace(/\/+$/, "")}/payment`,
+      return_url: returnUrl,
     },
     metadata,
     receipt,

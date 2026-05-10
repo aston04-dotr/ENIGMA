@@ -22,6 +22,9 @@ export type FeedListingsCursor = { created_at: string; id: string };
  * Явный SELECT ленты и списков объявлений (без `*`) — меньше egress по сети и в PostgREST.
  * При добавлении полей в {@link parseFeedListingRow} / карточку — дополнять список и миграцию БД.
  * `contact_phone` в схеме монорепо может отсутствовать — не включаем (парсер переносит null).
+ *
+ * **Phase 3 (global ranking)** — при появлении `tier_rank`/materialized sort key в БД,
+ * добавить сюда столбец для отладки клиента и/или использовать только в RPC-слое.
  */
 export const FEED_LISTING_FIELDS =
   "id,user_id,title,description,price,category,city,city_id,district,district_id," +
@@ -143,10 +146,15 @@ function parseFeedListingRow(data: Record<string, unknown>): ListingRow {
     district_id: data.district_id != null ? String(data.district_id).trim() : null,
     view_count: 0,
     created_at: String(data.created_at ?? ""),
+    updated_at: data.updated_at != null ? String(data.updated_at) : undefined,
     is_partner_ad: data.is_partner_ad === true,
     is_boosted: data.is_boosted === true,
     boosted_at: data.boosted_at != null ? String(data.boosted_at) : null,
     boosted_until: data.boosted_until != null ? String(data.boosted_until) : null,
+    is_vip: data.is_vip === true,
+    vip_until: data.vip_until != null ? String(data.vip_until) : null,
+    is_top: data.is_top === true,
+    top_until: data.top_until != null ? String(data.top_until) : null,
     images: normalizeListingImages(data.images),
   };
   (row as ListingRow & { contact_phone?: string | null }).contact_phone =

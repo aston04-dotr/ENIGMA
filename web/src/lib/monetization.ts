@@ -1,6 +1,16 @@
 import { supabase } from "./supabase";
 import type { ListingRow } from "./types";
 
+/**
+ * ## Feed promotion ranking — Phase 3 (server-side) roadmap
+ *
+ * **Today (Phase 1)** we sort each loaded batch in the client (`sortListingsByPromotionTierForFeed`)
+ * before `interleavePartnerFeedMain`. Pagination keyset is still `created_at` + `id`.
+ *
+ * **At scale (Phase 3)** introduce SQL/RPC ranking and one keyset aligned with it, e.g.
+ * `ORDER BY tier_rank DESC, promo_signal_ts DESC, updated_at DESC, id DESC` + matching composite index.
+ */
+
 export function isTopActive(l: Pick<ListingRow, "is_top" | "top_until">): boolean {
   if (!l.is_top || !l.top_until) return false;
   return new Date(l.top_until).getTime() > Date.now();
@@ -21,10 +31,6 @@ export function isBoostActive(l: Pick<ListingRow, "boosted_until" | "boosted_at"
 
 /** Сколько обычных карточек подряд до одной партнёрской в основной ленте (не подряд две рекламы). */
 export const PARTNER_FEED_ORGANIC_BEFORE_AD = 5;
-
-function isPartnerAd(l: Pick<ListingRow, "is_partner_ad">): boolean {
-  return l.is_partner_ad === true;
-}
 
 function seededRandom(seed: string): () => number {
   let h = 2166136261 >>> 0;
@@ -49,6 +55,52 @@ function seededRandom(seed: string): () => number {
  * - входные массивы не мутируются; на выходе нет дублей по `id`
  * - минимум 1 organic между рекламами и без 2 реклам подряд (если физически возможно при данном объёме organic)
  */
+function isPartnerListingRow(l: Pick<ListingRow, "is_partner_ad">): boolean {
+  return l.is_partner_ad === true;
+}
+
+/**
+ * Promotion tier for client-side feed ordering (Phase 1).
+ * Numeric rank: larger = earlier in feed among non-partner rows.
+ * Order: VIP > TOP > BOOST > organic.
+ *
+ * Prefer moving to SQL/RPC + keyset pagination later: same ranks as `tier_rank`/`ORDER BY` on the server.
+ */
+export function promotionTierRank(l: ListingRow): number {
+  if (isVipActive(l)) return 4;
+  if (isTopActive(l)) return 3;
+  if (isBoostActive(l)) return 2;
+  return 1;
+}
+
+/** Client-side ordering before `interleavePartnerFeedMain` (organic + promos); partners stay grouped for interleave logic. */
+export function sortListingsByPromotionTierForFeed(rows: ListingRow[]): ListingRow[] {
+  function tierExpiryTs(row: ListingRow): number {
+    if (isVipActive(row) && row.vip_until) return new Date(row.vip_until).getTime();
+    if (isTopActive(row) && row.top_until) return new Date(row.top_until).getTime();
+    if (isBoostActive(row) && row.boosted_until) return new Date(row.boosted_until).getTime();
+    return 0;
+  }
+  return [...rows].sort((a, b) => {
+    const pa = isPartnerListingRow(a);
+    const pb = isPartnerListingRow(b);
+    if (pa !== pb) return pa ? 1 : -1;
+    const ra = promotionTierRank(a);
+    const rb = promotionTierRank(b);
+    if (rb !== ra) return rb - ra;
+    const ea = tierExpiryTs(a);
+    const eb = tierExpiryTs(b);
+    if (eb !== ea) return eb - ea;
+    const ua = new Date(a.updated_at ?? a.created_at).getTime();
+    const ub = new Date(b.updated_at ?? b.created_at).getTime();
+    if (ub !== ua) return ub - ua;
+    const ca = new Date(a.created_at).getTime();
+    const cb = new Date(b.created_at).getTime();
+    if (cb !== ca) return cb - ca;
+    return b.id.localeCompare(a.id);
+  });
+}
+
 export function interleavePartnerFeedMain(
   sortedMain: ListingRow[],
   options?: { userId?: string }
@@ -76,8 +128,8 @@ export function interleavePartnerFeedMain(
   };
 
   const input = (sortedMain ?? []) as ListingRowExt[];
-  const organic = dedupeById(input.filter((l) => !isPartnerAd(l)));
-  const partnerRaw = dedupeById(input.filter((l) => isPartnerAd(l)));
+  const organic = dedupeById(input.filter((l) => !isPartnerListingRow(l)));
+  const partnerRaw = dedupeById(input.filter((l) => isPartnerListingRow(l)));
 
   let MIN_ORGANIC_BEFORE_AD =
     organic.length < 6 ? 1 :
@@ -174,9 +226,9 @@ export function interleavePartnerFeedMain(
   // 12) ДОБИВКА: остаток партнёрок вставляем после organic, где возможно (без 2 подряд).
   if (pi < partners.length) {
     for (let i = 0; i < result.length && pi < partners.length; i++) {
-      if (isPartnerAd(result[i]!)) continue;
+      if (isPartnerListingRow(result[i]!)) continue;
       const after = i + 1 < result.length ? result[i + 1]! : null;
-      if (after && isPartnerAd(after)) continue;
+      if (after && isPartnerListingRow(after)) continue;
       result.splice(i + 1, 0, partners[pi++]!);
       i++;
     }
@@ -189,50 +241,18 @@ export function interleavePartnerFeedMain(
   return final;
 }
 
-/** Сортировка ленты: приоритетный слот (TOP) без партнёрок; основная лента — сначала обычные (VIP → BOOST → дата), затем партнёрские. */
+/**
+ * Прежний API «recommended + main» сохранён: `recommended` пустой, весь порядок в `main`
+ * (единая лента: VIP → TOP → BOOST → organic → интерлив партнёрок на стороне FeedScreen).
+ */
 export function buildFeedSections(listings: ListingRow[]): {
   recommended: ListingRow[];
   main: ListingRow[];
 } {
-  const recommended = listings
-    .filter((l) => isTopActive(l) && !isPartnerAd(l))
-    .sort(
-      (a, b) =>
-        new Date(b.updated_at ?? b.created_at).getTime() -
-        new Date(a.updated_at ?? a.created_at).getTime()
-    );
-  const topIds = new Set(recommended.map((l) => l.id));
-  const rest = listings.filter((l) => !topIds.has(l.id));
-
-  function tier(l: ListingRow): number {
-    if (isVipActive(l)) return 2;
-    if (isBoostActive(l)) return 1;
-    return 0;
-  }
-
-  const main = [...rest].sort((a, b) => {
-    const pa = isPartnerAd(a);
-    const pb = isPartnerAd(b);
-    if (pa !== pb) return pa ? 1 : -1;
-    const ta = tier(a);
-    const tb = tier(b);
-    if (tb !== ta) return tb - ta;
-    if (ta === 2) {
-      const va = a.vip_until ? new Date(a.vip_until).getTime() : 0;
-      const vb = b.vip_until ? new Date(b.vip_until).getTime() : 0;
-      if (vb !== va) return vb - va;
-    }
-    if (ta === 1) {
-      const ba = a.boosted_until ? new Date(a.boosted_until).getTime() : 0;
-      const bb = b.boosted_until ? new Date(b.boosted_until).getTime() : 0;
-      if (bb !== ba) return bb - ba;
-    }
-    const au = new Date(a.updated_at ?? a.created_at).getTime();
-    const bu = new Date(b.updated_at ?? b.created_at).getTime();
-    return bu - au;
-  });
-
-  return { recommended, main };
+  return {
+    recommended: [],
+    main: sortListingsByPromotionTierForFeed(listings),
+  };
 }
 
 function addDays(base: Date, days: number): Date {

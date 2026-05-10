@@ -11,7 +11,15 @@ import { ListingMetricsRow } from "@/components/ListingMetricsRow";
 import { trackEvent } from "@/lib/analytics";
 import { defaultBoostCtaPriceRub, defaultVipCtaPriceRub, defaultTopCtaPriceRub, webBoostPaymentQuery, webVipPaymentQuery, webTopPaymentQuery } from "@/lib/boostPay";
 import { trackBoostEvent } from "@/lib/boostAnalytics";
-import { isBoostActive, isTopActive } from "@/lib/monetization";
+import { isBoostActive, isTopActive, isVipActive } from "@/lib/monetization";
+import {
+  PROMOTION_LABEL,
+  PROMO_CARD_CLASS,
+  promoCardBoostTop,
+  promoCardLeftTop,
+} from "@/lib/promotionUi";
+import { promotionTierForAnalytics } from "@/lib/promotionAnalytics";
+import { usePromotionImpressionRef } from "@/lib/usePromotionImpression";
 import { ownerDeleteListing } from "@/lib/listingOwnerActions";
 import { normalizeListingImages, toggleFavorite } from "@/lib/listings";
 import { tryLightVibrate } from "@/lib/nativeHaptics";
@@ -165,6 +173,7 @@ export function ListingCard({
   const itemLocation = itemDistrict ? `${itemCity}, ${itemDistrict}` : itemCity;
   const boosted = safeItem ? isBoostActive(safeItem) : false;
   const topActive = safeItem ? isTopActive(safeItem) : false;
+  const vipActive = safeItem ? isVipActive(safeItem) : false;
   const lid = String(safeItem?.id ?? "").trim();
   const viewerId = session?.user?.id ?? null;
   const isOwn = Boolean(viewerId && safeItem?.user_id && safeItem.user_id === viewerId);
@@ -346,10 +355,20 @@ export function ListingCard({
     [theme, index],
   );
 
+  const promoTierForImpression =
+    safeItem != null ? promotionTierForAnalytics(safeItem) : ("none" as const);
+  const promoImpressionRef = usePromotionImpressionRef({
+    listingId: lid,
+    tier: promoTierForImpression,
+    surface: "feed",
+    enabled: promoTierForImpression !== "none",
+  });
+
   if (!safeItem || !lid) return null;
 
   return (
     <div
+      ref={promoImpressionRef}
       className={`feed-card-enter group relative overflow-hidden rounded-[22px] border bg-transparent transition-[transform,box-shadow] duration-[140ms] ease-out max-md:active:scale-[0.985] md:duration-[145ms] md:hover:-translate-y-[1px] ${omitOuterMargin ? "" : "mb-5 md:mb-6"}`}
       style={shellStyle}
     >
@@ -418,16 +437,29 @@ export function ListingCard({
             Партнёр
           </span>
         ) : null}
+        {vipActive ? (
+          <span
+            className={`left-3 ${promoCardLeftTop("vip", { partner, vipActive, topActive })} ${PROMO_CARD_CLASS.vip}`}
+          >
+            {PROMOTION_LABEL.vip}
+          </span>
+        ) : null}
         {topActive ? (
           <span
-            className={`pointer-events-none absolute left-3 z-[12] rounded-md border border-[rgba(108,118,132,0.34)] bg-[linear-gradient(168deg,#cdd3df_0%,#e2e6ef_42%,#f0f2f8_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(38,46,62,0.08)] ring-1 ring-black/[0.06] backdrop-blur-sm ${partner ? "top-14" : "top-3"}`}
+            className={`left-3 ${promoCardLeftTop("top", { partner, vipActive, topActive })} ${PROMO_CARD_CLASS.top}`}
           >
-            TOP
+            {PROMOTION_LABEL.top}
           </span>
         ) : null}
         {boosted ? (
-          <span className="pointer-events-none absolute right-3 top-14 z-[12] rounded-md border border-[rgba(110,188,255,0.38)] bg-[linear-gradient(152deg,rgba(18,38,74,0.96)_0%,rgba(8,14,32,1)_100%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#b8dcff] shadow-[0_0_16px_rgba(84,169,255,0.22)] ring-1 ring-[rgba(110,188,255,0.2)] backdrop-blur-sm">
-            BOOST
+          <span
+            className={`${promoCardBoostTop({
+              partner,
+              vipActive,
+              topActive,
+            })} ${PROMO_CARD_CLASS.boost}`}
+          >
+            {PROMOTION_LABEL.boost}
           </span>
         ) : null}
         <div

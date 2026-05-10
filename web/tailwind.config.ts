@@ -52,6 +52,24 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translate3d(0,18px,0)" },
           "100%": { opacity: "1", transform: "translate3d(0,0,0)" },
         },
+        promoVipGlow: {
+          "0%, 100%": {
+            boxShadow:
+              "0 0 14px rgba(255,200,112,0.52), inset 0 1px 0 rgba(255,235,205,0.12)",
+          },
+          "50%": {
+            boxShadow:
+              "0 0 28px rgba(255,218,155,0.78), inset 0 1px 0 rgba(255,245,215,0.18)",
+          },
+        },
+        promoBoostMotion: {
+          "0%, 100%": {
+            boxShadow: "0 0 12px rgba(56,189,248,0.44)",
+          },
+          "50%": {
+            boxShadow: "0 0 25px rgba(125,211,252,0.62)",
+          },
+        },
       },
       animation: {
         receiptPop: "receiptPop 0.2s ease-out both",
@@ -61,6 +79,8 @@ const config: Config = {
         chatSheetUp: "chatSheetUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both",
         listingSheetUp: "listingSheetUp 0.36s cubic-bezier(0.22,1,0.36,1) both",
         listingBackdropIn: "listingBackdropIn 0.28s ease-out both",
+        promoVipGlow: "promoVipGlow 2.85s ease-in-out infinite",
+        promoBoostMotion: "promoBoostMotion 1.55s ease-in-out infinite",
       },
     },
   },

@@ -30,7 +30,11 @@ import {
   getHiddenListingIdsSet,
 } from "@/lib/feedHiddenListings";
 import { subscribeListingPromotionApplied } from "@/lib/listingPromotionEvents";
-import { interleavePartnerFeedMain } from "@/lib/monetization";
+import {
+  interleavePartnerFeedMain,
+  promotionTierRank,
+  sortListingsByPromotionTierForFeed,
+} from "@/lib/monetization";
 import { parsePlotAreaToSotki, plotFilterBoundsToSotki } from "@/lib/plotAreaSotki";
 import type { ListingRow } from "@/lib/types";
 import { useTheme } from "@/context/theme-context";
@@ -254,17 +258,8 @@ function persistFeed(
   }
 }
 
-function sortByCreatedDesc(rows: ListingRow[]) {
-  return [...rows].sort((a, b) => {
-    const tb = new Date(b.created_at).getTime();
-    const ta = new Date(a.created_at).getTime();
-    if (tb !== ta) return tb - ta;
-    return b.id.localeCompare(a.id);
-  });
-}
-
 function mixFeed(rows: ListingRow[], userId?: string) {
-  const sorted = sortByCreatedDesc(rows);
+  const sorted = sortListingsByPromotionTierForFeed(rows);
   try {
     const interleaved = interleavePartnerFeedMain(sorted, { userId });
     return Array.isArray(interleaved) ? interleaved : sorted;
@@ -355,7 +350,14 @@ export function FeedPage({
   const [cities, setCities] = useState<CityRow[]>([]);
   const [districts, setDistricts] = useState<CityDistrictRow[]>([]);
   const [feedNonce, setFeedNonce] = useState(0);
+  /** Реактивировать сортировку/бейджи по времени истечения `*_until` без перезапроса ленты. */
+  const [promotionTimeTick, setPromotionTimeTick] = useState(0);
   const previousRegionIdRef = useRef<string>("");
+
+  useEffect(() => {
+    const id = window.setInterval(() => setPromotionTimeTick((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -735,6 +737,9 @@ export function FeedPage({
         const pa = getListingPriceForSort(a);
         const pb = getListingPriceForSort(b);
         if (pa !== pb) return pa - pb;
+        const trb = promotionTierRank(b);
+        const tra = promotionTierRank(a);
+        if (trb !== tra) return trb - tra;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
       return sorted;
@@ -744,19 +749,17 @@ export function FeedPage({
         const pa = getListingPriceForSort(a);
         const pb = getListingPriceForSort(b);
         if (pa !== pb) return pb - pa;
+        const trb = promotionTierRank(b);
+        const tra = promotionTierRank(a);
+        if (trb !== tra) return trb - tra;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
       return sorted;
     }
-    sorted.sort((a, b) => {
-      const tb = new Date(b.created_at).getTime();
-      const ta = new Date(a.created_at).getTime();
-      if (tb !== ta) return tb - ta;
-      return b.id.localeCompare(a.id);
-    });
-    return sorted;
+    return sortListingsByPromotionTierForFeed(afterFilters);
   }, [
     feedHiddenTick,
+    promotionTimeTick,
     items,
     city,
     district,
