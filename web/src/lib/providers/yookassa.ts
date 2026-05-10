@@ -98,8 +98,9 @@ async function yookassaRequest<T>(path: string, init: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`YOOKASSA_HTTP_${res.status}:${body || "request_failed"}`);
+    const responseText = await res.text().catch(() => "");
+    console.log("[YOOKASSA_RESPONSE]", responseText);
+    throw new Error(`YOOKASSA_HTTP_${res.status}:${responseText || "request_failed"}`);
   }
 
   return (await res.json()) as T;
@@ -170,28 +171,24 @@ export async function fetchPayment(paymentId: string): Promise<YooKassaPaymentRe
 
 function buildYooKassaReceipt(input: {
   amountRub: number;
-  currency: string;
   customerEmail: string;
   itemDescription: string;
 }) {
-  const { amountRub, currency, customerEmail, itemDescription } = input;
-  const value = amountRub.toFixed(2);
-  const description = String(itemDescription || "Оплата ENIGMA").trim().slice(0, 128);
+  const { amountRub, customerEmail, itemDescription } = input;
   return {
     customer: {
-      email: customerEmail.trim(),
+      email: customerEmail.trim().toLowerCase(),
     },
+    tax_system_code: 1,
     items: [
       {
-        description,
+        description: itemDescription.slice(0, 100),
         quantity: "1.00",
         amount: {
-          value,
-          currency,
+          value: amountRub.toFixed(2),
+          currency: "RUB",
         },
         vat_code: 1,
-        payment_mode: "full_payment",
-        payment_subject: "service",
       },
     ],
   };
@@ -214,10 +211,24 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
 
   const receipt = buildYooKassaReceipt({
     amountRub,
-    currency,
     customerEmail,
     itemDescription,
   });
+
+  const body = {
+    amount: {
+      value: amountRub.toFixed(2),
+      currency,
+    },
+    capture: true,
+    confirmation: {
+      type: "redirect",
+      return_url: `${appUrl.replace(/\/+$/, "")}/payment`,
+    },
+    metadata,
+    receipt,
+  };
+  console.log("[YOOKASSA_REQUEST_BODY]", JSON.stringify(body, null, 2));
 
   let payment: YooKassaApiPayment;
   try {
@@ -226,19 +237,7 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
       headers: {
         "Idempotence-Key": crypto.randomUUID(),
       },
-      body: JSON.stringify({
-        amount: {
-          value: amountRub.toFixed(2),
-          currency,
-        },
-        capture: true,
-        confirmation: {
-          type: "redirect",
-          return_url: `${appUrl.replace(/\/+$/, "")}/payment`,
-        },
-        metadata,
-        receipt,
-      }),
+      body: JSON.stringify(body),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
