@@ -7,6 +7,9 @@ import { usePathname } from "next/navigation";
 function isPublicGuestRoute(pathname: string): boolean {
   if (pathname === "/") return true;
   if (pathname === "/wanted") return true;
+  if (pathname.startsWith("/listing/edit/") || pathname === "/listing/edit") {
+    return false;
+  }
   if (pathname.startsWith("/listing/")) return true;
   return false;
 }
@@ -24,21 +27,21 @@ export function ShellGate({ children }: { children: React.ReactNode }) {
   const { session, loading, authResolved, profileLoading } = useAuth();
   const pathname = usePathname();
 
+  /** Лента / объявления / wanted: без блокирующего «ENIGMA» между первым кадром и контентом */
+  if (isPublicGuestRoute(pathname)) {
+    return <>{children}</>;
+  }
+
   const isResolving =
     loading || !authResolved || (Boolean(session?.user) && profileLoading);
 
   if (isResolving) {
     return (
-      <div className="min-h-[100svh] bg-main">
-        <LandingScreen minimal />
-      </div>
+      <div className="min-h-[100svh] bg-main supports-[height:100dvh]:min-h-[100dvh]" aria-busy />
     );
   }
 
   if (!session?.user) {
-    if (isPublicGuestRoute(pathname)) {
-      return <>{children}</>;
-    }
     if (isProtectedRoute(pathname)) {
       return (
         <div className="min-h-[100svh] bg-main">
