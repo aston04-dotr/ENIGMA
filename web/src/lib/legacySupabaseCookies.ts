@@ -2,42 +2,51 @@ import type { NextRequest } from "next/server";
 import type { NextResponse } from "next/server";
 
 /**
- * Устаревшие chunked auth-token (старый project ref / миграция Supabase).
- * Удаляем явно, т.к. signOut + setAll может не снять чужие имена.
+ * Safari: `cookies.delete()` может не снять cookie; принудительно истекаем через Set-Cookie с нулевым сроком.
+ * Domain выровнен под production; на localhost без этого domain очистка идёт по path-only (см. secure ниже).
  */
+export const COOKIE_OPTIONS = {
+  path: "/",
+  domain: ".enigma-app.online",
+  expires: new Date(0),
+  maxAge: 0,
+  secure: true,
+  sameSite: "lax" as const,
+};
+
 export const LEGACY_SUPABASE_AUTH_COOKIE_NAMES = [
+  "enigma.supabase.auth.v1",
   "sb-jggpvjfvdvqmwaaqetqu-auth-token",
   "sb-jggpvjfvdvqmwaaqetqu-auth-token.0",
-  "sb-jggpvjfvdvqmwaaqetqu-auth-token.1",
 ] as const;
 
+function expireCookie(res: NextResponse, name: string): void {
+  res.cookies.set(name, "", COOKIE_OPTIONS);
+}
+
 /**
- * Middleware: ответ + мутируемый request cookie jar (если есть).
+ * Middleware: в ответе — принудительное expire для Safari; в запросе проверяем наличие для лога.
  */
 export function stripLegacySupabaseAuthCookiesMiddleware(
   req: NextRequest,
   res: NextResponse,
 ): NextResponse {
-  let hadAny = false;
+  let hadAnyInRequest = false;
   for (const name of LEGACY_SUPABASE_AUTH_COOKIE_NAMES) {
     if (req.cookies.get(name)?.value) {
-      hadAny = true;
+      hadAnyInRequest = true;
     }
-    res.cookies.delete(name);
-    try {
-      req.cookies.delete(name);
-    } catch {
-      /* immutable request cookies in some contexts */
-    }
+    expireCookie(res, name);
   }
-  if (hadAny) {
+  if (hadAnyInRequest) {
     console.log("[AUTH_CLEANUP] removed legacy supabase cookies");
   }
   return res;
 }
 
 /**
- * Route Handler / Server: next/headers cookies().
+ * Route Handler / Server: после serverSignOut и т.п.
+ * Лог только если хотя бы одна cookie реально была в store до перезаписи.
  */
 export async function stripLegacySupabaseAuthCookiesNextHeaders(): Promise<void> {
   try {
@@ -48,12 +57,12 @@ export async function stripLegacySupabaseAuthCookiesNextHeaders(): Promise<void>
       if (store.get(name)?.value) {
         hadAny = true;
       }
-      store.delete(name);
+      store.set(name, "", COOKIE_OPTIONS);
     }
     if (hadAny) {
       console.log("[AUTH_CLEANUP] removed legacy supabase cookies");
     }
   } catch {
-    /* Edge middleware / нет доступа к async cookies() */
+    /* Edge / нет async cookies() */
   }
 }
