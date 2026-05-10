@@ -1,6 +1,5 @@
 "use client";
 
-import { LandingScreen } from "@/components/LandingScreen";
 import { ListingCard } from "@/components/ListingCard";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/auth-context";
@@ -9,7 +8,10 @@ import { getMyListings, fetchFavoriteListingsForUser } from "@/lib/listings";
 import { FAVORITES_CHANGED_EVENT } from "@/lib/favoriteEvents";
 import { renewListingPublication } from "@/lib/listingRenewal";
 import { getListingRenewalPriceRub } from "@/lib/runtimeConfig";
-import { clearSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
+import {
+  clearSaveEnigmaContinuationRoute,
+  rememberSaveEnigmaContinuationRoute,
+} from "@/lib/saveEnigmaFlow";
 import {
   FREE_ACTIVE_LISTINGS_CAP,
   LISTING_EXTRA_SLOT_PACKS,
@@ -452,8 +454,33 @@ export default function ProfilePage() {
     setNameMessage("Имя сохранено");
   }
 
-  if (!session) {
-    return <LandingScreen />;
+  if (loading || !authResolved) {
+    return (
+      <main className="safe-pt min-h-[50vh] bg-main px-4 pb-10 pt-10 sm:px-6" aria-busy />
+    );
+  }
+
+  if (!session?.user) {
+    return (
+      <main className="safe-pt min-h-screen bg-main px-4 pb-10 pt-10 sm:px-6 lg:px-8">
+        <h1 className="text-[26px] font-semibold tracking-[-0.02em] text-fg md:text-[28px]">Профиль</h1>
+        <div className="mt-5 max-w-lg rounded-card border border-line bg-elevated p-4">
+          <p className="text-sm leading-relaxed text-muted">
+            Войдите по почте — объявления, избранное и настройки будут на этом аккаунте.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              rememberSaveEnigmaContinuationRoute("/profile");
+              router.push("/login?returnTo=%2Fprofile&source=guest_profile_gate");
+            }}
+            className="pressable mt-4 min-h-[48px] w-full rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
+          >
+            Продолжить с почтой
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (

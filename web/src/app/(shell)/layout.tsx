@@ -2,8 +2,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { ShellGate } from "@/components/ShellGate";
 
 /**
- * Chat/realtime не поднимают сессию: гейт в ShellGate + AuthProvider + мягкое восстановление
- * после wake (singleton), hard redirect на /login только после подтверждения на desktop.
+ * Ни Landing/ENIGMA, ни блокирующий auth-shell: контент страницы решат гейт сам.
  */
 
 export default function ShellLayout({

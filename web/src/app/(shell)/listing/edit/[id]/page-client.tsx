@@ -1,6 +1,5 @@
 "use client";
 
-import { AuthLoadingScreen } from "@/components/AuthLoadingScreen";
 import { useAuth } from "@/context/auth-context";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import {
@@ -52,6 +51,7 @@ import {
   normalizeAllowedListingCity,
 } from "@/lib/russianCities";
 import { listingPath, resolveRuntimeRouteId } from "@/lib/mobileRuntime";
+import { rememberSaveEnigmaContinuationRoute } from "@/lib/saveEnigmaFlow";
 import { mapListingPhotoUploadUiError } from "@/lib/listingPhotoClient";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -877,9 +877,37 @@ export default function EditListingPage() {
   const { safePush, safeBack } = useUnsavedChangesGuard(isDirty, { enabled: true });
 
   if (authLoading || !authResolved) {
-    return <AuthLoadingScreen />;
+    return <main className="safe-pt min-h-[50vh] bg-main" aria-busy />;
   }
-  
+
+  if (!session?.user?.id) {
+    const returnPath = id
+      ? `/listing/edit/${encodeURIComponent(String(id).trim())}`
+      : "/listing/edit";
+    return (
+      <main className="safe-pt min-h-screen bg-main px-5 pb-8 pt-10">
+        <h1 className="text-[22px] font-semibold tracking-tight text-fg">Редактирование</h1>
+        <div className="mt-5 max-w-lg rounded-card border border-line bg-elevated p-4">
+          <p className="text-sm leading-relaxed text-muted">
+            Войдите по почте — так мы убедимся, что это ваше объявление.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              rememberSaveEnigmaContinuationRoute(returnPath);
+              router.push(
+                `/login?returnTo=${encodeURIComponent(returnPath)}&source=guest_listing_edit_gate`,
+              );
+            }}
+            className="pressable mt-4 min-h-[48px] w-full rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors duration-ui hover:bg-accent-hover"
+          >
+            Продолжить с почтой
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   if (loading) {
     return (
       <main className="safe-pt px-5 pb-8 pt-8">

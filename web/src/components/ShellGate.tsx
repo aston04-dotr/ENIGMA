@@ -1,60 +1,9 @@
 "use client";
 
-import { LandingScreen } from "@/components/LandingScreen";
-import { useAuth } from "@/context/auth-context";
-import { usePathname } from "next/navigation";
-
-function isPublicGuestRoute(pathname: string): boolean {
-  if (pathname === "/") return true;
-  if (pathname === "/wanted") return true;
-  if (pathname.startsWith("/listing/edit/") || pathname === "/listing/edit") {
-    return false;
-  }
-  if (pathname.startsWith("/listing/")) return true;
-  return false;
-}
-
-function isProtectedRoute(pathname: string): boolean {
-  if (pathname === "/chat" || pathname.startsWith("/chat/")) return true;
-  if (pathname === "/create" || pathname.startsWith("/create/")) return true;
-  if (pathname === "/profile" || pathname.startsWith("/profile/")) return true;
-  if (pathname === "/payment" || pathname.startsWith("/payment/")) return true;
-  if (pathname.startsWith("/listing/edit/")) return true;
-  return false;
-}
-
+/**
+ * Раньше блокировал первый кадр Landing/ENIGMA. Сейчас всегда показываем shell —
+ * гостевые и защищённые экраны сами решают вход/CTA без полноэкранного бренда.
+ */
 export function ShellGate({ children }: { children: React.ReactNode }) {
-  const { session, loading, authResolved, profileLoading } = useAuth();
-  const pathname = usePathname();
-
-  /** Лента / объявления / wanted: без блокирующего «ENIGMA» между первым кадром и контентом */
-  if (isPublicGuestRoute(pathname)) {
-    return <>{children}</>;
-  }
-
-  const isResolving =
-    loading || !authResolved || (Boolean(session?.user) && profileLoading);
-
-  if (isResolving) {
-    return (
-      <div className="min-h-[100svh] bg-main supports-[height:100dvh]:min-h-[100dvh]" aria-busy />
-    );
-  }
-
-  if (!session?.user) {
-    if (isProtectedRoute(pathname)) {
-      return (
-        <div className="min-h-[100svh] bg-main">
-          <LandingScreen />
-        </div>
-      );
-    }
-    return (
-      <div className="min-h-[100svh] bg-main">
-        <LandingScreen />
-      </div>
-    );
-  }
-
   return <>{children}</>;
 }
