@@ -32,6 +32,133 @@ export type Database = {
         }
         Relationships: []
       }
+      car_catalog_brands: {
+        Row: {
+          id: string
+          country_id: string
+          slug: string
+          name_ru: string
+          name_en: string
+          aliases: Json
+          sort_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          country_id: string
+          slug: string
+          name_ru: string
+          name_en?: string
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          country_id?: string
+          slug?: string
+          name_ru?: string
+          name_en?: string
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_catalog_brands_country_id_fkey"
+            columns: ["country_id"]
+            isOneToOne: false
+            referencedRelation: "car_catalog_countries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_catalog_countries: {
+        Row: {
+          id: string
+          slug: string
+          name_ru: string
+          name_en: string
+          flag_emoji: string | null
+          iso_code: string | null
+          aliases: Json
+          sort_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          name_ru: string
+          name_en?: string
+          flag_emoji?: string | null
+          iso_code?: string | null
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          name_ru?: string
+          name_en?: string
+          flag_emoji?: string | null
+          iso_code?: string | null
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      car_catalog_models: {
+        Row: {
+          id: string
+          brand_id: string
+          slug: string
+          name_ru: string
+          name_en: string
+          aliases: Json
+          sort_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          brand_id: string
+          slug: string
+          name_ru: string
+          name_en?: string
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          brand_id?: string
+          slug?: string
+          name_ru?: string
+          name_en?: string
+          aliases?: Json
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_catalog_models_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "car_catalog_brands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chats: {
         Row: {
           id: string

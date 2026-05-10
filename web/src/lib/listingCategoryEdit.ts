@@ -23,6 +23,7 @@ import {
   buildMotoSpecsSection,
   hydrateAutoParamsShape,
   hydrateMotoParamsShape,
+  isAutoCatalogTripleComplete,
   mergeDescriptionWithSpecsSection,
   stripSpecsFromDescription,
   validateEngineHp,
@@ -79,6 +80,9 @@ export type CategoryEditParams = {
 
 export const EMPTY_CATEGORY_EDIT_PARAMS: CategoryEditParams = {
   auto: {
+    carCountryId: "",
+    carBrandId: "",
+    carModelId: "",
     brand: "",
     model: "",
     year: "",
@@ -471,8 +475,14 @@ export function validateCategoryEditForm(
 ): string | null {
   if (category === "auto") {
     const p = categoryParams.auto;
-    if (!p.brand.trim() || !p.model.trim() || !p.year.trim() || !p.mileage.trim()) {
-      return "Заполните марку, модель, год и пробег";
+    if (
+      !isAutoCatalogTripleComplete(p) ||
+      !p.brand.trim() ||
+      !p.model.trim() ||
+      !p.year.trim() ||
+      !p.mileage.trim()
+    ) {
+      return "Выберите страну, марку и модель из каталога и заполните год и пробег";
     }
     const hpErr = validateEngineHp(p.enginePowerHp);
     if (hpErr) return hpErr;

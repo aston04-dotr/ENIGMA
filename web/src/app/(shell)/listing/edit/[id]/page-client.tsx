@@ -36,7 +36,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
-import { ListingMiscCategoryFieldsForEdit } from "@/components/listing/ListingMiscCategoryFieldsForEdit";
+import { AutoVehicleCatalogPickers } from "@/components/vehicle/AutoVehicleCatalogPickers";
 import { ListingRealEstateFields } from "@/components/listing/ListingRealEstateFields";
 import { categoryLabel } from "@/lib/categories";
 import {
@@ -67,6 +67,7 @@ import {
   buildMotoSpecsSection,
   hydrateAutoParamsShape,
   hydrateMotoParamsShape,
+  isAutoCatalogTripleComplete,
   mergeDescriptionWithSpecsSection,
   toIntOrNull,
   validateEngineHp,
@@ -561,12 +562,16 @@ export default function EditListingPage() {
         return;
       }
       if (
+        !isAutoCatalogTripleComplete(autoParams) ||
         !autoParams.brand.trim() ||
         !autoParams.model.trim() ||
         !autoParams.year.trim() ||
         !autoParams.mileage.trim()
       ) {
-        setToast({ message: "Заполните марку, модель, год и пробег", type: "error" });
+        setToast({
+          message: "Выберите страну, марку и модель из каталога и заполните год и пробег",
+          type: "error",
+        });
         return;
       }
       descriptionTrim = mergeDescriptionWithSpecsSection(
@@ -1162,19 +1167,10 @@ export default function EditListingPage() {
         {listingCategory === "auto" && autoParams ? (
           <div className="space-y-3 rounded-card border border-line bg-elev-2/40 p-4">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры авто</label>
-            <input
-              value={autoParams.brand}
-              onChange={(e) => setAutoParams((p) => (p ? { ...p, brand: e.target.value } : p))}
-              placeholder="Марка *"
-              className={inputClass}
+            <AutoVehicleCatalogPickers
+              value={autoParams}
               disabled={saving}
-            />
-            <input
-              value={autoParams.model}
-              onChange={(e) => setAutoParams((p) => (p ? { ...p, model: e.target.value } : p))}
-              placeholder="Модель *"
-              className={inputClass}
-              disabled={saving}
+              onPatch={(patch) => setAutoParams((prev) => (prev ? { ...prev, ...patch } : prev))}
             />
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <input

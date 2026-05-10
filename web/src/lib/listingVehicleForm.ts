@@ -1,6 +1,12 @@
 import type { ListingRow } from "./types";
 
 export type AutoParamsShape = {
+  /** UUID страны производителя (spravochnik) */
+  carCountryId: string;
+  /** UUID марки */
+  carBrandId: string;
+  /** UUID модели */
+  carModelId: string;
   brand: string;
   model: string;
   year: string;
@@ -26,6 +32,16 @@ export type MotoParamsShape = {
 };
 
 export const SPECS_MARKER = "\n\nХарактеристики:\n";
+
+export function looksLikeUuid(raw: string): boolean {
+  const s = raw.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+/** Страна / марка / модель выбраны из каталога Supabase. */
+export function isAutoCatalogTripleComplete(p: AutoParamsShape): boolean {
+  return looksLikeUuid(p.carCountryId) && looksLikeUuid(p.carBrandId) && looksLikeUuid(p.carModelId);
+}
 
 export function stripSpecsFromDescription(desc: string): string {
   const idx = desc.indexOf(SPECS_MARKER);
@@ -104,6 +120,9 @@ export function hydrateAutoParamsShape(row: ListingRow): AutoParamsShape {
   }
 
   return {
+    carCountryId: g("car_country_id"),
+    carBrandId: g("car_brand_id"),
+    carModelId: g("car_model_id"),
     brand: g("brand"),
     model: g("model"),
     year: g("year"),
@@ -156,7 +175,10 @@ export function buildAutoParamsRecord(
   p: AutoParamsShape,
   normalizedPrice: number | null,
 ): Record<string, unknown> {
-  return {
+  const out: Record<string, unknown> = {
+    car_country_id: p.carCountryId.trim() || null,
+    car_brand_id: p.carBrandId.trim() || null,
+    car_model_id: p.carModelId.trim() || null,
     brand: p.brand.trim() || null,
     model: p.model.trim() || null,
     year: toIntOrNull(p.year),
@@ -171,6 +193,7 @@ export function buildAutoParamsRecord(
     is_cleared: toBoolOrNull(p.customsCleared),
     is_damaged: toBoolOrNull(p.damaged),
   };
+  return out;
 }
 
 export function buildMotoParamsRecord(

@@ -22,7 +22,7 @@ import {
 import { assessListingPublishGate } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
-import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
+import { AutoVehicleCatalogPickers } from "@/components/vehicle/AutoVehicleCatalogPickers";
 import { mapListingPhotoUploadUiError } from "@/lib/listingPhotoClient";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
 import { removeListingImagesFromStorage } from "@/lib/storageUploadWeb";
@@ -60,6 +60,7 @@ import {
   buildAutoSpecsSection,
   buildMotoParamsRecord,
   buildMotoSpecsSection,
+  isAutoCatalogTripleComplete,
   validateEngineHp,
   validateEngineVolumeAuto,
   validateEngineVolumeMoto,
@@ -167,6 +168,9 @@ type CategoryFormParams = {
 
 const EMPTY_CATEGORY_PARAMS: CategoryFormParams = {
   auto: {
+    carCountryId: "",
+    carBrandId: "",
+    carModelId: "",
     brand: "",
     model: "",
     year: "",
@@ -748,8 +752,14 @@ export function CreateListingForm() {
     }
     if (category === "auto") {
       const p = categoryParams.auto;
-      if (!p.brand.trim() || !p.model.trim() || !p.year.trim() || !p.mileage.trim()) {
-        return "Заполните обязательные параметры авто: марка, модель, год, пробег";
+      if (
+        !isAutoCatalogTripleComplete(p) ||
+        !p.brand.trim() ||
+        !p.model.trim() ||
+        !p.year.trim() ||
+        !p.mileage.trim()
+      ) {
+        return "Выберите страну, марку и модель из каталога и заполните год и пробег";
       }
       const hpErr = validateEngineHp(p.enginePowerHp);
       if (hpErr) return hpErr;
@@ -1714,8 +1724,16 @@ export function CreateListingForm() {
       {category === "auto" ? (
         <div className="space-y-3">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Параметры авто</label>
-          <input value={categoryParams.auto.brand} onChange={(e) => updateCategoryParam("auto", "brand", e.target.value)} placeholder="Марка *" className={inputClass} />
-          <input value={categoryParams.auto.model} onChange={(e) => updateCategoryParam("auto", "model", e.target.value)} placeholder="Модель *" className={inputClass} />
+          <AutoVehicleCatalogPickers
+            value={categoryParams.auto}
+            disabled={busy}
+            onPatch={(patch) =>
+              setCategoryParams((prev) => ({
+                ...prev,
+                auto: { ...prev.auto, ...patch },
+              }))
+            }
+          />
           <div className="grid grid-cols-2 gap-2">
             <input value={categoryParams.auto.year} onChange={(e) => updateCategoryParam("auto", "year", e.target.value)} inputMode="numeric" placeholder="Год выпуска *" className={inputClass} />
             <input value={categoryParams.auto.mileage} onChange={(e) => updateCategoryParam("auto", "mileage", e.target.value)} inputMode="numeric" placeholder="Пробег (км) *" className={inputClass} />
