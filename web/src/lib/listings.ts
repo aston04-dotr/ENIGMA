@@ -1238,6 +1238,102 @@ export type FetchListingDetailResult = {
   invalidId?: boolean;
 };
 
+function mapSellerPreviewFromRpc(payload: unknown, fallbackUserId: string): UserRow | null {
+  if (
+    payload == null ||
+    (typeof payload === "object" && !Array.isArray(payload) && Object.keys(payload).length === 0)
+  ) {
+    return null;
+  }
+  const p =
+    typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  if (!p) {
+    return null;
+  }
+  const id = typeof p.id === "string" && p.id.trim() ? p.id.trim() : fallbackUserId;
+  const pubIdRaw = p.public_id;
+  const public_id =
+    pubIdRaw != null && String(pubIdRaw).trim()
+      ? String(pubIdRaw).trim()
+      : "—";
+  const ts = p.trust_score;
+  return {
+    id,
+    phone: null,
+    phone_updated_at: null,
+    device_id: null,
+    name: p.name != null ? String(p.name) : null,
+    email: null,
+    avatar: p.avatar != null ? String(p.avatar) : null,
+    public_id,
+    created_at: p.created_at != null ? String(p.created_at) : "",
+    trust_score:
+      typeof ts === "number"
+        ? ts
+        : typeof ts === "string" && ts.trim() !== "" && Number.isFinite(Number(ts))
+          ? Number(ts)
+          : null,
+  };
+}
+
+async function fetchListingSellerForDetail(row: ListingRow, listingId: string): Promise<UserRow | null> {
+  const ownerId = String(row.user_id ?? "").trim();
+  if (!ownerId) return null;
+
+  let sessionUserId: string | null = null;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    sessionUserId = sessionData.session?.user?.id ?? null;
+  } catch {
+    sessionUserId = null;
+  }
+  const viewerIsOwner = typeof sessionUserId === "string" && sessionUserId === ownerId;
+
+  if (viewerIsOwner) {
+    const { data: sellerRow, error: sellerError } = await supabase
+      .from("profiles")
+      .select("id, name, phone, phone_updated_at, device_id, email, avatar, public_id, created_at, trust_score")
+      .eq("id", ownerId)
+      .maybeSingle();
+
+    if (!sellerError && sellerRow) {
+      const pr = sellerRow as Record<string, unknown>;
+      return {
+        id: String(pr.id ?? ownerId),
+        phone: pr.phone != null ? String(pr.phone) : null,
+        phone_updated_at:
+          pr.phone_updated_at != null ? String(pr.phone_updated_at) : null,
+        device_id: pr.device_id != null ? String(pr.device_id) : null,
+        name: pr.name != null ? String(pr.name) : null,
+        email: pr.email != null ? String(pr.email) : null,
+        avatar: pr.avatar != null ? String(pr.avatar) : null,
+        public_id:
+          pr.public_id != null && String(pr.public_id).trim()
+            ? String(pr.public_id)
+            : "—",
+        created_at: pr.created_at != null ? String(pr.created_at) : "",
+        trust_score: typeof pr.trust_score === "number" ? pr.trust_score : null,
+      };
+    }
+    if (sellerError) {
+      console.warn("LISTING_SELLER_LOAD_ERROR", sellerError.message);
+    }
+  }
+
+  const { data: pub, error: pubErr } = await supabase.rpc("public_profile_for_active_listing", {
+    p_listing_id: listingId,
+  });
+  if (pubErr) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("LISTING_SELLER_RPC_ERROR", pubErr.message);
+    }
+    return null;
+  }
+  return mapSellerPreviewFromRpc(pub, ownerId);
+}
+
 async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchListingDetailResult> {
   try {
     let { data, error } = await supabase
@@ -1267,36 +1363,7 @@ async function fetchListingByIdFromSupabase(listingId: string): Promise<FetchLis
     }
 
     const row = parseListingRow(data as Record<string, unknown>);
-    let seller: UserRow | null = null;
-
-    if (row.user_id) {
-      const { data: sellerRow, error: sellerError } = await supabase
-        .from("profiles")
-        .select("id, name, phone, phone_updated_at, device_id, email, avatar, public_id, created_at, trust_score")
-        .eq("id", row.user_id)
-        .maybeSingle();
-
-      if (sellerError) {
-        console.warn("LISTING_SELLER_LOAD_ERROR", sellerError.message);
-      } else if (sellerRow) {
-        const p = sellerRow as Record<string, unknown>;
-        seller = {
-          id: String(p.id ?? row.user_id),
-          phone: p.phone != null ? String(p.phone) : null,
-          phone_updated_at: p.phone_updated_at != null ? String(p.phone_updated_at) : null,
-          device_id: p.device_id != null ? String(p.device_id) : null,
-          name: p.name != null ? String(p.name) : null,
-          email: p.email != null ? String(p.email) : null,
-          avatar: p.avatar != null ? String(p.avatar) : null,
-          public_id:
-            p.public_id != null && String(p.public_id).trim()
-              ? String(p.public_id)
-              : "—",
-          created_at: p.created_at != null ? String(p.created_at) : "",
-          trust_score: typeof p.trust_score === "number" ? p.trust_score : null,
-        };
-      }
-    }
+    const seller = await fetchListingSellerForDetail(row, listingId);
 
     return { row: { ...row, seller }, loadError: null };
   } catch (e) {
