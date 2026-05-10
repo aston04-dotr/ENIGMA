@@ -13,11 +13,17 @@ export type ProviderPayment = {
   confirmationUrl?: string | null;
 };
 
+export type ProviderReceiptInput = {
+  customerEmail: string;
+  tariffName: string;
+};
+
 export type PaymentProvider = {
   createPaymentIntent: (
     amount: number,
     currency: string,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
+    receipt?: ProviderReceiptInput,
   ) => Promise<ProviderPayment>;
   confirmPayment: (paymentId: string) => Promise<ProviderPayment>;
   verifyPayment: (paymentId: string) => Promise<ProviderPayment>;
@@ -45,7 +51,7 @@ export function getPaymentMode(): PaymentMode {
 }
 
 const mockProvider: PaymentProvider = {
-  async createPaymentIntent(amount, currency, metadata = {}) {
+  async createPaymentIntent(amount, currency, metadata = {}, _receipt) {
     await wait(randomInt(1000, 2000));
     const paymentId = `mock_pi_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const payment: ProviderPayment = {
@@ -99,8 +105,17 @@ const mockProvider: PaymentProvider = {
 };
 
 const yookassaProvider: PaymentProvider = {
-  async createPaymentIntent(amount, currency, metadata = {}) {
-    const created = await createYooKassaPayment({ amountRub: amount, currency, metadata });
+  async createPaymentIntent(amount, currency, metadata = {}, receipt) {
+    if (!receipt?.customerEmail?.trim() || !receipt?.tariffName?.trim()) {
+      throw new Error("YOOKASSA_CREATE_FAILED:receipt_fields_required");
+    }
+    const created = await createYooKassaPayment({
+      amountRub: amount,
+      currency,
+      metadata,
+      customerEmail: receipt.customerEmail.trim(),
+      itemDescription: receipt.tariffName.trim(),
+    });
     return {
       paymentId: created.paymentId,
       amount,
@@ -146,9 +161,10 @@ function provider(): PaymentProvider {
 export async function createPaymentIntent(
   amount: number,
   currency: string,
-  metadata: Record<string, string> = {}
+  metadata: Record<string, string> = {},
+  receipt?: ProviderReceiptInput,
 ): Promise<ProviderPayment> {
-  return provider().createPaymentIntent(amount, currency, metadata);
+  return provider().createPaymentIntent(amount, currency, metadata, receipt);
 }
 
 export async function confirmPayment(paymentId: string): Promise<ProviderPayment> {

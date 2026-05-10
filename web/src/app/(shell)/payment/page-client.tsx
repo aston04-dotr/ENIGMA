@@ -355,7 +355,11 @@ export default function PaymentPageClient() {
     } catch (e) {
       setPaymentState("failed");
       const code = e instanceof Error ? e.message : "";
-      if (code === "yookassa_upstream") {
+      if (code === "customer_email_required") {
+        setErrorNotice(
+          "Для оплаты нужен email в аккаунте. Укажите email в профиле и попробуйте снова.",
+        );
+      } else if (code === "yookassa_upstream") {
         setErrorNotice(
           "Не удалось открыть страницу ЮKassa. Проверьте лимиты аккаунта YooKassa и лог сервера /api/payment/create.",
         );

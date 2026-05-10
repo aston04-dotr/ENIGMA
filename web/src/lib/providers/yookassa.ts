@@ -4,6 +4,10 @@ export type YooKassaCreatePaymentInput = {
   amountRub: number;
   currency: string;
   metadata?: Record<string, string>;
+  /** Required for fiscal receipt (54-FZ) — must match authenticated user. */
+  customerEmail: string;
+  /** Line item title on the receipt (e.g. tariff / product name). */
+  itemDescription: string;
 };
 
 export type YooKassaPaymentResult = {
@@ -164,11 +168,56 @@ export async function fetchPayment(paymentId: string): Promise<YooKassaPaymentRe
   }
 }
 
+function buildYooKassaReceipt(input: {
+  amountRub: number;
+  currency: string;
+  customerEmail: string;
+  itemDescription: string;
+}) {
+  const { amountRub, currency, customerEmail, itemDescription } = input;
+  const value = amountRub.toFixed(2);
+  const description = String(itemDescription || "Оплата ENIGMA").trim().slice(0, 128);
+  return {
+    customer: {
+      email: customerEmail.trim(),
+    },
+    items: [
+      {
+        description,
+        quantity: "1.00",
+        amount: {
+          value,
+          currency,
+        },
+        vat_code: 1,
+        payment_mode: "full_payment",
+        payment_subject: "service",
+      },
+    ],
+  };
+}
+
 export async function createPayment(input: YooKassaCreatePaymentInput): Promise<YooKassaPaymentResult> {
   const amountRub = Math.max(1, Math.floor(Number(input.amountRub ?? 0)));
   const currency = String(input.currency || "RUB").toUpperCase();
   const metadata = input.metadata ?? {};
   const { appUrl } = readYooKassaConfig();
+
+  const customerEmail = String(input.customerEmail ?? "").trim();
+  const itemDescription = String(input.itemDescription ?? "").trim();
+  if (!customerEmail) {
+    throw new Error("YOOKASSA_CREATE_FAILED:customer_email_required");
+  }
+  if (!itemDescription) {
+    throw new Error("YOOKASSA_CREATE_FAILED:item_description_required");
+  }
+
+  const receipt = buildYooKassaReceipt({
+    amountRub,
+    currency,
+    customerEmail,
+    itemDescription,
+  });
 
   let payment: YooKassaApiPayment;
   try {
@@ -188,6 +237,7 @@ export async function createPayment(input: YooKassaCreatePaymentInput): Promise<
           return_url: `${appUrl.replace(/\/+$/, "")}/payment`,
         },
         metadata,
+        receipt,
       }),
     });
   } catch (e) {

@@ -94,6 +94,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const userEmail = typeof user.email === "string" ? user.email.trim() : "";
+  if (!userEmail) {
+    return NextResponse.json({ ok: false, error: "customer_email_required" }, { status: 400 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -162,7 +167,10 @@ export async function POST(request: Request) {
   };
 
   try {
-    const created = await providerCreatePaymentIntent(secureAmount, "RUB", metadata);
+    const created = await providerCreatePaymentIntent(secureAmount, "RUB", metadata, {
+      customerEmail: userEmail,
+      tariffName: description,
+    });
     const payload: PaymentIntent = {
       id: created.paymentId,
       amountRub: secureAmount,
