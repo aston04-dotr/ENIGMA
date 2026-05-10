@@ -185,10 +185,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       bodyClasses.map((c) => ({
         id: c.id,
         label: String(c.name_ru ?? "").trim(),
-        description:
-          String(c.name_en ?? "").trim() && String(c.name_en ?? "").trim() !== String(c.name_ru ?? "").trim()
-            ? String(c.name_en ?? "").trim()
-            : undefined,
         searchHaystack: vehicleCatalogHaystack([c.name_ru, c.name_en], []),
       })),
     [bodyClasses],
@@ -196,15 +192,15 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
 
   const countryOptions: SearchablePickerOption[] = useMemo(
     () =>
-      countries.map((c) => ({
-        id: c.id,
-        label: `${String(c.flag_emoji ?? "").trim()} ${String(c.name_ru ?? "").trim()}`.trim(),
-        description:
-          String(c.name_en ?? "").trim() && String(c.name_en ?? "").trim() !== String(c.name_ru ?? "").trim()
-            ? String(c.name_en ?? "").trim()
-            : undefined,
-        searchHaystack: vehicleCatalogHaystack([c.name_ru, c.name_en], c.aliases),
-      })),
+      countries.map((c) => {
+        const flag = String(c.flag_emoji ?? "").trim();
+        return {
+          id: c.id,
+          label: String(c.name_ru ?? "").trim(),
+          leading: flag ? flag : undefined,
+          searchHaystack: vehicleCatalogHaystack([c.name_ru, c.name_en], c.aliases),
+        };
+      }),
     [countries],
   );
 
@@ -213,7 +209,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
     return rows.map((b) => ({
       id: b.id,
       label: String(b.name_ru ?? "").trim(),
-      description: String(b.name_en ?? "").trim() || undefined,
       searchHaystack: vehicleCatalogHaystack([b.name_ru, b.name_en], b.aliases),
     }));
   }, [brandsForPick]);
@@ -223,7 +218,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
     return rows.map((m) => ({
       id: m.id,
       label: String(m.name_ru ?? "").trim(),
-      description: String(m.name_en ?? "").trim() || undefined,
       searchHaystack: vehicleCatalogHaystack([m.name_ru, m.name_en], m.aliases),
     }));
   }, [modelsForPick]);
@@ -368,7 +362,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       <SearchablePickerSheet
         open={sheetOpen === "country"}
         title="Страна"
-        subtitle={resolvedBody ? String(resolvedBody.name_ru ?? "").trim() : undefined}
         searchPlaceholder="Поиск…"
         options={countryOptions}
         loading={countryLoading && countries.length === 0}
@@ -387,7 +380,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       <SearchablePickerSheet
         open={sheetOpen === "brand"}
         title="Марка"
-        subtitle={resolvedCountry ? countryLabelRu(resolvedCountry) : undefined}
         searchPlaceholder="Поиск…"
         options={brandOptions}
         loading={brandFetchLoading && brandsForPick.length === 0}
@@ -407,7 +399,6 @@ export function AutoVehicleCatalogPickers({ value, onPatch, disabled = false }: 
       <SearchablePickerSheet
         open={sheetOpen === "model"}
         title="Модель"
-        subtitle={value.brand.trim() || undefined}
         searchPlaceholder="Поиск…"
         options={modelOptions}
         loading={modelFetchLoading && modelsForPick.length === 0}
