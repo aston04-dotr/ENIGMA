@@ -22,6 +22,7 @@ import {
 import { assessListingPublishGate } from "@/lib/trustPublishGate";
 import { canEditListingsAndListingPhotos, getTrustLevel } from "@/lib/trustLevels";
 import { registerRapidListingCreated } from "@/lib/trust";
+import { ListingPhotoAddPanel } from "@/components/listing/ListingPhotoAddPanel";
 import { AutoVehicleCatalogPickers } from "@/components/vehicle/AutoVehicleCatalogPickers";
 import { mapListingPhotoUploadUiError } from "@/lib/listingPhotoClient";
 import { uploadListingPhotoWeb } from "@/lib/storageUploadWeb";
